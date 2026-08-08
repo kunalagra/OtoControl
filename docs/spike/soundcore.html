@@ -1,0 +1,232 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Soundcore Web Serial Spike</title>
+<style>
+  :root { color-scheme: light dark; }
+  body { font: 14px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; margin: 0; padding: 24px; }
+  h1 { font-size: 18px; margin: 0 0 4px; }
+  .sub { opacity: .65; margin: 0 0 20px; max-width: 76ch; }
+  button { font: inherit; padding: 6px 12px; margin: 0 6px 6px 0; cursor: pointer; }
+  button:disabled { opacity: .4; cursor: default; }
+  #log { white-space: pre-wrap; border: 1px solid currentColor; border-radius: 6px;
+         padding: 12px; height: 60vh; overflow: auto; margin-top: 16px; }
+  .ok  { color: #0a0; font-weight: bold; }
+  .err { color: #d00; font-weight: bold; }
+  .tx  { color: #06c; }
+  .rx  { color: #806; }
+  .note { opacity: .7; }
+</style>
+</head>
+<body>
+
+<h1>Soundcore Liberty Air 2 Pro — transport spike</h1>
+<p class="sub">
+  Answers one question: <strong>can Chrome on macOS reach this device over Web Serial at
+  all?</strong> Everything else is downstream of that, exactly as the Momentum spike was.
+  <br><br>
+  The A3951 uses the <em>standard</em> SPP service (<code>00001101-…</code>) rather than a
+  vendor-specific one, so it may appear in the picker with no allowlist. Both are offered
+  below because Soundcore's vendor UUID varies per model in its last five hex digits, and
+  Web Serial only matches exact UUIDs — so a masked match is not possible.
+</p>
+
+<div>
+  <button id="pick-spp">Pick (standard SPP)</button>
+  <button id="pick-any">Pick (no filter — show everything)</button>
+  <button id="granted">List granted ports</button>
+  <button id="close" disabled>Close</button>
+  <button id="clear">Clear log</button>
+</div>
+
+<div id="ports"></div>
+
+<div class="row" style="margin-top:12px">
+  command <input id="cmd" value="01 01" size="8">
+  <button id="send" disabled>Send</button>
+  <span class="note">
+    read-only probes only — <code>01 01</code> is request-state. Nothing here writes a setting.
+  </span>
+</div>
+
+<div id="log"></div>
+
+<script type="module">
+const SPP_UUID = '00001101-0000-1000-8000-00805f9b34fb'
+
+const logEl = document.getElementById('log')
+const log = (msg, cls = '') => {
+  const time = new Date().toISOString().slice(11, 23)
+  logEl.insertAdjacentHTML('beforeend',
+    `<div class="${cls}">${time}  ${msg.replace(/[<&]/g, c => c === '<' ? '&lt;' : '&amp;')}</div>`)
+  logEl.scrollTop = logEl.scrollHeight
+}
+const hex = bytes => [...bytes].map(b => b.toString(16).padStart(2, '0').toUpperCase()).join(' ')
+
+let port = null
+let reader = null
+/** Chrome rejects a second open() while one is in flight, so serialise them. */
+let busy = false
+
+/**
+ * Soundcore framing, from Oppzippy/OpenSCQ30 (GPL-3, read as reference):
+ *   08 EE 00 00 00 | cmd(2) | length u16 LE | body | checksum
+ * Length counts the whole packet including the checksum byte. The checksum is
+ * a wrapping byte sum of everything before it. Verified against that project's
+ * own test vector for request-state: 08 EE 00 00 00 01 01 0A 00 02.
+ */
+const packet = (command, body = []) => {
+  const head = [0x08, 0xee, 0x00, 0x00, 0x00, ...command]
+  const total = head.length + 2 + body.length + 1
+  const bytes = [...head, total & 0xff, (total >> 8) & 0xff, ...body]
+  const checksum = bytes.reduce((sum, b) => (sum + b) & 0xff, 0)
+  return Uint8Array.from([...bytes, checksum])
+}
+
+const REQUEST_STATE = packet([0x01, 0x01])
+
+const describe = (p, i = '') => {
+  const info = p.getInfo()
+  const id = info.bluetoothServiceClassId
+  return `${i}serviceClassId=${id ?? '(none — USB/serial device)'}` +
+    (info.usbVendorId ? ` usbVendor=0x${info.usbVendorId.toString(16)}` : '') +
+    ` connected=${p.connected ?? '(unknown — needs Chrome 130+)'}`
+}
+
+/**
+ * Lists every granted port with its own Open button.
+ *
+ * Necessary because a Soundcore device can expose more than one RFCOMM
+ * service and only one of them carries the control protocol — OpenSCQ30 tries
+ * standard SPP *and* a vendor service. `getInfo()` gives no name or address, so
+ * which port belongs to which device is only knowable from what you picked.
+ */
+const renderPorts = async () => {
+  const ports = await navigator.serial.getPorts()
+  const box = document.getElementById('ports')
+  box.innerHTML = ''
+  ports.forEach((p, i) => {
+    const row = document.createElement('div')
+    row.className = 'row'
+    const btn = document.createElement('button')
+    btn.textContent = `Open [${i}]`
+    btn.onclick = () => void openPort(p)
+    row.append(btn)
+    row.insertAdjacentHTML('beforeend', `<span class="note">${describe(p)}</span>`)
+    box.append(row)
+  })
+}
+
+const adopt = async (p) => {
+  port = p
+  log('granted: ' + describe(p), 'ok')
+  await renderPorts()
+}
+
+document.getElementById('pick-spp').onclick = async () => {
+  try {
+    await adopt(await navigator.serial.requestPort({
+      allowedBluetoothServiceClassIds: [SPP_UUID],
+      filters: [{ bluetoothServiceClassId: SPP_UUID }],
+    }))
+  } catch (e) { log('picker: ' + e.message, 'err') }
+}
+
+document.getElementById('pick-any').onclick = async () => {
+  // No filters at all: whatever Chrome is willing to show. If the earbuds
+  // appear here but not under SPP, they are using a vendor UUID and we need to
+  // read its exact value off this listing.
+  try {
+    await adopt(await navigator.serial.requestPort({
+      allowedBluetoothServiceClassIds: [SPP_UUID],
+    }))
+  } catch (e) { log('picker: ' + e.message, 'err') }
+}
+
+document.getElementById('granted').onclick = async () => {
+  const ports = await navigator.serial.getPorts()
+  if (!ports.length) return log('no granted ports yet', 'note')
+  ports.forEach((p, i) => log(describe(p, `[${i}] `)))
+  await renderPorts()
+}
+
+/**
+ * Opens and listens, without sending anything.
+ *
+ * Deliberately silent for two seconds first: many of these devices push their
+ * state unprompted the moment the channel comes up, and if that happens there
+ * is no need to guess a command at all.
+ */
+async function openPort(p) {
+  if (busy) return log('still opening or closing — wait a moment', 'note')
+  busy = true
+  try {
+    if (port && reader) await closePort()
+    port = p
+    if (p.connected === false) {
+      log('connected=false — earbuds are off, out of range, or not connected as audio', 'err')
+      return
+    }
+    await p.open({ baudRate: 115200 })
+    log('open: ' + describe(p), 'ok')
+    document.getElementById('close').disabled = false
+    document.getElementById('send').disabled = false
+
+    reader = p.readable.getReader()
+    ;(async () => {
+      try {
+        while (true) {
+          const { value, done } = await reader.read()
+          if (done) break
+          if (value?.length) log('RX  ' + hex(value), 'rx')
+        }
+      } catch (e) { log('read loop ended: ' + e.message, 'note') }
+    })()
+
+    log('listening — sending nothing for 2s in case the device speaks first', 'note')
+    setTimeout(() => log('nothing unprompted; press Send to probe', 'note'), 2000)
+  } catch (e) {
+    log('open failed: ' + e.message, 'err')
+  } finally {
+    busy = false
+  }
+}
+
+document.getElementById('send').onclick = async () => {
+  if (!port?.writable) return log('no open port', 'err')
+  const cmd = document.getElementById('cmd').value.trim().split(/[\s,]+/).map(h => parseInt(h, 16))
+  if (cmd.length !== 2 || cmd.some(Number.isNaN)) return log('command must be two hex bytes, e.g. 01 01', 'err')
+
+  const bytes = packet(cmd)
+  const writer = port.writable.getWriter()
+  log('TX  ' + hex(bytes), 'tx')
+  await writer.write(bytes)
+  writer.releaseLock()
+  setTimeout(() => log('— no reply within 2.5s means this service did not answer that command —', 'note'), 2500)
+}
+
+async function closePort() {
+  try {
+    await reader?.cancel().catch(() => {})
+    reader?.releaseLock()
+    reader = null
+    await port?.close()
+    log('closed', 'ok')
+  } catch (e) { log('close: ' + e.message, 'err') }
+  document.getElementById('close').disabled = true
+  document.getElementById('send').disabled = true
+}
+
+document.getElementById('close').onclick = () => void closePort()
+document.getElementById('clear').onclick = () => { logEl.textContent = '' }
+
+if (!('serial' in navigator)) log('This browser has no Web Serial API.', 'err')
+else {
+  log('ready — the RFCOMM channel is exclusive system-wide, so close the main app tab first', 'note')
+  void renderPorts()
+}
+</script>
+
+</body>
+</html>

@@ -1,0 +1,396 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Sony MDR Web Serial Spike</title>
+<style>
+  :root { color-scheme: light dark; }
+  body { font: 14px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; margin: 0; padding: 24px; }
+  h1 { font-size: 18px; margin: 0 0 4px; }
+  .sub { opacity: .65; margin: 0 0 20px; max-width: 70ch; }
+  button { font: inherit; padding: 6px 12px; margin: 0 6px 6px 0; cursor: pointer; }
+  button:disabled { opacity: .4; cursor: default; }
+  #log { white-space: pre-wrap; border: 1px solid currentColor; border-radius: 6px;
+         padding: 12px; height: 55vh; overflow: auto; margin-top: 16px; }
+  .row { margin-bottom: 8px; }
+  input { font: inherit; padding: 5px 8px; width: 24em; }
+  .ok  { color: #0a0; font-weight: bold; }
+  .err { color: #d00; font-weight: bold; }
+  .tx  { color: #06c; }
+  .rx  { color: #806; }
+  .ack { opacity: .6; }
+</style>
+</head>
+<body>
+
+<h1>Sony MDR — Web Serial transport spike</h1>
+<p class="sub">
+  Transport and framing are already confirmed working — the device answers
+  <code>RET_PROTOCOL_INFO</code>. Open question: which queries it will actually service.
+  It ACKs every frame but only answers functions it supports, so the run now completes the
+  handshake first. Success = a <code>0x23</code> reply with plausible battery levels.
+  Earbuds must be powered on and connected as an audio device.
+</p>
+
+<div class="row">
+  <button id="connect">Connect</button>
+  <button id="disconnect" disabled>Disconnect</button>
+  <button id="listPorts">List granted ports</button>
+  <button id="clear">Clear log</button>
+</div>
+
+<div class="row">
+  <strong>Handshake</strong><br>
+  <button class="cmd" data-payload="00 00" disabled>Protocol info</button>
+  <button class="cmd" data-payload="04 02" disabled>Firmware</button>
+  <button class="cmd" data-payload="04 01" disabled>Model name</button>
+  <button class="cmd" data-payload="04 03" disabled>Series &amp; colour</button>
+  <button class="cmd" data-payload="06 00" disabled>Supported functions</button>
+  <button id="sweepInfo" disabled>Sweep device-info types 00-07</button>
+  <button id="sweepStatus" disabled>Sweep status types 00-0F</button>
+</div>
+
+<div class="row">
+  <strong>Battery</strong> (POWER_GET_STATUS 0x22 + type)<br>
+  <button class="cmd" data-payload="22 01" disabled>Dual</button>
+  <button class="cmd" data-payload="22 00" disabled>Single</button>
+  <button class="cmd" data-payload="22 02" disabled>Case</button>
+  <button class="cmd" data-payload="22 09" disabled>Dual+threshold</button>
+</div>
+
+<div class="row">
+  <strong>Features</strong><br>
+  <button class="cmd" data-payload="56 00" disabled>EQ preset</button>
+  <button class="cmd" data-payload="56 31" disabled>EQ custom</button>
+  <button class="cmd" data-payload="12 02" disabled>Codec</button>
+  <button class="cmd" data-payload="12 03" disabled>Upscaling (DSEE)</button>
+  <button class="cmd" data-payload="26 01" disabled>Auto power off</button>
+</div>
+
+<div class="row">
+  <input id="raw" placeholder="raw MDR payload hex, e.g. 22 00">
+  <button id="send" disabled>Send payload</button>
+</div>
+
+<div id="log"></div>
+
+<script type="module">
+// Sony exposes two service IDs across generations. The WF-C500 turned out to
+// report the v2 ID, despite being a 2021 budget model — so the generation is
+// not predictable from age and must be read from the port.
+const MDR_V1 = '96cc203e-5068-46ad-b32d-e316f5e069ba';
+const MDR_V2 = '956c7b26-d49a-4ba8-b03f-b17d393cb6e2';
+
+const SOF = 0x3e;
+const EOF_ = 0x3c;
+const ESC = 0x3d;
+
+const DATA_MDR = 0x0c;
+const DATA_MDR2 = 0x0e;
+const DATA_ACK = 0x01;
+
+const logEl = document.getElementById('log');
+let port = null, reader = null, writer = null, readLoopDone = null;
+let seq = 0;
+let rxBuffer = new Uint8Array(0);
+
+function log(msg, cls = '') {
+  const line = document.createElement('div');
+  if (cls) line.className = cls;
+  line.textContent = `${new Date().toISOString().slice(11, 23)}  ${msg}`;
+  logEl.appendChild(line);
+  logEl.scrollTop = logEl.scrollHeight;
+}
+
+const hex = (b) => [...b].map(x => x.toString(16).padStart(2, '0').toUpperCase()).join(' ');
+
+const checksum = (bytes) => bytes.reduce((sum, b) => (sum + b) & 0xff, 0);
+
+/** 0x3E/0x3C/0x3D cannot appear raw inside a frame. */
+function escape(bytes) {
+  const out = [];
+  for (const b of bytes) {
+    if (b === SOF || b === EOF_ || b === ESC) out.push(ESC, b & 0xef);
+    else out.push(b);
+  }
+  return out;
+}
+
+function unescape(bytes) {
+  const out = [];
+  for (let i = 0; i < bytes.length; i += 1) {
+    if (bytes[i] === ESC && i + 1 < bytes.length) {
+      out.push(bytes[i + 1] | 0x10);
+      i += 1;
+    } else {
+      out.push(bytes[i]);
+    }
+  }
+  return Uint8Array.from(out);
+}
+
+/** 3E | dataType seq len(u32 BE) payload checksum | 3C, with escaping. */
+function buildFrame(dataType, sequence, payload) {
+  const inner = [dataType, sequence,
+    (payload.length >>> 24) & 0xff, (payload.length >>> 16) & 0xff,
+    (payload.length >>> 8) & 0xff, payload.length & 0xff,
+    ...payload];
+  inner.push(checksum(inner));
+  return Uint8Array.from([SOF, ...escape(inner), EOF_]);
+}
+
+function extractFrames(chunk) {
+  const merged = new Uint8Array(rxBuffer.length + chunk.length);
+  merged.set(rxBuffer, 0);
+  merged.set(chunk, rxBuffer.length);
+  rxBuffer = merged;
+
+  const frames = [];
+  for (;;) {
+    const start = rxBuffer.indexOf(SOF);
+    if (start === -1) { rxBuffer = new Uint8Array(0); break; }
+    const end = rxBuffer.indexOf(EOF_, start + 1);
+    if (end === -1) { rxBuffer = rxBuffer.slice(start); break; }
+
+    const inner = unescape(rxBuffer.slice(start + 1, end));
+    rxBuffer = rxBuffer.slice(end + 1);
+    if (inner.length < 7) continue;
+
+    const view = new DataView(inner.buffer, inner.byteOffset, inner.byteLength);
+    const length = view.getUint32(2, false);
+    if (6 + length > inner.length) continue;
+
+    const payload = inner.slice(6, 6 + length);
+    const declared = inner[6 + length];
+    const computed = checksum(inner.slice(0, 6 + length));
+    frames.push({
+      dataType: inner[0], seq: inner[1], payload,
+      checksumOk: declared === computed,
+    });
+  }
+  return frames;
+}
+
+/** Sony protocol v2, table 1 (BudsLink's PayloadTypeV2T1). */
+const CMD_NAMES = {
+  0x01: 'RET_PROTOCOL_INFO', 0x03: 'RET_CAPABILITY', 0x05: 'RET_DEVICE_INFO',
+  0x07: 'RET_SUPPORT_FUNCTION', 0x13: 'RET_STATUS', 0x15: 'NTFY_STATUS',
+  0x23: 'RET_POWER_STATUS', 0x25: 'NTFY_POWER_STATUS', 0x27: 'RET_POWER_PARAM',
+  0x57: 'RET_EQEBB', 0x59: 'NTFY_EQEBB', 0x67: 'RET_NCASM', 0x69: 'NTFY_NCASM',
+  0xe7: 'RET_AUDIO', 0xf7: 'RET_SYSTEM', 0xfb: 'RET_SYSTEM_EXT',
+};
+
+const BATTERY_TYPES = { 0x00: 'single', 0x01: 'dual', 0x02: 'case', 0x09: 'dual+thd' };
+const BATTERY_STATUS = {
+  0x00: 'not charging', 0x01: 'CHARGING', 0x02: 'unknown', 0x03: 'CHARGED',
+};
+const statusName = (v) => BATTERY_STATUS[v] ?? `status 0x${v.toString(16)}`;
+
+function interpret(payload) {
+  if (payload.length === 0) return '';
+
+  // RET_POWER_STATUS: [0x23, batteryType, ...levels/status]
+  if (payload[0] === 0x23 && payload.length >= 3) {
+    const type = BATTERY_TYPES[payload[1]] ?? `type 0x${payload[1].toString(16)}`;
+    if (payload[1] === 0x01 && payload.length >= 6) {
+      return `  -> battery (${type}): ` +
+             `LEFT ${payload[2]}% [${statusName(payload[3])}]  ` +
+             `RIGHT ${payload[4]}% [${statusName(payload[5])}]`;
+    }
+    return `  -> battery (${type}): ${payload[2]}% [${statusName(payload[3])}]`;
+  }
+
+  // RET_DEVICE_INFO. Most value types are [0x05, type, length, ...bytes], but
+  // 0x03 is not: it carries two fixed fields, series then colour, with no
+  // length. Observed: 05 03 00 01 on a black WF-C500.
+  if (payload[0] === 0x05 && payload.length > 2) {
+    if (payload[1] === 0x03) {
+      return `  -> series 0x${payload[2].toString(16).padStart(2, '0')}, ` +
+             `colour 0x${payload[3]?.toString(16).padStart(2, '0') ?? '??'}`;
+    }
+    const kinds = { 0x00: 'fixed', 0x01: 'model', 0x02: 'firmware' };
+    const kind = kinds[payload[1]] ?? `type 0x${payload[1].toString(16)}`;
+    const declared = payload[2];
+    const body = payload.slice(3, 3 + declared);
+    const text = new TextDecoder().decode(body).replace(/\0+$/, '');
+    const printable = body.length > 0 && /^[\x20-\x7e]+$/.test(text);
+    const lengthNote = body.length === declared ? '' : `  [declared ${declared}, got ${body.length}]`;
+    return `  -> ${kind}: ` +
+           (printable ? `"${text}"` : `${hex(body)} (${body.length} byte(s))`) + lengthNote;
+  }
+
+  if (payload[0] === 0x07) return '  -> supported-function table (decode later)';
+  return '';
+}
+
+async function write(bytes, label) {
+  if (!writer) { log('not connected', 'err'); return; }
+  log(`TX ${hex(bytes)}${label ? `   ${label}` : ''}`, 'tx');
+  await writer.write(bytes);
+}
+
+/** The device stops talking if data frames are not acknowledged. */
+async function sendAck(receivedSeq) {
+  await write(buildFrame(DATA_ACK, receivedSeq ? 0 : 1, []), '(ack)');
+}
+
+async function sendPayload(payload) {
+  const frame = buildFrame(DATA_MDR, seq, payload);
+  seq = seq ? 0 : 1;
+  await write(frame, `payload ${hex(Uint8Array.from(payload))}`);
+}
+
+function handleFrame(frame) {
+  const kind = { [DATA_ACK]: 'ACK', [DATA_MDR]: 'DATA', [DATA_MDR2]: 'DATA2' }[frame.dataType]
+    ?? `0x${frame.dataType.toString(16)}`;
+  const name = frame.payload.length ? (CMD_NAMES[frame.payload[0]] ?? '') : '';
+
+  log(`RX ${kind}${name ? `/${name}` : ''} seq=${frame.seq} ` +
+      `(${frame.payload.length}B) ${hex(frame.payload)}` +
+      `${frame.checksumOk ? '' : '  [BAD CHECKSUM]'}`,
+      frame.dataType === DATA_ACK ? 'ack' : 'rx');
+
+  const note = interpret(frame.payload);
+  if (note) log(note, 'ok');
+
+  if (frame.dataType !== DATA_ACK) void sendAck(frame.seq);
+}
+
+async function readLoop() {
+  try {
+    for (;;) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      if (value?.length) for (const frame of extractFrames(value)) handleFrame(frame);
+    }
+  } catch (e) {
+    log(`read loop ended: ${e.message}`, 'err');
+  }
+}
+
+document.getElementById('connect').addEventListener('click', async () => {
+  if (!('serial' in navigator)) {
+    log('navigator.serial is undefined — use Chrome.', 'err');
+    return;
+  }
+  try {
+    log(`requesting port (services ${MDR_V1}, ${MDR_V2})...`);
+    port = await navigator.serial.requestPort({
+      allowedBluetoothServiceClassIds: [MDR_V1, MDR_V2],
+      filters: [{ bluetoothServiceClassId: MDR_V1 }, { bluetoothServiceClassId: MDR_V2 }],
+    });
+    const info = port.getInfo();
+    log('port selected: ' + JSON.stringify(info), 'ok');
+    log(`protocol generation: ${String(info.bluetoothServiceClassId).toLowerCase() === MDR_V2 ? 'v2' : 'v1'}`);
+
+    await port.open({ baudRate: 115200 });
+    log('port opened.', 'ok');
+
+    reader = port.readable.getReader();
+    writer = port.writable.getWriter();
+    readLoopDone = readLoop();
+
+    document.getElementById('disconnect').disabled = false;
+    document.getElementById('send').disabled = false;
+    document.getElementById('sweepInfo').disabled = false;
+    document.getElementById('sweepStatus').disabled = false;
+    document.querySelectorAll('.cmd').forEach(b => (b.disabled = false));
+
+    // The device ACKs anything but only answers queries for functions it
+    // supports, so complete the handshake before asking for battery.
+    log('--- handshake, then battery (the success criterion) ---');
+    for (const [payload, label] of [
+      [[0x00, 0x00], 'protocol info'],
+      [[0x04, 0x02], 'firmware'],
+      [[0x06, 0x00], 'supported functions'],
+      [[0x22, 0x01], 'battery (dual)'],
+    ]) {
+      await sendPayload(payload);
+      await new Promise((resolve) => setTimeout(resolve, 600));
+    }
+    log('--- handshake done ---');
+  } catch (e) {
+    log(`${e.name}: ${e.message}`, 'err');
+    if (e.name === 'NotFoundError') {
+      log('No matching port offered. Either the picker was dismissed, or macOS/Chrome ' +
+          'is not enumerating the Sony MDR service. Check the WF-C500 is connected as audio.', 'err');
+    }
+  }
+});
+
+document.getElementById('disconnect').addEventListener('click', async () => {
+  try {
+    await reader?.cancel();
+    await readLoopDone;
+    reader?.releaseLock();
+    writer?.releaseLock();
+    await port?.close();
+    log('disconnected.', 'ok');
+  } catch (e) {
+    log(`disconnect error: ${e.message}`, 'err');
+  } finally {
+    reader = writer = port = null;
+    seq = 0;
+    rxBuffer = new Uint8Array(0);
+    document.getElementById('disconnect').disabled = true;
+    document.getElementById('send').disabled = true;
+    document.getElementById('sweepInfo').disabled = true;
+    document.getElementById('sweepStatus').disabled = true;
+    document.querySelectorAll('.cmd').forEach(b => (b.disabled = true));
+  }
+});
+
+document.getElementById('listPorts').addEventListener('click', async () => {
+  if (!('serial' in navigator)) { log('no Web Serial API', 'err'); return; }
+  const ports = await navigator.serial.getPorts();
+  log(`getPorts(): ${ports.length} previously-granted port(s)`);
+  ports.forEach((p, i) => log(`  [${i}] ${JSON.stringify(p.getInfo())}`));
+});
+
+/**
+ * Nothing documents which device-info value types exist beyond 0x01-0x03, and
+ * unsupported ones are silently ignored rather than refused — so ask.
+ */
+document.getElementById('sweepInfo').addEventListener('click', async () => {
+  log('--- sweeping CONNECT_GET_DEVICE_INFO value types 0x00-0x07 ---');
+  for (let valueType = 0; valueType <= 7; valueType += 1) {
+    await sendPayload([0x04, valueType]);
+    await new Promise((resolve) => setTimeout(resolve, 500));
+  }
+  log('--- sweep done; anything unanswered is unsupported ---');
+});
+
+/**
+ * COMMON_GET_STATUS is known to answer 0x02 (codec) and 0x03 (upscaling).
+ * Anything else it answers is an unlabelled status worth knowing about —
+ * per-earbud connection or wear would live here if it exists.
+ */
+document.getElementById('sweepStatus').addEventListener('click', async () => {
+  log('--- sweeping COMMON_GET_STATUS types 0x00-0x0F ---');
+  for (let type = 0; type <= 0x0f; type += 1) {
+    await sendPayload([0x12, type]);
+    await new Promise((resolve) => setTimeout(resolve, 500));
+  }
+  log('--- sweep done; anything unanswered is unsupported ---');
+});
+
+document.getElementById('clear').addEventListener('click', () => (logEl.textContent = ''));
+
+document.querySelectorAll('.cmd').forEach(btn => {
+  btn.addEventListener('click', () =>
+    sendPayload(btn.dataset.payload.split(/\s+/).map(h => parseInt(h, 16))));
+});
+
+document.getElementById('send').addEventListener('click', () => {
+  const bytes = document.getElementById('raw').value.trim().split(/[\s,]+/)
+    .filter(Boolean).map(h => parseInt(h, 16));
+  if (bytes.some(Number.isNaN)) { log('could not parse hex input', 'err'); return; }
+  sendPayload(bytes);
+});
+
+log(`Web Serial ${'serial' in navigator ? 'available' : 'NOT AVAILABLE'}. ` +
+    `${navigator.userAgent.match(/Chrome\/[\d.]+/)?.[0] ?? 'non-Chrome'}`);
+log('Click Connect, then pick "WF-C500" in the browser dialog.');
+</script>
+</body>
+</html>

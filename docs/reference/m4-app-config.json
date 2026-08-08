@@ -1,0 +1,561 @@
+{
+    "etag": "lq8VAf6NmkPBCKtsvZwOJuPkLiYghghCEHedoI6QC3k",
+    "key": "products/0005/0",
+    "locked": false,
+    "tags": {},
+    "last_modified": "2025-11-27T08:46:48.000Z",
+    "label": null,
+    "content_type": "application/json",
+    "value": {
+        "0.0.1": {
+            "connection_type_ios": {
+                "type": "BLE"
+            },
+            "connection_type_android": {
+                "type": "BLE"
+            },
+            "onboarding_features": {
+                "FirmwareNotifications": {},
+                "NoiseControl": {},
+                "TouchControls": {
+                    "config": {
+                        "touch_control_type": "tapHeadband"
+                    }
+                },
+                "Equalizer": {}
+            },
+            "feature_variant_configs": {
+                "ConnectionManagement": {
+                    "variant": 1,
+                    "config": {
+                        "multipointSwitchSupported": false
+                    }
+                },
+                "Battery": {
+                    "variant": 1
+                },
+                "FactoryReset": {
+                    "variant": 1
+                },
+                "FirmwareUpdate": {
+                    "variant": 1,
+                    "config": {
+                        "reconnectTimeoutSec": 20
+                    }
+                },
+                "ProductInfo": {
+                    "variant": 1
+                },
+                "AutoPowerOff": {
+                    "variant": 1
+                },
+                "Codec": {
+                    "variant": 1,
+                    "config": {}
+                },
+                "ComfortCalls": {
+                    "variant": 1
+                },
+                "Crashdumps": {
+                    "variant": 1,
+                    "config": {
+                        "targetFormat": "xed"
+                    }
+                },
+                "Equalizer": {
+                    "variant": 1,
+                    "config": {
+                        "configuration": {
+                            "bands_count": 3,
+                            "gain_limit": 2.0,
+                            "bypass_band3_and4": false
+                        },
+                        "supports_bass_boost": true,
+                        "supports_graphic_equalizer": true
+                    }
+                },
+                "NoiseControl": {
+                    "variant": 2,
+                    "config": {
+                        "supported_anti_wind_values": [
+                            "off",
+                            "max",
+                            "auto"
+                        ],
+                        "supported_modes": [
+                            "adaptive",
+                            "custom"
+                        ]
+                    }
+                },
+                "PodcastMode": {
+                    "variant": 1
+                },
+                "Sidetone": {
+                    "variant": 1,
+                    "config": {
+                        "steps": 5
+                    }
+                },
+                "SmartPause": {
+                    "variant": 1
+                },
+                "SoundZones": {
+                    "variant": 1
+                }
+            },
+            "optional_app_features": [
+                "FindHeadphones",
+                "Onboarding"
+            ]
+        },
+        "2.8.5": {
+            "feature_variant_configs": {
+                "OnHeadDetection": {
+                    "variant": 1,
+                    "config": {
+                        "raw_sensor_data_supported": false
+                    }
+                },
+                "ToneAndVoicePrompts": {
+                    "variant": 1
+                }
+            }
+        },
+        "2.12.0": {
+            "feature_variant_configs": {
+                "Telemetry": {
+                    "variant": 1
+                }
+            }
+        },
+        "2.13.18": {
+            "connection_type_ios": {
+                "type": "Classic"
+            },
+            "connection_type_android": {
+                "type": "Classic"
+            },
+            "feature_variant_configs": {
+                "AudioModes": {
+                    "variant": 1,
+                    "config": {
+                        "usageWithSoundProfileSupported": false,
+                        "productSupportedResolutions": [
+                            "highResolution"
+                        ],
+                        "support": [
+                            "aptX96kHz"
+                        ]
+                    }
+                },
+                "AutoAnswerCalls": {
+                    "variant": 1
+                },
+                "Codec": {
+                    "variant": 1,
+                    "config": {
+                        "supportedCodecs": {
+                            "standard": [
+                                {
+                                    "Codec": "sbc"
+                                },
+                                {
+                                    "Codec": "aac"
+                                }
+                            ],
+                            "advanced": [
+                                {
+                                    "Codec": "aptX"
+                                },
+                                {
+                                    "Codec": "aptXAdaptive"
+                                },
+                                {
+                                    "Codec": "aptXHD"
+                                }
+                            ],
+                            "lowLatency": null
+                        }
+                    }
+                },
+                "Equalizer": {
+                    "variant": 1,
+                    "config": {
+                        "configuration": {
+                            "bands_count": 5,
+                            "presets": {
+                                "rock": [
+                                    0.0,
+                                    2.0,
+                                    2.5,
+                                    1.5,
+                                    -2.0
+                                ],
+                                "pop": [
+                                    0.0,
+                                    -2.5,
+                                    0.0,
+                                    2.5,
+                                    0.0
+                                ],
+                                "dance": [
+                                    3.5,
+                                    2.0,
+                                    -1.5,
+                                    1.5,
+                                    3.0
+                                ],
+                                "hipHop": [
+                                    3.0,
+                                    1.5,
+                                    -1.5,
+                                    0.0,
+                                    -1.5
+                                ],
+                                "classical": [
+                                    -2.0,
+                                    -1.5,
+                                    0.0,
+                                    3.5,
+                                    4.0
+                                ],
+                                "movie": [
+                                    0.0,
+                                    0.0,
+                                    2.0,
+                                    2.0,
+                                    -2.0
+                                ],
+                                "jazz": [
+                                    -3.2,
+                                    0.0,
+                                    2.2,
+                                    2.2,
+                                    0.0
+                                ]
+                            },
+                            "band_configuration": [
+                                {
+                                    "label_in_hz": 63,
+                                    "frequency_in_hz": 0
+                                },
+                                {
+                                    "label_in_hz": 250,
+                                    "frequency_in_hz": 120
+                                },
+                                {
+                                    "label_in_hz": 1000,
+                                    "frequency_in_hz": 400
+                                },
+                                {
+                                    "label_in_hz": 4000,
+                                    "frequency_in_hz": 3000
+                                },
+                                {
+                                    "label_in_hz": 8000,
+                                    "frequency_in_hz": 6000
+                                }
+                            ],
+                            "bass_boost": [
+                                5.0,
+                                5.0,
+                                0.0,
+                                0.0,
+                                0.0
+                            ],
+                            "loudness_weights": [
+                                -26.683,
+                                -10.813,
+                                -4.773,
+                                -4.813,
+                                -5.993
+                            ],
+                            "max_headroom": [
+                                5.0,
+                                5.0,
+                                4.0,
+                                3.0,
+                                2.0
+                            ],
+                            "q_factor": [
+                                0.7071067811865475,
+                                0.7071067811865475,
+                                0.7071067811865475,
+                                0.7071067811865475
+                            ]
+                        },
+                        "supports_bass_boost": true,
+                        "supports_graphic_equalizer": true
+                    }
+                },
+                "OnHeadDetection": {
+                    "variant": 1,
+                    "config": {
+                        "raw_sensor_data_supported": true
+                    }
+                },
+                "SoundPersonalization": {
+                    "variant": 1,
+                    "config": {
+                        "usageWithHighResolutionSupported": false
+                    }
+                },
+                "TouchControls": {
+                    "variant": 1,
+                    "config": {
+                        "customizable_patterns": {},
+                        "generic_controls": {
+                            "18": {
+                                "0": 5
+                            },
+                            "17": {
+                                "0": 4
+                            },
+                            "13": {
+                                "0": 256
+                            },
+                            "14": {
+                                "0": 257
+                            }
+                        },
+                        "during_music_controls": {
+                            "1": {
+                                "0": 1
+                            },
+                            "15": {
+                                "0": 2
+                            },
+                            "16": {
+                                "0": 3
+                            },
+                            "19": {
+                                "0": 261
+                            },
+                            "20": {
+                                "0": 262
+                            },
+                            "2": {
+                                "0": 6
+                            }
+                        },
+                        "during_telephony_controls": {
+                            "1": {
+                                "0": 258
+                            },
+                            "15": {
+                                "0": 128
+                            },
+                            "16": {
+                                "0": 259
+                            },
+                            "2": {
+                                "0": 260
+                            },
+                            "7": {
+                                "0": 129
+                            }
+                        },
+                        "supportsDisableTouchHold": false,
+                        "supportsButtonActivityNotification": false,
+                        "onboardingValues": [
+                            "tap",
+                            "doubleTap",
+                            "slideUp",
+                            "slideRight",
+                            "spread"
+                        ],
+                        "productType": "headband",
+                        "keepsMmiLockedAfterReboot": false
+                    }
+                }
+            }
+        },
+        "2.13.32": {
+            "feature_variant_configs": {
+                "NoiseControl": {
+                    "variant": 2,
+                    "config": {
+                        "supported_anti_wind_values": [
+                            "off",
+                            "max",
+                            "auto"
+                        ],
+                        "supported_modes": [
+                            "adaptive",
+                            "custom",
+                            "off"
+                        ]
+                    }
+                },
+                "TouchControls": {
+                    "variant": 1,
+                    "config": {
+                        "customizable_patterns": {},
+                        "generic_controls": {
+                            "18": {
+                                "0": 5
+                            },
+                            "17": {
+                                "0": 4
+                            },
+                            "13": {
+                                "0": 256
+                            },
+                            "14": {
+                                "0": 257
+                            }
+                        },
+                        "during_music_controls": {
+                            "1": {
+                                "0": 1
+                            },
+                            "15": {
+                                "0": 2
+                            },
+                            "16": {
+                                "0": 3
+                            },
+                            "19": {
+                                "0": 261
+                            },
+                            "20": {
+                                "0": 262
+                            },
+                            "2": {
+                                "0": 6
+                            }
+                        },
+                        "during_telephony_controls": {
+                            "1": {
+                                "0": 258
+                            },
+                            "15": {
+                                "0": 128
+                            },
+                            "16": {
+                                "0": 259
+                            },
+                            "2": {
+                                "0": 260
+                            },
+                            "7": {
+                                "0": 129
+                            }
+                        },
+                        "supportsDisableTouchHold": false,
+                        "supportsButtonActivityNotification": false,
+                        "onboardingValues": [
+                            "tap",
+                            "doubleTap",
+                            "slideUp",
+                            "slideRight",
+                            "spread"
+                        ],
+                        "productType": "headband",
+                        "keepsMmiLockedAfterReboot": true
+                    }
+                }
+            }
+        },
+        "3.29.0": {
+            "onboarding_features": {},
+            "feature_variant_configs": {
+                "ConnectionManagement": {
+                    "variant": 1,
+                    "config": {
+                        "multipointSwitchSupported": true
+                    }
+                },
+                "Equalizer": {
+                    "variant": 2,
+                    "config": {
+                        "configuration": {
+                            "geq_config": {
+                                "presets": {
+                                    "rock": [
+                                        0.0,
+                                        2.0,
+                                        2.5,
+                                        1.5,
+                                        -2.0
+                                    ],
+                                    "pop": [
+                                        0.0,
+                                        -2.5,
+                                        0.0,
+                                        2.5,
+                                        0.0
+                                    ],
+                                    "dance": [
+                                        3.5,
+                                        2.0,
+                                        -1.5,
+                                        1.5,
+                                        3.0
+                                    ],
+                                    "hipHop": [
+                                        3.0,
+                                        1.5,
+                                        -1.5,
+                                        0.0,
+                                        -1.5
+                                    ],
+                                    "classical": [
+                                        -2.0,
+                                        -1.5,
+                                        0.0,
+                                        3.5,
+                                        4.0
+                                    ],
+                                    "movie": [
+                                        0.0,
+                                        0.0,
+                                        2.0,
+                                        2.0,
+                                        -2.0
+                                    ],
+                                    "jazz": [
+                                        -3.2,
+                                        0.0,
+                                        2.2,
+                                        2.2,
+                                        0.0
+                                    ]
+                                },
+                                "band_configuration": [
+                                    {
+                                        "label_in_hz": 63,
+                                        "frequency_in_hz": 0
+                                    },
+                                    {
+                                        "label_in_hz": 250,
+                                        "frequency_in_hz": 120
+                                    },
+                                    {
+                                        "label_in_hz": 1000,
+                                        "frequency_in_hz": 400
+                                    },
+                                    {
+                                        "label_in_hz": 4000,
+                                        "frequency_in_hz": 3000
+                                    },
+                                    {
+                                        "label_in_hz": 8000,
+                                        "frequency_in_hz": 6000
+                                    }
+                                ],
+                                "min_range_in_db": null,
+                                "max_range_in_db": null
+                            },
+                            "peq_config": null
+                        },
+                        "supports_parametric_equalizer": false,
+                        "supports_graphic_equalizer": true,
+                        "supports_bass_boost": true
+                    }
+                }
+            }
+        }
+    }
+}

@@ -1,0 +1,260 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>M4 Web Serial Spike</title>
+<style>
+  :root { color-scheme: light dark; }
+  body { font: 14px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; margin: 0; padding: 24px; }
+  h1 { font-size: 18px; margin: 0 0 4px; }
+  .sub { opacity: .65; margin: 0 0 20px; }
+  button { font: inherit; padding: 6px 12px; margin: 0 6px 6px 0; cursor: pointer; }
+  button:disabled { opacity: .4; cursor: default; }
+  #log { white-space: pre-wrap; border: 1px solid currentColor; border-radius: 6px;
+         padding: 12px; height: 55vh; overflow: auto; margin-top: 16px; opacity: .95; }
+  .row { margin-bottom: 8px; }
+  input { font: inherit; padding: 5px 8px; width: 22em; }
+  .ok  { color: #0a0; font-weight: bold; }
+  .err { color: #d00; font-weight: bold; }
+  .tx  { color: #06c; }
+  .rx  { color: #806; }
+</style>
+</head>
+<body>
+
+<h1>MOMENTUM 4 — Web Serial transport spike</h1>
+<p class="sub">Milestone 0. Goal: confirm Chrome/macOS can open the M4's custom RFCOMM service
+and get a valid GAIA v3 response. Headphones must be powered on and connected as an audio device.</p>
+
+<div class="row">
+  <button id="connect">Connect</button>
+  <button id="disconnect" disabled>Disconnect</button>
+  <button id="listPorts">List granted ports</button>
+  <button id="clear">Clear log</button>
+</div>
+
+<div class="row">
+  <button class="cmd" data-vendor="0x0495" data-cmd="0x0603" disabled>Battery %</button>
+  <button class="cmd" data-vendor="0x0495" data-cmd="0x1206" disabled>Model ID</button>
+  <button class="cmd" data-vendor="0x0495" data-cmd="0x1202" disabled>Firmware</button>
+  <button class="cmd" data-vendor="0x0495" data-cmd="0x1A05" disabled>ANC status</button>
+  <button class="cmd" data-vendor="0x0495" data-cmd="0x1A01" disabled>ANC modes</button>
+  <button class="cmd" data-vendor="0x0495" data-cmd="0x1A03" disabled>Transparency level</button>
+</div>
+
+<div class="row">
+  <input id="raw" placeholder="raw hex frame, e.g. FF 03 00 00 04 95 06 03">
+  <button id="send" disabled>Send raw</button>
+</div>
+
+<div id="log"></div>
+
+<script type="module">
+// The M4's custom RFCOMM control service. Not in the Bluetooth SIG base UUID range,
+// so it must be passed explicitly to requestPort().
+const M4_SERVICE_UUID = 'a2129ff3-081b-4c45-8afe-469d9c4842ec';
+
+const FRAME_MARKER = 0xff;
+const FRAME_FLAGS  = 0x03;
+const VENDOR_SENNHEISER = 0x0495;
+const VENDOR_QUALCOMM   = 0x001d;
+
+const logEl = document.getElementById('log');
+let port = null;
+let reader = null;
+let writer = null;
+let readLoopDone = null;
+
+function log(msg, cls = '') {
+  const t = new Date().toISOString().slice(11, 23);
+  const line = document.createElement('div');
+  if (cls) line.className = cls;
+  line.textContent = `${t}  ${msg}`;
+  logEl.appendChild(line);
+  logEl.scrollTop = logEl.scrollHeight;
+}
+
+const hex = (bytes) => [...bytes].map(b => b.toString(16).padStart(2, '0').toUpperCase()).join(' ');
+
+function encodeFrame(vendor, command, payload = []) {
+  const body = Uint8Array.from(payload);
+  const frame = new Uint8Array(8 + body.length);
+  const dv = new DataView(frame.buffer);
+  frame[0] = FRAME_MARKER;
+  frame[1] = FRAME_FLAGS;
+  dv.setUint16(2, body.length, false);
+  dv.setUint16(4, vendor, false);
+  dv.setUint16(6, command, false);
+  frame.set(body, 8);
+  return frame;
+}
+
+// Frames can be split across reads, so buffer and only emit whole frames.
+function makeDecoder(onFrame) {
+  let buf = new Uint8Array(0);
+  return (chunk) => {
+    const next = new Uint8Array(buf.length + chunk.length);
+    next.set(buf, 0);
+    next.set(chunk, buf.length);
+    buf = next;
+
+    for (;;) {
+      if (buf.length < 8) return;
+      if (buf[0] !== FRAME_MARKER) {
+        // Resynchronise on the next plausible marker rather than discarding everything.
+        const idx = buf.indexOf(FRAME_MARKER, 1);
+        log(`desync: dropping ${idx === -1 ? buf.length : idx} byte(s)`, 'err');
+        buf = idx === -1 ? new Uint8Array(0) : buf.slice(idx);
+        continue;
+      }
+      const dv = new DataView(buf.buffer, buf.byteOffset, buf.byteLength);
+      const len = dv.getUint16(2, false);
+      if (buf.length < 8 + len) return; // wait for the rest
+      onFrame({
+        flags:   buf[1],
+        vendor:  dv.getUint16(4, false),
+        command: dv.getUint16(6, false),
+        payload: buf.slice(8, 8 + len),
+        raw:     buf.slice(0, 8 + len),
+      });
+      buf = buf.slice(8 + len);
+    }
+  };
+}
+
+function describe(command) {
+  // request id -> response id|0x0100, notification id|0x0080, error id|0x0180
+  if ((command & 0x0180) === 0x0180) return 'ERROR';
+  if ((command & 0x0180) === 0x0100) return 'response';
+  if ((command & 0x0180) === 0x0080) return 'NOTIFICATION';
+  return 'request';
+}
+
+function interpret(vendor, command, payload) {
+  if (vendor !== VENDOR_SENNHEISER) return '';
+  switch (command) {
+    case 0x0703: return `  -> battery: ${[...payload].join(', ')} %`;
+    case 0x1306: return `  -> model: "${new TextDecoder().decode(payload).replace(/\0+$/, '')}"`;
+    case 0x1302: return `  -> firmware bytes: ${[...payload].join('.')}`;
+    case 0x1B05: return `  -> ANC: ${payload[0] ? 'ON' : 'OFF'}`;
+    case 0x1B03: return `  -> transparency level: ${payload[0]}`;
+    case 0x1B01: {
+      const names = { 1: 'anti-wind', 2: 'comfort', 3: 'adaptive' };
+      const parts = [];
+      for (let i = 0; i + 1 < payload.length; i += 2) {
+        parts.push(`${names[payload[i]] ?? `mode${payload[i]}`}=${payload[i + 1]}`);
+      }
+      return `  -> ANC modes: ${parts.join(', ')}`;
+    }
+    default: return '';
+  }
+}
+
+const handleFrame = makeDecoder((f) => {
+  log(`RX ${hex(f.raw)}`, 'rx');
+  log(`   vendor=0x${f.vendor.toString(16).padStart(4, '0')} ` +
+      `cmd=0x${f.command.toString(16).padStart(4, '0').toUpperCase()} ` +
+      `(${describe(f.command)}) payloadLen=${f.payload.length}`);
+  const note = interpret(f.vendor, f.command, f.payload);
+  if (note) log(note, 'ok');
+});
+
+async function send(bytes) {
+  if (!writer) { log('not connected', 'err'); return; }
+  log(`TX ${hex(bytes)}`, 'tx');
+  await writer.write(bytes);
+}
+
+async function readLoop() {
+  try {
+    for (;;) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      if (value?.length) handleFrame(value);
+    }
+  } catch (e) {
+    log(`read loop ended: ${e.message}`, 'err');
+  }
+}
+
+document.getElementById('connect').addEventListener('click', async () => {
+  if (!('serial' in navigator)) {
+    log('navigator.serial is undefined — this browser has no Web Serial API. Use Chrome.', 'err');
+    return;
+  }
+  try {
+    log(`requesting port (service ${M4_SERVICE_UUID})...`);
+    port = await navigator.serial.requestPort({
+      allowedBluetoothServiceClassIds: [M4_SERVICE_UUID],
+      filters: [{ bluetoothServiceClassId: M4_SERVICE_UUID }],
+    });
+    log('port selected. info: ' + JSON.stringify(port.getInfo()), 'ok');
+
+    await port.open({ baudRate: 115200 });
+    log('port opened.', 'ok');
+
+    reader = port.readable.getReader();
+    writer = port.writable.getWriter();
+    readLoopDone = readLoop();
+
+    document.getElementById('disconnect').disabled = false;
+    document.getElementById('send').disabled = false;
+    document.querySelectorAll('.cmd').forEach(b => (b.disabled = false));
+
+    // The headline test: ask for battery level.
+    log('--- sending battery request (the milestone-0 success criterion) ---');
+    await send(encodeFrame(VENDOR_SENNHEISER, 0x0603));
+  } catch (e) {
+    log(`${e.name}: ${e.message}`, 'err');
+    if (e.name === 'NotFoundError') {
+      log('No matching port was offered. Either the picker was dismissed, or macOS/Chrome ' +
+          'is not enumerating the M4 RFCOMM service. Check the headphones are connected as audio.', 'err');
+    }
+  }
+});
+
+document.getElementById('disconnect').addEventListener('click', async () => {
+  try {
+    await reader?.cancel();
+    await readLoopDone;
+    reader?.releaseLock();
+    writer?.releaseLock();
+    await port?.close();
+    log('disconnected.', 'ok');
+  } catch (e) {
+    log(`disconnect error: ${e.message}`, 'err');
+  } finally {
+    reader = writer = port = null;
+    document.getElementById('disconnect').disabled = true;
+    document.getElementById('send').disabled = true;
+    document.querySelectorAll('.cmd').forEach(b => (b.disabled = true));
+  }
+});
+
+document.getElementById('listPorts').addEventListener('click', async () => {
+  if (!('serial' in navigator)) { log('no Web Serial API in this browser', 'err'); return; }
+  const ports = await navigator.serial.getPorts();
+  log(`getPorts(): ${ports.length} previously-granted port(s)`);
+  ports.forEach((p, i) => log(`  [${i}] ${JSON.stringify(p.getInfo())}`));
+});
+
+document.getElementById('clear').addEventListener('click', () => (logEl.textContent = ''));
+
+document.querySelectorAll('.cmd').forEach(btn => {
+  btn.addEventListener('click', () =>
+    send(encodeFrame(Number(btn.dataset.vendor), Number(btn.dataset.cmd))));
+});
+
+document.getElementById('send').addEventListener('click', () => {
+  const bytes = document.getElementById('raw').value.trim().split(/[\s,]+/)
+    .filter(Boolean).map(h => parseInt(h, 16));
+  if (bytes.some(Number.isNaN)) { log('could not parse hex input', 'err'); return; }
+  send(Uint8Array.from(bytes));
+});
+
+log(`Web Serial API ${'serial' in navigator ? 'available' : 'NOT AVAILABLE'}. ` +
+    `${navigator.userAgent.match(/Chrome\/[\d.]+/)?.[0] ?? 'non-Chrome browser'}`);
+log('Click Connect, then pick "MOMENTUM 4" in the browser dialog.');
+</script>
+</body>
+</html>
