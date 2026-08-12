@@ -12,6 +12,11 @@ dist
 dist-ssr
 *.local
 
+# Agent scratch: isolated worktrees and per-plan execution state. Both live
+# inside the repo and would otherwise show up as untracked in every checkout.
+.claude/worktrees/
+.superpowers/
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

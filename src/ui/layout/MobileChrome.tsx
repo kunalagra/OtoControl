@@ -1,5 +1,6 @@
 import { cn } from '@/lib/utils'
 import type { ActiveDevice, DeviceManager } from '@/device/manager'
+import { SENNHEISER_DRIVER } from '@/device/driver'
 import { DeviceImage } from '../device/DeviceImage'
 import type { Section } from '../sections/registry'
 import { summarise } from '../device/summary'
@@ -23,14 +24,14 @@ export function MobileHeader({
   return (
     <header className="bg-sidebar border-border sticky top-0 z-20 flex items-center gap-3 border-b px-4 py-2.5 md:hidden">
       <DeviceImage
-        brand={active.brand}
+        brand={active.driver.brand}
         status={status}
         model={summary.model}
         hasDevice={summary.hasDevice}
         colourCode={summary.colourCode}
-        noiseLevel={active.brand === 'sennheiser' ? active.state.noise.transparencyLevel : null}
-        ancEnabled={active.brand === 'sennheiser' ? active.state.noise.ancEnabled : null}
-        wearState={active.brand === 'sennheiser' ? active.state.wearState : null}
+        noiseLevel={active.id === SENNHEISER_DRIVER.id ? active.state.noise.transparencyLevel : null}
+        ancEnabled={active.id === SENNHEISER_DRIVER.id ? active.state.noise.ancEnabled : null}
+        wearState={active.id === SENNHEISER_DRIVER.id ? active.state.wearState : null}
         className="w-20 shrink-0"
       />
 

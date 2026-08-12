@@ -1,0 +1,294 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>MOMENTUM 4 — feature discovery spike</title>
+<style>
+  :root { color-scheme: light dark; }
+  body { font: 14px/1.5 ui-sans-serif, system-ui, sans-serif; margin: 2rem auto; max-width: 60rem; padding: 0 1rem; }
+  h1 { font-size: 1.25rem; margin-bottom: .25rem; }
+  .sub { color: #888; margin-top: 0; }
+  button { font: inherit; padding: .35rem .8rem; border-radius: .4rem; border: 1px solid #8886; background: #8881; cursor: pointer; }
+  button:disabled { opacity: .45; cursor: default; }
+  input { font: 12px ui-monospace, monospace; padding: .35rem .5rem; border-radius: .4rem; border: 1px solid #8886; background: transparent; color: inherit; min-width: 24rem; }
+  .row { display: flex; gap: .5rem; flex-wrap: wrap; align-items: center; margin: .75rem 0; }
+  #log { height: 22rem; overflow: auto; border: 1px solid #8886; border-radius: .5rem; padding: .6rem; font: 11px/1.45 ui-monospace, monospace; background: #8881; }
+  .tx { color: #4a90d9; font-weight: 700; }
+  .rx { color: #2e9e5b; font-weight: 700; }
+  .warn { color: #c1440e; }
+  .dim { color: #888; }
+  table { border-collapse: collapse; font: 12px ui-monospace, monospace; margin-top: .75rem; }
+  td, th { border-bottom: 1px solid #8883; padding: .25rem .7rem .25rem 0; text-align: left; }
+  .hit { color: #2e9e5b; font-weight: 700; }
+</style>
+
+<h1>MOMENTUM 4 — feature discovery spike</h1>
+<p class="sub">
+  Answers one question: <strong>which Sennheiser GAIA features does this firmware
+  implement, and what command IDs do they push?</strong>
+  Standalone — no build step. Serve this folder over <code>localhost</code> and open it.
+</p>
+
+<div class="row">
+  <button id="connect">Connect</button>
+  <button id="scan" disabled>Scan feature IDs (0–31)</button>
+  <button id="clear">Clear log</button>
+  <button id="disconnect" disabled>Disconnect</button>
+</div>
+
+<div class="row">
+  <input id="raw" placeholder="FF 03 00 01 04 95 00 07 06" spellcheck="false">
+  <button id="send" disabled>Send raw</button>
+</div>
+
+<p class="sub" id="status">Not connected.</p>
+
+<div id="results"></div>
+<div id="log"></div>
+
+<script type="module">
+const SERVICE = 'a2129ff3-081b-4c45-8afe-469d9c4842ec'  // M4 control service
+const SENNHEISER = 0x0495
+const REGISTER_NOTIFICATION = 0x0007
+
+/**
+ * Command IDs this page refuses to send, mirroring src/gaia/unsafe.ts.
+ *
+ * This is not belt-and-braces. Sweeping 0x16xx on real hardware executed
+ * MMI_SetDefaultConfig (0x1604) — it takes no arguments, so a zero-payload
+ * probe is a *valid invocation*, not a rejected read — and reset the
+ * headphones' touch-control assignments. Any command needing no arguments is
+ * indistinguishable from a getter to a prober, so it has to be named.
+ */
+const BLOCKED = [
+  [SENNHEISER, 0x0040, 0x0040, 'factory reset'],
+  [SENNHEISER, 0x0200, 0x02ff, 'firmware upgrade'],
+  [SENNHEISER, 0x1405, 0x1406, 'deletes paired devices'],
+  [SENNHEISER, 0x1604, 0x1604, 'resets the touch controls'],
+  [0x001d, 0x0804, 0x0804, 'erases device logs'],
+  [0x001d, 0x0c00, 0x0cff, 'firmware upgrade'],
+]
+
+const blockedReason = (vendor, command) =>
+  BLOCKED.find(([v, from, to]) => v === vendor && command >= from && command <= to)?.[3]
+
+// --- framing ---------------------------------------------------------------
+
+const encode = (vendor, command, payload = []) => {
+  const out = new Uint8Array(8 + payload.length)
+  const view = new DataView(out.buffer)
+  out[0] = 0xff
+  out[1] = 0x03
+  view.setUint16(2, payload.length, false)
+  view.setUint16(4, vendor, false)
+  view.setUint16(6, command, false)
+  out.set(payload, 8)
+  return out
+}
+
+const KIND = ['request', 'notification', 'response', 'error']
+
+/** GAIA v3 packs pdu = (feature << 9) | (type << 7) | index. */
+const describe = (command) => {
+  const feature = command >>> 9
+  const kind = KIND[(command >> 7) & 3]
+  const index = command & 0x7f
+  return `feature ${feature} · ${kind} · index ${index}`
+}
+
+const hex = (bytes) =>
+  [...bytes].map((b) => b.toString(16).padStart(2, '0').toUpperCase()).join(' ')
+
+// --- transport -------------------------------------------------------------
+
+let port = null
+let writer = null
+let buffer = new Uint8Array(0)
+/** Resolvers waiting on a reply, keyed by the request ID they expect back. */
+const pending = new Map()
+
+const log = (cls, text) => {
+  const el = document.getElementById('log')
+  const line = document.createElement('div')
+  if (cls) {
+    const tag = document.createElement('span')
+    tag.className = cls
+    tag.textContent = cls.toUpperCase().padEnd(5)
+    line.append(tag)
+  }
+  line.append(document.createTextNode(text))
+  el.append(line)
+  el.scrollTop = el.scrollHeight
+}
+
+const setStatus = (text) => (document.getElementById('status').textContent = text)
+
+function handleFrame(frame) {
+  const view = new DataView(frame.buffer, frame.byteOffset, frame.byteLength)
+  const command = view.getUint16(6, false)
+  const payload = frame.slice(8)
+  log('rx', `${hex(frame)}   ${describe(command)}${payload.length ? ` · ${hex(payload)}` : ''}`)
+
+  // A response or error settles whatever asked for it; anything else is an
+  // unsolicited push, which is exactly what we are hunting for.
+  const requestId = command & ~0x0180
+  const waiter = pending.get(requestId)
+  if (waiter) {
+    pending.delete(requestId)
+    waiter({ command, payload })
+  }
+}
+
+function feed(chunk) {
+  const merged = new Uint8Array(buffer.length + chunk.length)
+  merged.set(buffer, 0)
+  merged.set(chunk, buffer.length)
+  buffer = merged
+  for (;;) {
+    if (buffer.length < 8) break
+    if (buffer[0] !== 0xff) {
+      const next = buffer.indexOf(0xff, 1)
+      log('warn', `discarded ${next === -1 ? buffer.length : next} unaligned byte(s)`)
+      buffer = next === -1 ? new Uint8Array(0) : buffer.slice(next)
+      continue
+    }
+    const length = new DataView(buffer.buffer, buffer.byteOffset, buffer.byteLength).getUint16(2, false)
+    if (buffer.length < 8 + length) break
+    handleFrame(buffer.slice(0, 8 + length))
+    buffer = buffer.slice(8 + length)
+  }
+}
+
+async function readLoop() {
+  const reader = port.readable.getReader()
+  try {
+    for (;;) {
+      const { value, done } = await reader.read()
+      if (done) break
+      if (value) feed(value)
+    }
+  } catch (error) {
+    log('warn', `read stopped: ${error.message}`)
+  } finally {
+    reader.releaseLock()
+  }
+}
+
+/** Sends a frame and waits for its reply, or times out. */
+function request(vendor, command, payload = [], timeoutMs = 1500) {
+  const reason = blockedReason(vendor, command)
+  if (reason) return Promise.reject(new Error(`refusing to send: ${reason}`))
+
+  const frame = encode(vendor, command, payload)
+  log('tx', `${hex(frame)}   ${describe(command)}${payload.length ? ` · ${hex(Uint8Array.from(payload))}` : ''}`)
+
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      pending.delete(command)
+      reject(new Error('timeout'))
+    }, timeoutMs)
+    pending.set(command, (reply) => {
+      clearTimeout(timer)
+      resolve(reply)
+    })
+    writer.write(frame).catch(reject)
+  })
+}
+
+// --- feature scan ----------------------------------------------------------
+
+/**
+ * Asks the device to register notifications for each feature ID in turn.
+ *
+ * Registration is non-destructive — it only asks for pushes — so this is a
+ * safe way to enumerate features, unlike probing command IDs blind. A reply of
+ * 0x0107 means the feature exists; 0x0187 means the ID was rejected.
+ */
+async function scanFeatures() {
+  const rows = []
+  for (let id = 0; id < 32; id += 1) {
+    let outcome
+    try {
+      const { command, payload } = await request(SENNHEISER, REGISTER_NOTIFICATION, [id])
+      const kind = (command >> 7) & 3
+      outcome = kind === 3
+        ? `rejected (status 0x${(payload[0] ?? 0).toString(16)})`
+        : 'EXISTS'
+    } catch (error) {
+      outcome = error.message === 'timeout' ? 'no reply' : `error: ${error.message}`
+    }
+    rows.push({ id, outcome, block: `0x${((id << 9) >>> 0).toString(16).padStart(4, '0').toUpperCase()}` })
+    render(rows)
+  }
+  log('', `scan complete — ${rows.filter((r) => r.outcome === 'EXISTS').length} feature(s) registered`)
+  log('', 'Now change a setting in the phone app and watch for an unsolicited RX frame.')
+}
+
+function render(rows) {
+  const table = rows
+    .map(
+      (r) =>
+        `<tr><td>${r.id}</td><td>${r.block}</td><td class="${r.outcome === 'EXISTS' ? 'hit' : 'dim'}">${r.outcome}</td></tr>`,
+    )
+    .join('')
+  document.getElementById('results').innerHTML =
+    `<table><tr><th>feature</th><th>command block</th><th>register</th></tr>${table}</table>`
+}
+
+// --- wiring ----------------------------------------------------------------
+
+document.getElementById('connect').onclick = async () => {
+  if (!('serial' in navigator)) return setStatus('Web Serial is not available in this browser.')
+  try {
+    port = await navigator.serial.requestPort({
+      allowedBluetoothServiceClassIds: [SERVICE],
+      filters: [{ bluetoothServiceClassId: SERVICE }],
+    })
+    await port.open({ baudRate: 9600 })
+    writer = port.writable.getWriter()
+    void readLoop()
+    setStatus('Connected. Scan feature IDs, or send a raw frame.')
+    for (const id of ['scan', 'send', 'disconnect']) document.getElementById(id).disabled = false
+    document.getElementById('connect').disabled = true
+  } catch (error) {
+    setStatus(`Could not connect: ${error.message}`)
+  }
+}
+
+document.getElementById('scan').onclick = async () => {
+  document.getElementById('scan').disabled = true
+  try {
+    await scanFeatures()
+  } finally {
+    document.getElementById('scan').disabled = false
+  }
+}
+
+document.getElementById('send').onclick = async () => {
+  const bytes = document.getElementById('raw').value.trim().split(/[\s,]+/).filter(Boolean).map((h) => parseInt(h, 16))
+  if (!bytes.length || bytes.some((b) => Number.isNaN(b) || b < 0 || b > 255)) {
+    return setStatus('Enter whitespace-separated hex bytes.')
+  }
+  const frame = Uint8Array.from(bytes)
+  if (frame.length >= 8) {
+    const view = new DataView(frame.buffer)
+    const reason = blockedReason(view.getUint16(4, false), view.getUint16(6, false))
+    if (reason) return setStatus(`Refusing to send: ${reason}`)
+  }
+  log('tx', hex(frame))
+  await writer.write(frame)
+}
+
+document.getElementById('clear').onclick = () => (document.getElementById('log').innerHTML = '')
+
+document.getElementById('disconnect').onclick = async () => {
+  try {
+    writer?.releaseLock()
+    await port?.close()
+  } catch (error) {
+    log('warn', error.message)
+  }
+  port = writer = null
+  setStatus('Disconnected.')
+  document.getElementById('connect').disabled = false
+  for (const id of ['scan', 'send', 'disconnect']) document.getElementById(id).disabled = true
+}
+</script>

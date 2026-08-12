@@ -7,8 +7,8 @@ import {
 } from '@remixicon/react'
 import type { RemixiconComponentType } from '@remixicon/react'
 
-import type { Brand } from '@/device/brand'
 import type { ActiveDevice } from '@/device/manager'
+import type { DriverSection, SectionComponent } from '@/device/driver'
 import { Debug } from './Debug'
 import { Devices } from './Devices'
 import { Noise } from './Noise'
@@ -18,62 +18,77 @@ import { SonyNoise } from './sony/SonyNoise'
 import { SonySound } from './sony/SonySound'
 import { SonySystem } from './sony/SonySystem'
 
-export interface Section {
-  id: string
-  label: string
+/**
+ * A section as the nav renders it: a driver's own `DriverSection` plus the
+ * icon that names it visually. The icon is attached here, in the UI layer,
+ * rather than carried on `DriverSection` itself — see the comment on
+ * `DriverSection` in `device/driver.ts` for why that split exists.
+ */
+export interface Section extends DriverSection {
   icon: RemixiconComponentType
-  /** Kept out of every nav; reached deliberately from another section. */
-  hidden?: boolean
 }
 
 /**
- * Sections per brand.
+ * One icon per section id, shared across every driver.
  *
- * Deliberately not normalised: the Momentum 4's noise control and the WF-C500's
- * capability set have little in common, and one section list pretending
- * otherwise would mean an empty Noise page on a device with no ANC.
+ * Keyed by id rather than duplicated per driver: "noise control" draws the
+ * same glyph whether it is GAIA's or MDR's, so a driver only ever needs to
+ * decide *which* ids it has, never which icon goes with one.
  */
-export const SENNHEISER_SECTIONS: Section[] = [
-  { id: 'noise', label: 'Noise control', icon: RiVolumeDownLine },
-  { id: 'sound', label: 'Sound', icon: RiEqualizerLine },
-  { id: 'devices', label: 'Connections', icon: RiLinksLine },
-  { id: 'system', label: 'System', icon: RiSettings3Line },
-  { id: 'debug', label: 'Debug console', icon: RiBugLine, hidden: true },
-]
+const SECTION_ICONS: Record<string, RemixiconComponentType> = {
+  noise: RiVolumeDownLine,
+  sound: RiEqualizerLine,
+  devices: RiLinksLine,
+  system: RiSettings3Line,
+  debug: RiBugLine,
+}
+
+const withIcon = (section: DriverSection): Section => ({
+  ...section,
+  // Every id a real driver declares has an entry above; the settings icon is
+  // a defensive fallback for one that somehow doesn't, not an expected path.
+  icon: SECTION_ICONS[section.id] ?? RiSettings3Line,
+})
 
 /**
- * No debug section for Sony yet: the console decodes GAIA frames and sweeps
- * GAIA command IDs, neither of which applies to MDR. `spike/sony.html` covers
- * Sony debugging until there is an MDR equivalent.
- */
-export const SONY_SECTIONS: Section[] = [
-  { id: 'noise', label: 'Noise control', icon: RiVolumeDownLine },
-  { id: 'sound', label: 'Sound', icon: RiEqualizerLine },
-  { id: 'system', label: 'System', icon: RiSettings3Line },
-]
-
-export const sectionsFor = (brand: Brand): Section[] =>
-  brand === 'sony' ? SONY_SECTIONS : SENNHEISER_SECTIONS
-
-/**
- * The sections a *particular* device should show.
+ * The sections a *particular* device should show, in nav order.
  *
- * `sectionsFor` answers "what can this brand have"; this answers "what does
- * this unit actually have". The WF-C500 and the WH-1000XM5 are both Sony, but
- * only one of them has noise control, and a tab that opens onto "this device
- * reports no noise control" is worse than no tab.
+ * Goes through `active.driver` rather than switching on a brand: the driver
+ * already knows its own section list and, for Sony, the one rule that gates
+ * noise control on capabilities read from the device (see `SONY_DRIVER` in
+ * `device/driver.ts`). This function used to restate that rule itself, with
+ * a "keep in sync" comment tying it to the driver's copy; now there is only
+ * one copy, so there is nothing left to drift.
+ *
+ * `active.driver`, `active.device` and `active.state` are correlated by
+ * construction — every real `ActiveDevice` pairs a driver with its own
+ * device and state — but the union that is `ActiveDevice` carries no
+ * discriminant TypeScript can use to see that once `driver` and `state` are
+ * read as separate expressions. The local widening below is how that gets
+ * past the type checker; it mirrors the one cast `DRIVERS` itself needs in
+ * `driver.ts`, for the same reason, and costs nothing at this call site
+ * because the correlation always genuinely holds.
  */
 export function sectionsForDevice(active: ActiveDevice): Section[] {
-  const sections = sectionsFor(active.brand)
-  if (active.brand !== 'sony') return sections
-  // Before connecting there is no capability table, so keep the tab rather
-  // than hiding a section that is about to appear.
-  const known = active.state.capabilities.size > 0
-  const hasNoise = !known || active.state.noiseVariant !== null
-  return hasNoise ? sections : sections.filter((section) => section.id !== 'noise')
+  // Only `sections` itself is widened, not the whole driver: interface
+  // methods (this shorthand syntax) are checked bivariantly, so narrowing the
+  // cast to just this one method is what keeps the widening sound for the
+  // argument below, without also having to answer for `components`, whose
+  // function-valued entries are checked contravariantly and would reject a
+  // same-style widening (see `componentFor`, which erases through `unknown`
+  // instead for exactly that reason).
+  const driver: { sections(state: unknown): readonly DriverSection[] } = active.driver
+  return driver.sections(active.state).map(withIcon)
 }
 
-export const defaultSectionFor = (brand: Brand): string => sectionsFor(brand)[0].id
+/** The component for one of `active`'s own sections, or undefined for an unknown id. */
+export function componentFor(
+  active: ActiveDevice,
+  sectionId: string,
+): SectionComponent<unknown, unknown> | undefined {
+  const components: Record<string, unknown> = active.driver.components
+  return components[sectionId] as SectionComponent<unknown, unknown> | undefined
+}
 
 export const SENNHEISER_COMPONENTS = {
   noise: Noise,

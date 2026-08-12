@@ -57,13 +57,13 @@ import {
 } from '../mdr/settings';
 import type { Persistable, SnapshotPayload } from './persistence';
 import type { FrameListener } from '../mdr/client';
-import {
-  SerialTransport,
-  findGrantedPort,
-  isUnreachable,
-  isWebSerialSupported,
-  requestPort,
-} from './transport';
+import { isUnreachable, isWebSerialSupported, openSerialTransport, requestPort } from './transport';
+import type { TransportOpener } from './transport';
+import { DeviceSession } from './session';
+import type { SessionHooks } from './session';
+import { StateStore } from './stateStore';
+import type { StateStoreHooks } from './stateStore';
+import { describeError } from './errors';
 import type { ConnectionStatus } from './state';
 
 export interface SonyInfo {
@@ -172,65 +172,89 @@ export const applyDurable = (payload: object): Partial<SonyState> => {
 
 type Listener = (state: SonyState) => void;
 
+/** The store's driver-specific half: how this brand decides "unread"/"connected" and captures/applies its durable slice. */
+const stateStoreHooks: StateStoreHooks<SonyState> = {
+  isUnread: (state) => state.info.model === null,
+  isConnected: (state) => state.status === 'connected',
+  capture: captureDurable,
+  apply: (_state, payload) => applyDurable(payload),
+};
+
 export class SonyDevice implements Persistable {
-  #state: SonyState = {
-    ...initialSonyState,
-    status: isWebSerialSupported() ? 'disconnected' : 'unsupported',
-  };
-  #listeners = new Set<Listener>();
-  #frameListeners = new Set<FrameListener>();
-  #transport: SerialTransport | null = null;
-  #client: MdrClient | null = null;
+  readonly #store: StateStore<SonyState>;
+  readonly #session: DeviceSession<MdrClient>;
   #refreshing = false;
 
+  constructor(openTransport: TransportOpener = openSerialTransport) {
+    this.#store = new StateStore(
+      { ...initialSonyState, status: isWebSerialSupported() ? 'disconnected' : 'unsupported' },
+      stateStoreHooks,
+    );
+
+    const hooks: SessionHooks<MdrClient> = {
+      createClient: (transport) => new MdrClient(transport),
+      handleData: (client, chunk) => client.handleData(chunk),
+      wire: (client) => {
+        client.onNotification((frame) => this.#onNotification(frame));
+      },
+      onStatus: (status, error) => this.#patch({ status, error }),
+      onDrop: (reason) =>
+        this.#patch({
+          ...initialSonyState,
+          status: 'disconnected',
+          error: reason ? describeError(reason) : null,
+        }),
+      abort: (client, reason) => client.abort(reason),
+    };
+    this.#session = new DeviceSession(openTransport, hooks);
+  }
+
   get state(): SonyState {
-    return this.#state;
+    return this.#store.state;
   }
 
   // --- Persistable --------------------------------------------------------
 
   readonly snapshotVersion = SONY_SNAPSHOT_VERSION;
 
+  /** Durable settings as plain JSON, or null when there is nothing to save yet. */
   snapshot(): SnapshotPayload | null {
-    // Nothing has been read yet, so there is nothing worth remembering.
-    if (this.#state.info.model === null) return null;
-    return captureDurable(this.#state);
+    return this.#store.snapshot();
   }
 
   /**
    * Seeds last-known settings so the UI has something real to show before the
-   * earbuds are reachable. Ignored once connected — the device wins.
+   * earbuds are reachable. See `StateStore.restore` for why this is ignored
+   * once connected — the device wins.
    */
   restore(payload: SnapshotPayload): void {
-    if (this.#state.status === 'connected') return;
-    this.#patch(applyDurable(payload));
+    this.#store.restore(payload);
   }
 
   subscribe(listener: Listener): () => void {
-    this.#listeners.add(listener);
-    return () => this.#listeners.delete(listener);
+    return this.#store.subscribe(listener);
   }
 
+  /** Frame-level tap for the debug console. Survives reconnects. */
   onFrame(listener: FrameListener): () => void {
-    this.#frameListeners.add(listener);
-    return () => this.#frameListeners.delete(listener);
+    return this.#session.attach((client) => client.onFrame(listener));
   }
 
   supports(fn: number): boolean {
-    return this.#state.capabilities.has(fn);
+    return this.#store.state.capabilities.has(fn);
   }
 
   #patch(partial: Partial<SonyState>): void {
-    this.#state = { ...this.#state, ...partial };
-    for (const listener of this.#listeners) listener(this.#state);
+    this.#store.patch(partial);
   }
 
   async autoConnect(): Promise<boolean> {
     if (!isWebSerialSupported()) return false;
-    const granted = await findGrantedPort();
-    if (!granted || granted.service.brand !== 'sony') return false;
+    // Only reconnect silently to a device this class can actually drive.
+    const port = await DeviceSession.grantedPortFor('sony');
+    if (!port) return false;
     try {
-      await this.#connectTo(granted.port);
+      await this.#connectTo(port);
       return true;
     } catch {
       this.#patch({ status: 'disconnected' });
@@ -264,21 +288,12 @@ export class SonyDevice implements Persistable {
   }
 
   async #connectTo(port: SerialPort): Promise<void> {
-    this.#patch({ status: 'connecting', error: null });
-
-    const transport = await SerialTransport.open(port, {
-      onData: (chunk) => this.#client?.handleData(chunk),
-      onClose: (reason) => this.#handleDrop(reason),
+    // Unlike Sennheiser, there is no subscribe step — Sony's post-connect
+    // sequence is just the poll. That difference is exactly what the session
+    // does not need to know about.
+    await this.#session.connectTo(port, async () => {
+      await this.refresh();
     });
-    const client = new MdrClient(transport);
-    for (const listener of this.#frameListeners) client.onFrame(listener);
-    client.onNotification((frame) => this.#onNotification(frame));
-
-    this.#transport = transport;
-    this.#client = client;
-    this.#patch({ status: 'connected', error: null });
-
-    await this.refresh();
   }
 
   /**
@@ -338,7 +353,7 @@ export class SonyDevice implements Persistable {
    * exists.
    */
   async refresh(): Promise<void> {
-    const client = this.#client;
+    const client = this.#session.client;
     if (!client || this.#refreshing) return;
     this.#refreshing = true;
     try {
@@ -364,17 +379,17 @@ export class SonyDevice implements Persistable {
 
     await read('model name', async () => {
       const payload = await client.request(Command.GetDeviceInfo, DeviceInfoType.ModelName);
-      this.#patch({ info: { ...this.#state.info, model: decodeDeviceInfoText(payload) } });
+      this.#patch({ info: { ...this.#store.state.info, model: decodeDeviceInfoText(payload) } });
     });
 
     await read('firmware', async () => {
       const payload = await client.request(Command.GetDeviceInfo, DeviceInfoType.FirmwareVersion);
-      this.#patch({ info: { ...this.#state.info, firmware: decodeDeviceInfoText(payload) } });
+      this.#patch({ info: { ...this.#store.state.info, firmware: decodeDeviceInfoText(payload) } });
     });
 
     await read('series and colour', async () => {
       const payload = await client.request(Command.GetDeviceInfo, DeviceInfoType.SeriesAndColour);
-      this.#patch({ info: { ...this.#state.info, colour: decodeSeriesAndColour(payload) } });
+      this.#patch({ info: { ...this.#store.state.info, colour: decodeSeriesAndColour(payload) } });
     });
 
     await read('supported functions', async () => {
@@ -384,7 +399,7 @@ export class SonyDevice implements Persistable {
   }
 
   async #readFeatures(client: MdrClient): Promise<void> {
-    const has = (fn: number) => this.#state.capabilities.has(fn);
+    const has = (fn: number) => this.#store.state.capabilities.has(fn);
 
     const read = async (label: string, run: () => Promise<void>) => {
       try {
@@ -472,7 +487,7 @@ export class SonyDevice implements Persistable {
 
     // Which NC/ASM variant this model speaks comes from its own capability
     // table, never from the model name — see `src/mdr/noise.ts`.
-    const variant = inquiryTypeFor(this.#state.capabilities);
+    const variant = inquiryTypeFor(this.#store.state.capabilities);
     this.#patch({ noiseVariant: variant });
     if (supportsNoiseVariant(variant)) {
       await read('noise control', async () => {
@@ -491,8 +506,8 @@ export class SonyDevice implements Persistable {
    * a "custom" id, so a device that has no custom slot still accepts the edit.
    */
   async setEqGains(gains: number[]): Promise<void> {
-    const client = this.#client;
-    const previous = this.#state.eq;
+    const client = this.#session.client;
+    const previous = this.#store.state.eq;
     if (!client || !previous) return;
 
     this.#patch({ eq: { ...previous, gains } });
@@ -507,8 +522,8 @@ export class SonyDevice implements Persistable {
   }
 
   async setEqPreset(preset: number): Promise<void> {
-    const client = this.#client;
-    const previous = this.#state.eq;
+    const client = this.#session.client;
+    const previous = this.#store.state.eq;
     if (!client || !previous) return;
 
     this.#patch({ eq: { ...previous, preset } });
@@ -530,8 +545,8 @@ export class SonyDevice implements Persistable {
    * level still has to restate the mode, and vice versa.
    */
   async setNoise(patch: Partial<NoiseSettings>): Promise<void> {
-    const client = this.#client;
-    const previous = this.#state.noise;
+    const client = this.#session.client;
+    const previous = this.#store.state.noise;
     if (!client || !previous) return;
 
     const next = { ...previous, ...patch };
@@ -547,8 +562,8 @@ export class SonyDevice implements Persistable {
 
   /** Sets the idle timeout before the device switches itself off. */
   async setAutoPowerOff(value: number): Promise<void> {
-    const client = this.#client;
-    const previous = this.#state.autoPowerOff;
+    const client = this.#session.client;
+    const previous = this.#store.state.autoPowerOff;
     if (!client) return;
 
     this.#patch({ autoPowerOff: value });
@@ -561,8 +576,8 @@ export class SonyDevice implements Persistable {
 
   /** Pause when the headphones come off; resume when they go back on. */
   async setPauseOnRemoval(on: boolean): Promise<void> {
-    const client = this.#client;
-    const previous = this.#state.pauseOnRemoval;
+    const client = this.#session.client;
+    const previous = this.#store.state.pauseOnRemoval;
     if (!client) return;
 
     this.#patch({ pauseOnRemoval: on });
@@ -580,10 +595,10 @@ export class SonyDevice implements Persistable {
    * indicator, which is how the official app does it — the two are asymmetric.
    */
   async setUpscaling(enabled: boolean): Promise<void> {
-    const client = this.#client;
+    const client = this.#session.client;
     if (!client) return;
 
-    const previous = this.#state.upscaling;
+    const previous = this.#store.state.upscaling;
     this.#patch({ upscaling: enabled });
     try {
       await client.write(encodeUpscaling(enabled));
@@ -598,10 +613,10 @@ export class SonyDevice implements Persistable {
   }
 
   async setConnectionMode(mode: number): Promise<void> {
-    const client = this.#client;
+    const client = this.#session.client;
     if (!client) return;
 
-    const previous = this.#state.connectionMode;
+    const previous = this.#store.state.connectionMode;
     this.#patch({ connectionMode: mode });
     try {
       await client.write(encodeConnectionMode(mode));
@@ -622,7 +637,7 @@ export class SonyDevice implements Persistable {
    * dropping is the only confirmation. The caller should expect a disconnect.
    */
   async powerOff(): Promise<void> {
-    const client = this.#client;
+    const client = this.#session.client;
     if (!client) return;
     try {
       await client.write(encodePowerOff());
@@ -643,36 +658,20 @@ export class SonyDevice implements Persistable {
   }
 
   async sendRaw(frame: Uint8Array): Promise<void> {
-    await this.#client?.sendRaw(frame);
+    await this.#session.client?.sendRaw(frame);
   }
 
   // --- teardown -----------------------------------------------------------
-
-  #handleDrop(reason?: Error): void {
-    this.#client?.abort(reason ?? new Error('connection lost'));
-    this.#transport = null;
-    this.#client = null;
-    this.#patch({
-      ...initialSonyState,
-      status: 'disconnected',
-      error: reason ? describeError(reason) : null,
-    });
-  }
+  //
+  // An unexpected drop is reported through the session's `onDrop` hook (see
+  // the constructor) rather than a method here — the session owns the
+  // transport and client, so it is the one that knows a drop happened.
+  // `disconnect()` is the one teardown path that starts on this side, since
+  // it is the device that decides to end the session.
 
   async disconnect(): Promise<void> {
-    const transport = this.#transport;
-    this.#client?.abort(new Error('disconnected'));
-    this.#transport = null;
-    this.#client = null;
+    const closed = this.#session.disconnect();
     this.#patch({ ...initialSonyState, status: 'disconnected' });
-    await transport?.close().catch(() => undefined);
+    await closed;
   }
-}
-
-function describeError(error: unknown): string {
-  if (error instanceof DOMException && error.name === 'NotFoundError') {
-    return 'No device was selected. Make sure it is powered on and connected as an audio device.';
-  }
-  if (error instanceof Error) return error.message;
-  return String(error);
 }

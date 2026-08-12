@@ -71,6 +71,14 @@ describe('unsupportedFeatures', () => {
     expect(unsupportedFeatures(m4)).toEqual([]);
   });
 
+  it('does not claim low latency, which this model never enables', () => {
+    // m4.json: "LowLatencyMode_MinFwVersion": "99.99.99".
+    const m4 = PROFILES.find((profile) => profile.id === 'momentum-4')!;
+    expect(m4.features).not.toContain(Feature.LowLatency);
+    expect(m4.features).toContain(Feature.ComfortCall);
+    expect(m4.features).toContain(Feature.BluetoothCompatibility);
+  });
+
   it('shows the one WF-C500 feature we never wrote', () => {
     // The device reports voice guidance and BudsLink declares it, but we have
     // no command for it. Declaring the hardware honestly is what surfaced it.

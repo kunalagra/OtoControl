@@ -28,8 +28,8 @@ export function DeviceSelect({ manager, active }: Props) {
   // The active entry is identified by brand, which is as precise as the port
   // information allows.
   const current =
-    available.find((entry) => entry.brand === active.brand)?.uuid ??
-    (active.brand === 'sennheiser' ? M4_SERVICE_UUID : available[0].uuid)
+    available.find((entry) => entry.brand === active.driver.brand)?.uuid ??
+    (active.driver.brand === 'sennheiser' ? M4_SERVICE_UUID : available[0].uuid)
 
   return (
     <Select

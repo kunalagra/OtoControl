@@ -520,6 +520,20 @@ export const disconnectPairedDevice = setter<number>(
   (index) => [index],
 );
 
+/**
+ * Forgets one entry. The vendor app sends this per index and has no
+ * "forget all" — `DeviceList_DeletePDL` (0x1406) is implemented by no shipping
+ * client and stays blocked in `unsafe.ts`.
+ *
+ * Deleting does not compact the list: the remaining entries keep their
+ * indices, so a re-read must tolerate holes.
+ */
+export const deletePairedDevice = setter<number>(
+  'deletePairedDevice',
+  0x1405,
+  (index) => [index],
+);
+
 // --- behaviour toggles ----------------------------------------------------
 
 export const getSmartPause = getter('getSmartPause', 0x080d, bool);
@@ -561,40 +575,6 @@ export const setAudioPromptMode = setter<number>(
   0x0801,
   (mode) => [mode],
 );
-
-/**
- * Sound mode — which processing the headphones apply.
- *
- * Not in m4.json; taken from BudsLink's `senhBudsConfig.js` (AUDIO_MODE) and
- * its `MomentumWireless4.js` enum. This is the app's "audio mode": the manual
- * equaliser only applies while the mode is `Equalizer`.
- */
-export const AudioMode = {
-  Off: 0x00,
-  Equalizer: 0x01,
-  Podcast: 0x02,
-  Personalized: 0x03,
-} as const;
-
-export type AudioModeId = (typeof AudioMode)[keyof typeof AudioMode];
-
-export const AUDIO_MODE_OPTIONS: Array<{
-  value: AudioModeId;
-  label: string;
-  hint: string;
-}> = [
-  { value: AudioMode.Off, label: 'Off', hint: 'No processing.' },
-  { value: AudioMode.Equalizer, label: 'Equalizer', hint: 'Use the bands below.' },
-  { value: AudioMode.Podcast, label: 'Podcast', hint: 'Tuned for speech.' },
-  {
-    value: AudioMode.Personalized,
-    label: 'Personalized',
-    hint: 'Your Sound Check profile, set in the phone app.',
-  },
-];
-
-export const getAudioMode = getter('getAudioMode', 0x0804, u8);
-export const setAudioMode = setter<number>('setAudioMode', 0x0803, (mode) => [mode]);
 
 /** Level 0–5, not a boolean. */
 export const SIDETONE_MAX = 5;

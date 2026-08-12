@@ -1,7 +1,7 @@
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { AUDIO_MODE_OPTIONS, AudioMode, EQ_PRESETS, eqBandLabel } from '@/gaia/commands'
-import { TOGGLES } from '@/device/state'
+import { EQ_PRESETS, eqBandLabel } from '@/gaia/commands'
+import { togglesFor } from '@/device/state'
 import { cn } from '@/lib/utils'
 import { Fader } from '../controls/Fader'
 import { ToggleRow } from '../controls/SettingRow'
@@ -16,56 +16,13 @@ function matchesPreset(gains: Array<number | undefined>, preset: number[]): bool
 export function Sound({ device, state }: SectionProps) {
   const { config, gains } = state.eq
   const disabled = state.status !== 'connected'
-  const soundToggles = TOGGLES.filter((toggle) => toggle.group === 'sound')
-  // The bands are still readable and settable in other modes, but inaudible.
-  const eqInactive = state.audioMode !== null && state.audioMode !== AudioMode.Equalizer
+  const soundToggles = togglesFor(state.info.model).filter((toggle) => toggle.group === 'sound')
 
   return (
     <div className="flex flex-col gap-4">
       <Card data-size="sm">
         <CardHeader>
-          <CardTitle>Sound mode</CardTitle>
-        </CardHeader>
-        <CardContent>
-          {state.audioMode === null ? (
-            <p className="text-muted-foreground text-sm">Not reported by this firmware.</p>
-          ) : (
-            <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-              {AUDIO_MODE_OPTIONS.map(({ value, label, hint }) => (
-                <button
-                  key={value}
-                  type="button"
-                  disabled={disabled}
-                  aria-pressed={state.audioMode === value}
-                  onClick={() => void device.setAudioMode(value)}
-                  className={cn(
-                    'flex flex-col gap-0.5 rounded-lg border px-2.5 py-2 text-left transition-colors',
-                    'focus-visible:ring-ring outline-none focus-visible:ring-2',
-                    'disabled:cursor-default disabled:opacity-50',
-                    state.audioMode === value
-                      ? 'border-primary bg-primary/10'
-                      : 'border-border hover:border-muted-foreground/40',
-                  )}
-                >
-                  <span className="text-sm font-medium">{label}</span>
-                  <span className="text-muted-foreground text-[11px] leading-tight">
-                    {hint}
-                  </span>
-                </button>
-              ))}
-            </div>
-          )}
-        </CardContent>
-      </Card>
-
-      <Card data-size="sm">
-        <CardHeader>
           <CardTitle>Equalizer</CardTitle>
-          {eqInactive && (
-            <p className="text-muted-foreground text-xs">
-              These bands only apply while the sound mode is Equalizer.
-            </p>
-          )}
         </CardHeader>
         <CardContent>
           {config === null ? (
@@ -119,20 +76,22 @@ export function Sound({ device, state }: SectionProps) {
         </CardContent>
       </Card>
 
-      <Card data-size="sm">
-        <CardContent className="flex flex-col">
-          {soundToggles.map(({ key, label, description }) => (
-            <ToggleRow
-              key={key}
-              label={label}
-              hint={description}
-              value={state.toggles[key]}
-              disabled={disabled}
-              onChange={(value) => void device.setToggle(key, value)}
-            />
-          ))}
-        </CardContent>
-      </Card>
+      {soundToggles.length > 0 && (
+        <Card data-size="sm">
+          <CardContent className="flex flex-col">
+            {soundToggles.map(({ key, label, description }) => (
+              <ToggleRow
+                key={key}
+                label={label}
+                hint={description}
+                value={state.toggles[key]}
+                disabled={disabled}
+                onChange={(value) => void device.setToggle(key, value)}
+              />
+            ))}
+          </CardContent>
+        </Card>
+      )}
     </div>
   )
 }

@@ -11,7 +11,6 @@ import {
   formatVersion,
   getAncEnabled,
   getAncModes,
-  getAudioMode,
   getAudioPromptMode,
   getBattery,
   getChargingStatus,
@@ -37,8 +36,8 @@ import {
   Timer,
   setAncEnabled,
   setAncMode,
-  setAudioMode,
   connectPairedDevice,
+  deletePairedDevice,
   disconnectPairedDevice,
   setEqBand,
   setSidetone,
@@ -52,13 +51,13 @@ import type { GaiaFrame } from '../gaia/frame';
 import { REGISTER_NOTIFICATION_COMMAND, SUBSCRIBED_FEATURES } from '../gaia/features';
 import { GaiaClient } from './client';
 import type { FrameListener, ProbeResult } from './client';
-import {
-  SerialTransport,
-  findGrantedPort,
-  isUnreachable,
-  isWebSerialSupported,
-  requestPort,
-} from './transport';
+import { isUnreachable, isWebSerialSupported, openSerialTransport, requestPort } from './transport';
+import type { TransportOpener } from './transport';
+import { DeviceSession } from './session';
+import type { SessionHooks } from './session';
+import { StateStore } from './stateStore';
+import type { StateStoreHooks } from './stateStore';
+import { describeError } from './errors';
 import type { Persistable, SnapshotPayload } from './persistence';
 import {
   SNAPSHOT_VERSION,
@@ -67,6 +66,8 @@ import {
   applyNotification,
   captureDurable,
   initialState,
+  removalBlockedReason,
+  togglesFor,
 } from './state';
 import type { DeviceState, ToggleKey } from './state';
 
@@ -78,6 +79,28 @@ const ANC_MODE_FIELDS: Record<AncModeId, keyof AncModes> = {
   [AncMode.Adaptive]: 'adaptive',
 };
 
+/**
+ * How long to wait before re-reading the list after a delete.
+ *
+ * The vendor app names this condition — "Device list is not available after
+ * device removal because of FW bug" — and ships an analytics event for it, so
+ * one failed read is expected rather than exceptional.
+ */
+const DELETE_REREAD_DELAY_MS = 500;
+
+/**
+ * How soon after asking to drop our own link a resulting transport close
+ * counts as that request's echo, rather than an unrelated, genuine loss.
+ *
+ * The ACK (or the rejection of a failed request) and the transport's close
+ * event are two separate async signals, so a boolean latch cannot tell "this
+ * close is the one I caused" from "the flag never got cleared" — see the
+ * fix history on `#intentionalDropAt`. Two seconds comfortably covers normal
+ * ACK-then-close latency while being far too short for a user to power off
+ * or walk out of range in response to a click they just made.
+ */
+const INTENTIONAL_DROP_GRACE_MS = 2000;
+
 /** Registering for notifications has no typed command; it takes a feature ID. */
 const registerNotification: Command<number, void> = {
   name: 'registerNotification',
@@ -87,74 +110,104 @@ const registerNotification: Command<number, void> = {
   decode: () => undefined,
 };
 
+/** The store's driver-specific half: how this brand decides "unread"/"connected" and captures/applies its durable slice. */
+const stateStoreHooks: StateStoreHooks<DeviceState> = {
+  isUnread: (state) => state.info.model === null,
+  isConnected: (state) => state.status === 'connected',
+  capture: captureDurable,
+  apply: applyDurable,
+};
+
 export class MomentumDevice implements Persistable {
-  #state: DeviceState = {
-    ...initialState,
-    status: isWebSerialSupported() ? 'disconnected' : 'unsupported',
-  };
-  #listeners = new Set<Listener>();
-  #frameListeners = new Set<FrameListener>();
-  #transport: SerialTransport | null = null;
-  #client: GaiaClient | null = null;
+  readonly #store: StateStore<DeviceState>;
+  readonly #session: DeviceSession<GaiaClient>;
   /** Guards against overlapping polls when refreshes are triggered rapidly. */
   #refreshing = false;
+  /**
+   * When we last asked to drop our own link, so the resulting transport close
+   * is reported as a clean disconnect rather than an error.
+   *
+   * A timestamp rather than a boolean: a boolean latch, once set, only clears
+   * on a path someone remembered to write, and the success path here did not
+   * — leaving a stray `true` that would misreport the *next*, genuine drop as
+   * intentional. Comparing against a grace window bounds the risk instead of
+   * depending on every call site clearing it correctly.
+   */
+  #intentionalDropAt = 0;
+
+  constructor(openTransport: TransportOpener = openSerialTransport) {
+    this.#store = new StateStore(
+      { ...initialState, status: isWebSerialSupported() ? 'disconnected' : 'unsupported' },
+      stateStoreHooks,
+    );
+
+    const hooks: SessionHooks<GaiaClient> = {
+      createClient: (transport) => new GaiaClient(transport),
+      handleData: (client, chunk) => client.handleData(chunk),
+      wire: (client) => {
+        client.onNotification((frame) => this.#onNotification(frame));
+      },
+      onStatus: (status, error) => this.#patch({ status, error }),
+      onDrop: (reason) => {
+        const intentional = Date.now() - this.#intentionalDropAt < INTENTIONAL_DROP_GRACE_MS;
+        this.#patch({
+          ...initialState,
+          status: 'disconnected',
+          error: intentional || !reason ? null : describeError(reason),
+        });
+      },
+      abort: (client, reason) => client.abort(reason),
+    };
+    this.#session = new DeviceSession(openTransport, hooks);
+  }
 
   get state(): DeviceState {
-    return this.#state;
+    return this.#store.state;
   }
 
   // --- Persistable --------------------------------------------------------
 
   readonly snapshotVersion = SNAPSHOT_VERSION;
 
+  /** Durable settings as plain JSON, or null when there is nothing to save yet. */
   snapshot(): SnapshotPayload | null {
-    // Nothing has been read yet, so there is nothing worth remembering.
-    if (this.#state.info.model === null) return null;
-    return captureDurable(this.#state);
+    return this.#store.snapshot();
   }
 
   /**
    * Seeds last-known settings so the UI has something real to show before the
-   * headphones are reachable.
-   *
-   * Refuses to run once connected: the device is the source of truth, and a
-   * cache arriving late must never overwrite what the hardware just said.
+   * headphones are reachable. See `StateStore.restore` for why this is
+   * refused once connected.
    */
   restore(payload: SnapshotPayload): void {
-    if (this.#state.status === 'connected') return;
-    this.#patch(applyDurable(this.#state, payload));
+    this.#store.restore(payload);
   }
 
   subscribe(listener: Listener): () => void {
-    this.#listeners.add(listener);
-    return () => this.#listeners.delete(listener);
+    return this.#store.subscribe(listener);
   }
 
   /** Frame-level tap for the debug console. Survives reconnects. */
   onFrame(listener: FrameListener): () => void {
-    this.#frameListeners.add(listener);
-    return () => this.#frameListeners.delete(listener);
+    return this.#session.attach((client) => client.onFrame(listener));
   }
 
   #patch(partial: Partial<DeviceState>): void {
-    this.#state = { ...this.#state, ...partial };
-    for (const listener of this.#listeners) listener(this.#state);
+    this.#store.patch(partial);
   }
 
   #replace(next: DeviceState): void {
-    if (next === this.#state) return;
-    this.#state = next;
-    for (const listener of this.#listeners) listener(this.#state);
+    this.#store.replace(next);
   }
 
   /** Reconnects to an already-granted port without showing the picker. */
   async autoConnect(): Promise<boolean> {
     if (!isWebSerialSupported()) return false;
-    const granted = await findGrantedPort();
     // Only reconnect silently to a device this class can actually drive.
-    if (!granted || granted.service.brand !== 'sennheiser') return false;
+    const port = await DeviceSession.grantedPortFor('sennheiser');
+    if (!port) return false;
     try {
-      await this.#connectTo(granted.port);
+      await this.#connectTo(port);
       return true;
     } catch {
       // A stale grant for a powered-off headphone is expected; stay quiet and
@@ -191,33 +244,28 @@ export class MomentumDevice implements Persistable {
   }
 
   async #connectTo(port: SerialPort): Promise<void> {
-    this.#patch({ status: 'connecting', error: null });
-
-    const transport = await SerialTransport.open(port, {
-      onData: (chunk) => this.#client?.handleData(chunk),
-      onClose: (reason) => this.#handleDrop(reason),
+    await this.#session.connectTo(port, async () => {
+      // Read `this.#session.client`, not the client `connectTo` handed us:
+      // a drop mid-subscribe can null it out from under this callback.
+      // `refresh()`, and every other client read below it, re-checks the
+      // field and returns early once it is null. `#subscribe()` does not —
+      // it reads `this.#session.client!` and relies on the per-feature
+      // try/catch there to swallow the resulting TypeError instead. Both are
+      // safe, but for different reasons; do not assume the second follows
+      // the first's pattern.
+      await this.#subscribe();
+      await this.refresh();
     });
-    const client = new GaiaClient(transport);
-
-    client.onNotification((frame) => this.#onNotification(frame));
-    for (const listener of this.#frameListeners) client.onFrame(listener);
-
-    this.#transport = transport;
-    this.#client = client;
-    this.#patch({ status: 'connected', error: null });
-
-    await this.#subscribe();
-    await this.refresh();
   }
 
   #onNotification(frame: GaiaFrame): void {
-    this.#replace(applyNotification(this.#state, frame));
+    this.#replace(applyNotification(this.#store.state, frame));
   }
 
   async #subscribe(): Promise<void> {
     for (const feature of SUBSCRIBED_FEATURES) {
       try {
-        await this.#client!.request(registerNotification, feature);
+        await this.#session.client!.request(registerNotification, feature);
       } catch (error) {
         // Not every feature is registrable on every firmware. Losing one
         // subscription degrades live updates; it should not fail the connect.
@@ -235,7 +283,7 @@ export class MomentumDevice implements Persistable {
    * a change made in the phone app is invisible until we ask again.
    */
   async refresh(): Promise<void> {
-    const client = this.#client;
+    const client = this.#session.client;
     if (!client) return;
     if (this.#refreshing) return;
     this.#refreshing = true;
@@ -258,34 +306,33 @@ export class MomentumDevice implements Persistable {
 
     await this.#probeCapabilities(client);
 
-    await read(getModelId, (model) => this.#patch({ info: { ...this.#state.info, model } }));
+    await read(getModelId, (model) => this.#patch({ info: { ...this.#store.state.info, model } }));
     await read(getSystemVersion, (parts) =>
-      this.#patch({ info: { ...this.#state.info, firmware: formatVersion(parts) } }),
+      this.#patch({ info: { ...this.#store.state.info, firmware: formatVersion(parts) } }),
     );
     await read(getSerialNumber, (serial) =>
-      this.#patch({ info: { ...this.#state.info, serial } }),
+      this.#patch({ info: { ...this.#store.state.info, serial } }),
     );
-    await read(getCodec, (codec) => this.#patch({ info: { ...this.#state.info, codec } }));
+    await read(getCodec, (codec) => this.#patch({ info: { ...this.#store.state.info, codec } }));
     await read(getBattery, (cells) => this.#patch({ battery: cells[0] ?? null }));
     await read(getChargingStatus, (cells) =>
       this.#patch({ charging: cells[0] === undefined ? null : cells[0] !== 0 }),
     );
 
     await read(getAncEnabled, (ancEnabled) =>
-      this.#patch({ noise: { ...this.#state.noise, ancEnabled } }),
+      this.#patch({ noise: { ...this.#store.state.noise, ancEnabled } }),
     );
-    await read(getAncModes, (modes) => this.#patch({ noise: { ...this.#state.noise, modes } }));
+    await read(getAncModes, (modes) => this.#patch({ noise: { ...this.#store.state.noise, modes } }));
     await read(getTransparentHearing, (transparentHearing) =>
-      this.#patch({ noise: { ...this.#state.noise, transparentHearing } }),
+      this.#patch({ noise: { ...this.#store.state.noise, transparentHearing } }),
     );
     await read(getTransparencyLevel, (transparencyLevel) =>
-      this.#patch({ noise: { ...this.#state.noise, transparencyLevel } }),
+      this.#patch({ noise: { ...this.#store.state.noise, transparencyLevel } }),
     );
 
     await read(getPhysicalDeviceState, (wearState) => this.#patch({ wearState }));
     await read(getSidetone, (sidetone) => this.#patch({ sidetone }));
     await read(getAudioPromptMode, (audioPrompts) => this.#patch({ audioPrompts }));
-    await read(getAudioMode, (audioMode) => this.#patch({ audioMode }));
 
     try {
       const { seconds } = await client.request(getTimer, Timer.PowerOff);
@@ -294,9 +341,11 @@ export class MomentumDevice implements Persistable {
       console.warn('[device] getTimer(PowerOff) failed', error);
     }
 
-    for (const { key, get } of TOGGLES) {
+    // Model is read at the top of this method, so the profile is known by now.
+    // A device that does not have a setting should not be asked about it.
+    for (const { key, get } of togglesFor(this.#store.state.info.model)) {
       await read(get, (value) =>
-        this.#patch({ toggles: { ...this.#state.toggles, [key]: value } }),
+        this.#patch({ toggles: { ...this.#store.state.toggles, [key]: value } }),
       );
     }
 
@@ -309,18 +358,21 @@ export class MomentumDevice implements Persistable {
    * connection management. Distinct from the Bluetooth pairing the OS knows
    * about: this is what the headphones themselves remember.
    */
-  async refreshConnections(): Promise<void> {
-    const client = this.#client;
-    if (!client) return;
+  async refreshConnections(): Promise<boolean> {
+    const client = this.#session.client;
+    if (!client) return false;
 
     let count = 0;
     try {
       count = await client.request(getPairedDeviceCount, undefined);
     } catch (error) {
       console.warn('[device] getPairedDeviceCount failed', error);
-      return;
+      return false;
     }
 
+    // 0x1400 is an upper bound, not a live count: deleting an entry does not
+    // compact the list, so indices have holes. The vendor app logs
+    // "Encountered gap in paired devices list at index" for exactly this.
     const devices = [];
     for (let index = 0; index < count; index += 1) {
       try {
@@ -331,8 +383,13 @@ export class MomentumDevice implements Persistable {
       }
     }
 
-    let maxConnections = this.#state.connections.maxConnections;
-    let ownIndex = this.#state.connections.ownIndex;
+    // An answered count with nothing behind it is the FW bug, not an empty
+    // list: keep what we had and let the caller retry, rather than patching an
+    // empty list over a good one and reporting success.
+    if (count > 0 && devices.length === 0) return false;
+
+    let maxConnections = this.#store.state.connections.maxConnections;
+    let ownIndex = this.#store.state.connections.ownIndex;
     try {
       maxConnections = await client.request(getMaxConnections, undefined);
     } catch (error) {
@@ -351,23 +408,48 @@ export class MomentumDevice implements Persistable {
         ownIndex,
       },
     });
+    return true;
   }
 
   /**
    * Connects or disconnects one of the headphones' remembered devices.
    *
-   * Disconnecting the entry that is this machine drops our own control link,
-   * so the UI marks that row and does not offer the action.
+   * Disconnecting the entry that is this machine drops our own control link, so
+   * there is no reply to wait for — the link going away is the confirmation.
    */
   async setDeviceConnected(index: number, connected: boolean): Promise<void> {
-    const client = this.#client;
+    const client = this.#session.client;
     if (!client) return;
+
+    if (!connected && index === this.#store.state.connections.ownIndex) {
+      this.#intentionalDropAt = Date.now();
+      try {
+        await client.request(disconnectPairedDevice, index);
+      } catch (error) {
+        // A dropped link surfaces as a rejected request, and the session's
+        // drop handling has already cleared its client by the time we get
+        // here (abort() rejects synchronously, but the await resumes on a
+        // later microtask) — that is the expected outcome, not a failure
+        // worth showing. A NACK or a timeout rejects too, but leaves the
+        // link — and the session's client — up; that is a real failure and
+        // must not look like a dead button. Clear the grace window too, so a
+        // later, unrelated drop isn't mistaken for this failed attempt.
+        if (this.#session.client) {
+          this.#intentionalDropAt = 0;
+          this.#patch({ error: describeError(error) });
+        } else {
+          console.warn('[device] self-disconnect did not answer', error);
+        }
+      }
+      return;
+    }
+
     try {
       await client.request(connected ? connectPairedDevice : disconnectPairedDevice, index);
       // The headphones report the real outcome via 0x1484; ask in case they don't.
       const status = await client.request(getConnectionStatus, index);
       this.#replace(
-        applyNotification(this.#state, {
+        applyNotification(this.#store.state, {
           flags: 0,
           vendor: Vendor.Sennheiser,
           command: 0x1504,
@@ -378,6 +460,35 @@ export class MomentumDevice implements Persistable {
     } catch (error) {
       this.#patch({ error: describeError(error) });
     }
+  }
+
+  /**
+   * Forgets one of the headphones' remembered devices.
+   *
+   * A failed re-read afterwards is not treated as a failure: the delete has
+   * already happened, and reporting an error over a successful removal is worse
+   * than showing a list that is one refresh out of date.
+   */
+  async removePairedDevice(index: number): Promise<void> {
+    const client = this.#session.client;
+    if (!client) return;
+
+    const blocked = removalBlockedReason(this.#store.state, index);
+    if (blocked) {
+      this.#patch({ error: blocked });
+      return;
+    }
+
+    try {
+      await client.request(deletePairedDevice, index);
+    } catch (error) {
+      this.#patch({ error: describeError(error) });
+      return;
+    }
+
+    if (await this.refreshConnections()) return;
+    await new Promise((resolve) => setTimeout(resolve, DELETE_REREAD_DELAY_MS));
+    await this.refreshConnections();
   }
 
   /**
@@ -420,7 +531,7 @@ export class MomentumDevice implements Persistable {
    * renders correctly.
    */
   async #refreshEq(): Promise<void> {
-    const client = this.#client;
+    const client = this.#session.client;
     if (!client) return;
 
     let config;
@@ -430,7 +541,7 @@ export class MomentumDevice implements Persistable {
       console.warn('[device] getEqConfig failed — equaliser unavailable', error);
       return;
     }
-    this.#patch({ eq: { ...this.#state.eq, config } });
+    this.#patch({ eq: { ...this.#store.state.eq, config } });
 
     const gains: Array<number | undefined> = [];
     for (let band = 0; band < config.bands; band += 1) {
@@ -442,11 +553,11 @@ export class MomentumDevice implements Persistable {
         console.warn(`[device] getEqBand(${band}) failed`, error);
       }
     }
-    this.#patch({ eq: { ...this.#state.eq, gains } });
+    this.#patch({ eq: { ...this.#store.state.eq, gains } });
   }
 
   async setEqBand(band: number, gain: number): Promise<void> {
-    const previous = this.#state.eq.gains;
+    const previous = this.#store.state.eq.gains;
     const next = [...previous];
     next[band] = gain;
     await this.#write(
@@ -466,18 +577,18 @@ export class MomentumDevice implements Persistable {
    * preset visibly walk across the faders.
    */
   async setEqGains(gains: number[]): Promise<void> {
-    const client = this.#client;
+    const client = this.#session.client;
     if (!client) return;
 
-    const previous = this.#state.eq.gains;
-    this.#replace({ ...this.#state, eq: { ...this.#state.eq, gains: [...gains] } });
+    const previous = this.#store.state.eq.gains;
+    this.#replace({ ...this.#store.state, eq: { ...this.#store.state.eq, gains: [...gains] } });
 
     try {
       for (let band = 0; band < gains.length; band += 1) {
         await client.request(setEqBand, { band, gain: gains[band] });
       }
     } catch (error) {
-      this.#replace({ ...this.#state, eq: { ...this.#state.eq, gains: previous } });
+      this.#replace({ ...this.#store.state, eq: { ...this.#store.state.eq, gains: previous } });
       this.#patch({ error: describeError(error) });
     }
   }
@@ -495,20 +606,20 @@ export class MomentumDevice implements Persistable {
     optimistic: (state: DeviceState) => DeviceState,
     rollback: (state: DeviceState) => DeviceState,
   ): Promise<void> {
-    const client = this.#client;
+    const client = this.#session.client;
     if (!client) return;
 
-    this.#replace(optimistic(this.#state));
+    this.#replace(optimistic(this.#store.state));
     try {
       await client.request(command, value);
     } catch (error) {
-      this.#replace(rollback(this.#state));
+      this.#replace(rollback(this.#store.state));
       this.#patch({ error: describeError(error) });
     }
   }
 
   async setAnc(enabled: boolean): Promise<void> {
-    const previous = this.#state.noise.ancEnabled;
+    const previous = this.#store.state.noise.ancEnabled;
     await this.#write(
       setAncEnabled,
       enabled,
@@ -518,7 +629,7 @@ export class MomentumDevice implements Persistable {
   }
 
   async setTransparentHearing(enabled: boolean): Promise<void> {
-    const previous = this.#state.noise.transparentHearing;
+    const previous = this.#store.state.noise.transparentHearing;
     await this.#write(
       setTransparentHearing,
       enabled,
@@ -528,7 +639,7 @@ export class MomentumDevice implements Persistable {
   }
 
   async setTransparencyLevel(level: number): Promise<void> {
-    const previous = this.#state.noise.transparencyLevel;
+    const previous = this.#store.state.noise.transparencyLevel;
     await this.#write(
       setTransparencyLevel,
       level,
@@ -542,7 +653,7 @@ export class MomentumDevice implements Persistable {
    * optimistic patch has to merge rather than replace.
    */
   async setAncMode(mode: AncModeId, state: number): Promise<void> {
-    const previous = this.#state.noise.modes;
+    const previous = this.#store.state.noise.modes;
     if (!previous) return;
     const field = ANC_MODE_FIELDS[mode];
     await this.#write(
@@ -559,7 +670,7 @@ export class MomentumDevice implements Persistable {
   async setToggle(key: ToggleKey, value: boolean): Promise<void> {
     const spec = TOGGLES.find((t) => t.key === key);
     if (!spec) return;
-    const previous = this.#state.toggles[key];
+    const previous = this.#store.state.toggles[key];
     await this.#write(
       spec.set,
       value,
@@ -569,7 +680,7 @@ export class MomentumDevice implements Persistable {
   }
 
   async setPowerOff(seconds: number): Promise<void> {
-    const previous = this.#state.powerOffSeconds;
+    const previous = this.#store.state.powerOffSeconds;
     await this.#write(
       setTimer,
       { timer: Timer.PowerOff, seconds },
@@ -578,18 +689,8 @@ export class MomentumDevice implements Persistable {
     );
   }
 
-  async setAudioMode(mode: number): Promise<void> {
-    const previous = this.#state.audioMode;
-    await this.#write(
-      setAudioMode,
-      mode,
-      (s) => ({ ...s, audioMode: mode }),
-      (s) => ({ ...s, audioMode: previous }),
-    );
-  }
-
   async setSidetone(level: number): Promise<void> {
-    const previous = this.#state.sidetone;
+    const previous = this.#store.state.sidetone;
     await this.#write(
       setSidetone,
       level,
@@ -600,7 +701,7 @@ export class MomentumDevice implements Persistable {
 
   /** Escape hatch for the debug console. */
   async sendRaw(frame: Uint8Array): Promise<void> {
-    await this.#client?.sendRaw(frame);
+    await this.#session.client?.sendRaw(frame);
   }
 
   /**
@@ -614,7 +715,7 @@ export class MomentumDevice implements Persistable {
     onResult: (result: ProbeResult) => void,
     options: { timeoutMs?: number; signal?: AbortSignal } = {},
   ): Promise<void> {
-    const client = this.#client;
+    const client = this.#session.client;
     if (!client) return;
     for (let command = from; command <= to; command += 1) {
       if (options.signal?.aborted) return;
@@ -623,32 +724,19 @@ export class MomentumDevice implements Persistable {
   }
 
   // --- teardown -----------------------------------------------------------
-
-  #handleDrop(reason?: Error): void {
-    this.#client?.abort(reason ?? new Error('connection lost'));
-    this.#transport = null;
-    this.#client = null;
-    this.#patch({
-      ...initialState,
-      status: 'disconnected',
-      error: reason ? describeError(reason) : null,
-    });
-  }
+  //
+  // An unexpected drop is reported through the session's `onDrop` hook (see
+  // the constructor) rather than a method here — the session owns the
+  // transport and client, so it is the one that knows a drop happened.
+  // `disconnect()` is the one teardown path that starts on this side, since
+  // it is the device that decides to end the session.
 
   async disconnect(): Promise<void> {
-    const transport = this.#transport;
-    this.#client?.abort(new Error('disconnected'));
-    this.#transport = null;
-    this.#client = null;
+    // So a manual disconnect can never inherit a pending self-disconnect's
+    // grace window and misreport whatever happens next as intentional.
+    this.#intentionalDropAt = 0;
+    const closed = this.#session.disconnect();
     this.#patch({ ...initialState, status: 'disconnected' });
-    await transport?.close().catch(() => undefined);
+    await closed;
   }
-}
-
-function describeError(error: unknown): string {
-  if (error instanceof DOMException && error.name === 'NotFoundError') {
-    return 'No device was selected. Make sure it is powered on and connected as an audio device.';
-  }
-  if (error instanceof Error) return error.message;
-  return String(error);
 }

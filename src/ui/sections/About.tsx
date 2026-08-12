@@ -20,7 +20,8 @@ export function About() {
         <p>
           Sennheiser devices use the Qualcomm GAIA v3 protocol; Sony devices use MDR. Protocol
           knowledge comes from the BudsLink, SmartControl-Desktop, momentumctl and
-          sennheiser-desktop-client projects.
+          sennheiser-desktop-client projects. The Soundcore transport spike drew on
+          OpenSCQ30 and SoundcoreManager.
         </p>
         <p>
           Values this project has not verified against hardware are listed in

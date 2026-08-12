@@ -10,7 +10,7 @@
 import type { Command } from '../gaia/commands';
 import { FrameDecoder, encodeFrame, frameKind, requestIdFor, toHex } from '../gaia/frame';
 import type { GaiaFrame } from '../gaia/frame';
-import { blockedReason, isBlocked } from '../gaia/unsafe';
+import { blockedReason, isBlocked, sweepBlockedReason } from '../gaia/unsafe';
 import type { Transport } from './transport';
 
 export const DEFAULT_TIMEOUT_MS = 5000;
@@ -193,14 +193,27 @@ export class GaiaClient {
     return command.decode(responsePayload);
   }
 
-  /** Sends a raw frame with no correlation. Used by the debug console. */
+  /**
+   * Sends a raw frame with no correlation. Used by the debug console.
+   *
+   * Reports itself to the frame listeners like `#send` does. Without that a
+   * hand-typed frame is invisible and only its reply appears, which reads as a
+   * log that has lost the request — the one thing this console exists to show.
+   */
   async sendRaw(frame: Uint8Array): Promise<void> {
     if (frame.length >= 8) {
       const view = new DataView(frame.buffer, frame.byteOffset, frame.byteLength);
       const vendor = view.getUint16(4, false);
       const command = view.getUint16(6, false);
-      const reason = blockedReason(vendor, command);
+      const reason = sweepBlockedReason(vendor, command);
       if (reason) throw new Error(`refusing to send this frame: ${reason}`);
+
+      for (const listener of this.#frameListeners) {
+        listener(
+          { flags: frame[1], vendor, command, payload: frame.slice(8), raw: frame },
+          'tx',
+        );
+      }
     }
     await this.#transport.write(frame);
   }
@@ -210,9 +223,8 @@ export class GaiaClient {
    * Used to discover which command IDs a firmware actually implements.
    */
   async probe(vendor: number, command: number, timeoutMs = 700): Promise<ProbeResult> {
-    if (isBlocked(vendor, command)) {
-      return { command, outcome: 'blocked', detail: blockedReason(vendor, command) };
-    }
+    const reason = sweepBlockedReason(vendor, command);
+    if (reason) return { command, outcome: 'blocked', detail: reason };
     const raw: Command<void, Uint8Array> = {
       name: `probe 0x${command.toString(16)}`,
       vendor,

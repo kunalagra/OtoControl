@@ -4,12 +4,7 @@ import { useEffect, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 import type { ActiveDevice } from '@/device/manager'
-import {
-  SENNHEISER_COMPONENTS,
-  SONY_COMPONENTS,
-  defaultSectionFor,
-  sectionsForDevice,
-} from '../sections/registry'
+import { componentFor, sectionsForDevice } from '../sections/registry'
 import { NoDevice } from '../sections/NoDevice'
 import { useDevices } from '../useDevice'
 import { MobileHeader, MobileNav } from './MobileChrome'
@@ -17,17 +12,17 @@ import { Sidebar } from './Sidebar'
 
 export function AppShell() {
   const { manager, active } = useDevices()
-  const [activeId, setActiveId] = useState(() => defaultSectionFor(manager.brand))
+  const [activeId, setActiveId] = useState(() => sectionsForDevice(active)[0].id)
 
   const sections = sectionsForDevice(active)
   const section = sections.find((entry) => entry.id === activeId) ?? sections[0]
 
-  // Brands do not share a section list, so a stale id must not survive a switch.
+  // Drivers do not share a section list, so a stale id must not survive a switch.
   useEffect(() => {
     if (!sections.some((entry) => entry.id === activeId)) {
-      setActiveId(defaultSectionFor(active.brand))
+      setActiveId(sections[0].id)
     }
-  }, [active.brand, activeId, sections])
+  }, [active.id, activeId, sections])
 
   const idle = active.state.status !== 'connected'
   // Nothing granted and nothing picked: there is no brand to render, so the
@@ -113,26 +108,16 @@ interface SectionBodyProps {
   onNavigate(id: string): void
 }
 
-/** Dispatches on the brand union so each section gets its own device type. */
+/**
+ * Renders whichever component `active`'s own driver declares for `sectionId`.
+ *
+ * No brand switch: every declared section has a component (`driver.test.ts`
+ * checks that invariant per driver), so `sectionId` — always taken from
+ * `sections.find(...)` above, never typed in by hand — resolves without one.
+ */
 function SectionBody({ active, sectionId, onNavigate }: SectionBodyProps) {
-  if (active.brand === 'sony') {
-    // Explicit rather than a fallthrough, so an unknown id cannot quietly
-    // render the wrong page.
-    switch (sectionId) {
-      case 'noise':
-        return <SONY_COMPONENTS.noise device={active.device} state={active.state} />
-      case 'sound':
-        return <SONY_COMPONENTS.sound device={active.device} state={active.state} />
-      case 'system':
-        return <SONY_COMPONENTS.system device={active.device} state={active.state} />
-      default:
-        return null
-    }
-  }
-
-  const Component =
-    SENNHEISER_COMPONENTS[sectionId as keyof typeof SENNHEISER_COMPONENTS] ??
-    SENNHEISER_COMPONENTS.noise
+  const Component = componentFor(active, sectionId)
+  if (!Component) return null
   return <Component device={active.device} state={active.state} onNavigate={onNavigate} />
 }
 

@@ -15,7 +15,7 @@ import {
   wearStateName,
 } from '@/gaia/commands'
 import { qualcommFeatureName } from '@/gaia/features'
-import { TOGGLES } from '@/device/state'
+import { togglesFor } from '@/device/state'
 import { SettingRow, ToggleRow } from '../controls/SettingRow'
 import { SystemTail } from './SystemTail'
 import { DebugEntry } from './DebugEntry'
@@ -24,7 +24,9 @@ import type { SectionProps } from './types'
 export function System({ device, state, onNavigate }: SectionProps) {
   const disabled = state.status !== 'connected'
   const { powerOffSeconds } = state
-  const behaviourToggles = TOGGLES.filter((toggle) => toggle.group === 'behaviour')
+  const behaviourToggles = togglesFor(state.info.model).filter(
+    (toggle) => toggle.group === 'behaviour',
+  )
 
   // The device may report a duration that is not one of our presets; keep it
   // rather than silently snapping the dropdown to a different value.

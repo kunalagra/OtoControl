@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { Vendor } from './frame';
-import { blockedReason, isBlocked } from './unsafe';
+import { blockedReason, isBlocked, isSweepBlocked } from './unsafe';
 
 describe('unsafe command guard', () => {
   it('blocks factory reset', () => {
@@ -19,15 +19,46 @@ describe('unsafe command guard', () => {
     expect(isBlocked(Vendor.Qualcomm, 0x0c02)).toBe(true);
   });
 
-  it('blocks paired-device deletion but not the rest of the device list', () => {
-    expect(isBlocked(Vendor.Sennheiser, 0x1405)).toBe(true);
+  it('blocks wiping the whole paired-device list on every path', () => {
     expect(isBlocked(Vendor.Sennheiser, 0x1406)).toBe(true);
-    expect(isBlocked(Vendor.Sennheiser, 0x1400)).toBe(false);
+    expect(isSweepBlocked(Vendor.Sennheiser, 0x1406)).toBe(true);
+  });
+
+  it('allows a deliberate single-entry delete but never a swept one', () => {
+    // A zero-payload sweep across 0x14xx could be read by firmware as
+    // "delete index 0", so 0x1405 is reachable only as a typed command.
+    expect(isBlocked(Vendor.Sennheiser, 0x1405)).toBe(false);
+    expect(isSweepBlocked(Vendor.Sennheiser, 0x1405)).toBe(true);
+  });
+
+  it('keeps a zero-argument action out of sweeps', () => {
+    // MMI_SetDefaultConfig needs no arguments, so a zero-payload probe is a
+    // valid invocation, not a rejected read. Sweeping 0x16xx on a MOMENTUM 4
+    // reset its touch-control assignments — hence the guard.
+    expect(isBlocked(Vendor.Sennheiser, 0x1604)).toBe(false);
+    expect(isSweepBlocked(Vendor.Sennheiser, 0x1604)).toBe(true);
+    // Its neighbours are ordinary get/set pairs and stay sweepable.
+    expect(isSweepBlocked(Vendor.Sennheiser, 0x1605)).toBe(false);
+    expect(isSweepBlocked(Vendor.Sennheiser, 0x1607)).toBe(false);
+  });
+
+  it('leaves the rest of the device list alone on both paths', () => {
+    for (const command of [0x1400, 0x1401, 0x1402, 0x1403, 0x1404, 0x1407, 0x1409]) {
+      expect(isBlocked(Vendor.Sennheiser, command), command.toString(16)).toBe(false);
+      expect(isSweepBlocked(Vendor.Sennheiser, command), command.toString(16)).toBe(false);
+    }
+  });
+
+  it('keeps the never-sendable ranges out of sweeps too', () => {
+    expect(isSweepBlocked(Vendor.Sennheiser, 0x0040)).toBe(true);
+    expect(isSweepBlocked(Vendor.Sennheiser, 0x0200)).toBe(true);
+    expect(isSweepBlocked(Vendor.Qualcomm, 0x0c00)).toBe(true);
   });
 
   it('does not block a command that merely shares an ID across vendors', () => {
-    // 0x0804 erases the panic log on Qualcomm, but is a normal audio setting
-    // in the Sennheiser range.
+    // 0x0804 erases the panic log on Qualcomm. The Sennheiser command at the
+    // same ID is unidentified (see PROTOCOL-UNKNOWNS.md) but not destructive,
+    // so the guard must key on vendor as well as command.
     expect(isBlocked(Vendor.Qualcomm, 0x0804)).toBe(true);
     expect(isBlocked(Vendor.Sennheiser, 0x0804)).toBe(false);
   });

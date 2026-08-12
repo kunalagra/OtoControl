@@ -59,6 +59,8 @@ export const Feature = {
   WearDetection: 'wear-detection',
   SmartPause: 'smart-pause',
   AutoAnswer: 'auto-answer',
+  /** Call audio processed for a more natural sound. */
+  ComfortCall: 'comfort-call',
   /** Turning the touch surface on and off. */
   TouchControls: 'touch-controls',
   /** Choosing what each touch gesture does. */
@@ -68,6 +70,8 @@ export const Feature = {
   /** Powering the device off from the app. */
   PowerOff: 'power-off',
   LowLatency: 'low-latency',
+  /** A more stable link, at the cost of some features. */
+  BluetoothCompatibility: 'bluetooth-compatibility',
   Multipoint: 'multipoint',
 } as const;
 
@@ -129,10 +133,11 @@ export const PROFILES: readonly DeviceProfile[] = [
       F.WearDetection,
       F.SmartPause,
       F.AutoAnswer,
+      F.ComfortCall,
       F.TouchControls,
       F.VoicePrompts,
       F.AutoPowerOff,
-      F.LowLatency,
+      F.BluetoothCompatibility,
       F.Multipoint,
     ],
     artwork: 'momentum-4',
@@ -289,10 +294,12 @@ export const IMPLEMENTED: Record<Brand, readonly FeatureId[]> = {
     F.WearDetection,
     F.SmartPause,
     F.AutoAnswer,
+    F.ComfortCall,
     F.TouchControls,
     F.VoicePrompts,
     F.AutoPowerOff,
     F.LowLatency,
+    F.BluetoothCompatibility,
     F.Multipoint,
   ],
   sony: [
@@ -333,11 +340,13 @@ export const FEATURE_NAMES: Record<FeatureId, string> = {
   [F.WearDetection]: 'Wear detection',
   [F.SmartPause]: 'Smart pause',
   [F.AutoAnswer]: 'Auto-answer calls',
+  [F.ComfortCall]: 'Comfort call',
   [F.TouchControls]: 'Touch controls',
   [F.TouchAssignment]: 'Touch control assignment',
   [F.VoicePrompts]: 'Voice prompts',
   [F.AutoPowerOff]: 'Auto power off',
   [F.PowerOff]: 'Power off from the app',
   [F.LowLatency]: 'Low latency mode',
+  [F.BluetoothCompatibility]: 'Bluetooth compatibility mode',
   [F.Multipoint]: 'Multipoint',
 };

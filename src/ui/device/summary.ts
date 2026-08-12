@@ -1,6 +1,7 @@
 import { codecName as gaiaCodecName, wearStateName } from '@/gaia/commands'
 import { codecName as sonyCodecName } from '@/mdr/commands'
 import type { ActiveDevice } from '@/device/manager'
+import { SONY_DRIVER } from '@/device/driver'
 
 /**
  * A brand-neutral view of what the sidebar and mobile header need.
@@ -50,7 +51,7 @@ const earbud = (cell: {
 }
 
 export function summarise(active: ActiveDevice): DeviceSummary {
-  if (active.brand === 'sony') {
+  if (active.id === SONY_DRIVER.id) {
     const { state } = active
     const cells = state.battery
       ? [state.battery.left, state.battery.right]

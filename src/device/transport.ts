@@ -37,7 +37,17 @@ export interface KnownService {
   protocol: ProtocolGeneration;
 }
 
-/** Every control service this app can drive. */
+/**
+ * Every control service this app can drive.
+ *
+ * The one hand-maintained list this fact lives in. `driver.ts`'s
+ * `services` per driver are filtered out of this array rather than
+ * restated, so the two cannot drift apart — see `driver.test.ts` for the
+ * two-way check. It is not the other way around (`KNOWN_SERVICES` deriving
+ * from `driver.ts`'s `DRIVERS`) because that direction is circular:
+ * `driver.ts` imports the device classes below, and both of those import
+ * this module for `TransportOpener` and `openSerialTransport`.
+ */
 export const KNOWN_SERVICES: KnownService[] = [
   { uuid: M4_SERVICE_UUID, brand: 'sennheiser', protocol: 'gaia' },
   { uuid: SONY_MDR_V2_UUID, brand: 'sony', protocol: 'mdr-v2' },
@@ -100,6 +110,19 @@ export interface TransportHandlers {
   /** Fired when the read loop ends — device out of range, powered off, closed. */
   onClose(reason?: Error): void;
 }
+
+/**
+ * How a device class obtains a transport.
+ *
+ * Injected rather than called directly so tests can supply a fake. Both device
+ * classes used to construct `SerialTransport` themselves, which is exactly why
+ * neither had a single test — and why two real bugs shipped in their
+ * orchestration before a reviewer caught them by reading.
+ */
+export type TransportOpener = (
+  port: SerialPort,
+  handlers: TransportHandlers,
+) => Promise<Transport>;
 
 export const isWebSerialSupported = (): boolean =>
   typeof navigator !== 'undefined' && 'serial' in navigator;
@@ -267,3 +290,7 @@ export class SerialTransport implements Transport {
     }
   }
 }
+
+/** The real one. Wrapped rather than passed as a bare static for clarity. */
+export const openSerialTransport: TransportOpener = (port, handlers) =>
+  SerialTransport.open(port, handlers);

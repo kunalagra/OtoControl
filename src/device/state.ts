@@ -12,7 +12,6 @@ import {
   decodeEqGains,
   getAncEnabled,
   getAncModes,
-  getAudioMode,
   getAudioPromptMode,
   getAutoAnswer,
   getBassBoost,
@@ -44,6 +43,8 @@ import {
 import type { AncModes, Command, EqConfig, PairedDevice } from '../gaia/commands';
 import type { GaiaFrame } from '../gaia/frame';
 import { requestIdFor } from '../gaia/frame';
+import { Feature, profileFor } from './profiles';
+import type { FeatureId } from './profiles';
 
 export type ConnectionStatus =
   | 'unsupported'
@@ -88,8 +89,6 @@ export interface DeviceState {
   toggles: Record<ToggleKey, boolean | null>;
   sidetone: number | null;
   audioPrompts: number | null;
-  /** Which sound processing is active; the manual EQ only applies in Equalizer. */
-  audioMode: number | null;
   /** Auto power off, in seconds. 0 is assumed to mean never. */
   powerOffSeconds: number | null;
   /** In case / off head / on head, from PhysicalDevice_State. */
@@ -148,7 +147,6 @@ export const initialState: DeviceState = {
   },
   sidetone: null,
   audioPrompts: null,
-  audioMode: null,
   powerOffSeconds: null,
   wearState: null,
   supportedFeatures: null,
@@ -178,7 +176,6 @@ export interface DurableState {
   toggles: Record<ToggleKey, boolean | null>;
   sidetone: number | null;
   audioPrompts: number | null;
-  audioMode: number | null;
   powerOffSeconds: number | null;
   /** A Map on the state; pairs here, because JSON has no Map. */
   supportedFeatures: Array<[number, number]> | null;
@@ -192,7 +189,6 @@ export const captureDurable = (state: DeviceState): DurableState => ({
   toggles: state.toggles,
   sidetone: state.sidetone,
   audioPrompts: state.audioPrompts,
-  audioMode: state.audioMode,
   powerOffSeconds: state.powerOffSeconds,
   supportedFeatures: state.supportedFeatures === null ? null : [...state.supportedFeatures],
   apiVersion: state.apiVersion,
@@ -215,7 +211,6 @@ export function applyDurable(current: DeviceState, payload: object): Partial<Dev
     toggles: snapshot.toggles,
     sidetone: snapshot.sidetone,
     audioPrompts: snapshot.audioPrompts,
-    audioMode: snapshot.audioMode,
     powerOffSeconds: snapshot.powerOffSeconds,
     supportedFeatures:
       snapshot.supportedFeatures === null ? null : new Map(snapshot.supportedFeatures),
@@ -225,12 +220,30 @@ export function applyDurable(current: DeviceState, payload: object): Partial<Dev
 }
 
 /**
+ * Why a paired entry cannot be forgotten, or null when it can be.
+ *
+ * The vendor app guards removal with a precondition rather than a confirmation
+ * dialog — its sibling features have confirm dialogs and this one deliberately
+ * does not — so the same rule is enforced here: a connected device must be
+ * disconnected first. Our own entry is never removable, whatever it reports.
+ */
+export function removalBlockedReason(state: DeviceState, index: number): string | null {
+  const entry = state.connections.devices.find((device) => device.index === index);
+  if (!entry) return 'That device is no longer in the list.';
+  if (index === state.connections.ownIndex) return 'This device cannot remove itself.';
+  if (entry.connected) return 'Disconnect the device before removing it.';
+  return null;
+}
+
+/**
  * The boolean settings, described once so the UI can render them generically
  * and the connect sequence can poll them in a loop.
  */
 export interface ToggleSpec {
   key: ToggleKey;
   group: ToggleGroup;
+  /** What the hardware must have for this toggle to mean anything. */
+  feature: FeatureId;
   label: string;
   description: string;
   get: Command<void, boolean>;
@@ -241,6 +254,7 @@ export const TOGGLES: ToggleSpec[] = [
   {
     key: 'bassBoost',
     group: 'sound',
+    feature: Feature.BassBoost,
     label: 'Bass boost',
     description: 'Lifts the low end.',
     get: getBassBoost,
@@ -249,6 +263,7 @@ export const TOGGLES: ToggleSpec[] = [
   {
     key: 'smartPause',
     group: 'behaviour',
+    feature: Feature.SmartPause,
     label: 'Smart pause',
     description: 'Pause playback when you take the headphones off.',
     get: getSmartPause,
@@ -257,6 +272,7 @@ export const TOGGLES: ToggleSpec[] = [
   {
     key: 'onHeadDetection',
     group: 'behaviour',
+    feature: Feature.WearDetection,
     label: 'On-head detection',
     description: 'Required for smart pause to work.',
     get: getOnHeadDetection,
@@ -265,6 +281,7 @@ export const TOGGLES: ToggleSpec[] = [
   {
     key: 'autoAnswer',
     group: 'behaviour',
+    feature: Feature.AutoAnswer,
     label: 'Auto-answer calls',
     description: 'Answer an incoming call by putting the headphones on.',
     get: getAutoAnswer,
@@ -273,6 +290,7 @@ export const TOGGLES: ToggleSpec[] = [
   {
     key: 'comfortCall',
     group: 'behaviour',
+    feature: Feature.ComfortCall,
     label: 'Comfort call',
     description: 'Adjusts call audio for a more natural sound.',
     get: getComfortCall,
@@ -281,6 +299,7 @@ export const TOGGLES: ToggleSpec[] = [
   {
     key: 'lowLatency',
     group: 'behaviour',
+    feature: Feature.LowLatency,
     label: 'Low-latency mode',
     description: 'Reduces audio delay for video and games.',
     get: getLowLatency,
@@ -289,6 +308,7 @@ export const TOGGLES: ToggleSpec[] = [
   {
     key: 'touchControls',
     group: 'behaviour',
+    feature: Feature.TouchControls,
     label: 'Touch controls',
     description: 'Tap and swipe on the right earcup.',
     get: getTouchControls,
@@ -297,12 +317,40 @@ export const TOGGLES: ToggleSpec[] = [
   {
     key: 'bluetoothCompatibility',
     group: 'behaviour',
+    feature: Feature.BluetoothCompatibility,
     label: 'Bluetooth compatibility mode',
     description: 'More stable link on crowded connections; may disable some features.',
     get: getBluetoothCompatibility,
     set: setBluetoothCompatibility,
   },
 ];
+
+/**
+ * The toggles a particular model actually has.
+ *
+ * `TOGGLES` is the whole Sennheiser vocabulary; this narrows it to one product.
+ * An unrecognised model returns everything: no match means we know nothing
+ * about it, which is not the same as it having nothing — the same choice
+ * `sectionsForDevice` makes before a capability table has been read.
+ *
+ * Hiding rather than disabling is deliberate. A greyed-out control the hardware
+ * does not have is a guess presented as a fact.
+ *
+ * The brand passed to `profileFor` is fixed at `'sennheiser'`, deliberately:
+ * `TOGGLES` is Sennheiser's vocabulary, and Sony's equivalents live in their
+ * own state entirely, so there is nothing to look up under another brand. The
+ * parameter stays a bare model string rather than a `(brand, model)` pair
+ * because every caller today only ever has a Sennheiser model in hand; that
+ * does mean the type system cannot stop a Sony model string being passed in
+ * and silently getting all eight Sennheiser toggles back (no profile will
+ * match it, so it falls into the "unrecognised model" branch below).
+ */
+export function togglesFor(model: string | null): readonly ToggleSpec[] {
+  const profile = profileFor('sennheiser', model);
+  if (!profile) return TOGGLES;
+  const features = new Set<FeatureId>(profile.features);
+  return TOGGLES.filter((toggle) => features.has(toggle.feature));
+}
 
 // --- frame reduction ------------------------------------------------------
 
@@ -351,7 +399,6 @@ const REDUCERS = new Map<number, Reducer>([
   entry(getSidetone, (s, v) => ({ ...s, sidetone: v })),
   entry(getPhysicalDeviceState, (s, v) => ({ ...s, wearState: v })),
   entry(getAudioPromptMode, (s, v) => ({ ...s, audioPrompts: v })),
-  entry(getAudioMode, (s, v) => ({ ...s, audioMode: v })),
   // Not via entry(): this command takes an argument, but only its decode is
   // needed here — the 0x1484 notification shares the response shape.
   [

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
+import { SENNHEISER_DRIVER, SONY_DRIVER } from '@/device/driver';
 import { initialSonyState } from '@/device/sony';
 import { initialState } from '@/device/state';
 import type { ActiveDevice } from '@/device/manager';
@@ -14,19 +15,19 @@ const cell = (level: number, status = 0x00) => ({
   present: status !== 0x02,
 });
 
-const sony = (overrides: Partial<typeof initialSonyState>): ActiveDevice =>
-  ({
-    brand: 'sony',
-    device: {} as never,
-    state: { ...initialSonyState, ...overrides },
-  }) as ActiveDevice;
+const sony = (overrides: Partial<typeof initialSonyState>): ActiveDevice => ({
+  id: SONY_DRIVER.id,
+  driver: SONY_DRIVER,
+  device: {} as never,
+  state: { ...initialSonyState, ...overrides },
+});
 
-const sennheiser = (overrides: Partial<typeof initialState>): ActiveDevice =>
-  ({
-    brand: 'sennheiser',
-    device: {} as never,
-    state: { ...initialState, ...overrides },
-  }) as ActiveDevice;
+const sennheiser = (overrides: Partial<typeof initialState>): ActiveDevice => ({
+  id: SENNHEISER_DRIVER.id,
+  driver: SENNHEISER_DRIVER,
+  device: {} as never,
+  state: { ...initialState, ...overrides },
+});
 
 describe('summarise — Sony', () => {
   it('reports the lower earbud, since that is what limits you', () => {

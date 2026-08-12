@@ -2,7 +2,16 @@ import { describe, expect, it } from 'vitest';
 
 import { Vendor, encodeFrame, FrameDecoder } from '../gaia/frame';
 import type { GaiaFrame } from '../gaia/frame';
-import { TOGGLES, applyDurable, applyNotification, captureDurable, initialState } from './state';
+import { FEATURE_NAMES } from './profiles';
+import {
+  TOGGLES,
+  applyDurable,
+  applyNotification,
+  captureDurable,
+  initialState,
+  removalBlockedReason,
+  togglesFor,
+} from './state';
 import type { DeviceState } from './state';
 
 const frame = (command: number, payload: number[]): GaiaFrame => {
@@ -122,6 +131,56 @@ describe('connection management', () => {
   });
 });
 
+describe('removalBlockedReason', () => {
+  // Index 0 is us; 1 is another connected device; 3 is remembered but away.
+  // The gap at 2 is deliberate — deleting does not compact the list.
+  const withDevices = (): DeviceState => ({
+    ...initialState,
+    connections: {
+      devices: [
+        { index: 0, priority: 0, connected: true, name: 'This Mac' },
+        { index: 1, priority: 1, connected: true, name: 'iPhone' },
+        { index: 3, priority: 2, connected: false, name: 'Pixel' },
+      ],
+      maxConnections: 2,
+      ownIndex: 0,
+    },
+  });
+
+  it('allows removing a remembered device that is not connected', () => {
+    expect(removalBlockedReason(withDevices(), 3)).toBeNull();
+  });
+
+  it('refuses a connected entry, matching the vendor app', () => {
+    expect(removalBlockedReason(withDevices(), 1)).toBe(
+      'Disconnect the device before removing it.',
+    );
+  });
+
+  it('refuses our own entry with the self message even though it is also connected', () => {
+    // This is the case that actually distinguishes the two check orderings:
+    // our own entry here is BOTH index === ownIndex AND connected === true, so
+    // if the connected-check ran first it would return the connected message
+    // instead. Swapping the two `if`s in removalBlockedReason would flip this
+    // assertion — do not "simplify" that ordering away.
+    expect(removalBlockedReason(withDevices(), 0)).toBe('This device cannot remove itself.');
+  });
+
+  it('refuses our own entry even when it reports disconnected', () => {
+    // A different branch: confirms the self-check does not depend on the
+    // connected flag one way or the other.
+    const state = withDevices();
+    state.connections.devices[0] = { ...state.connections.devices[0], connected: false };
+    expect(removalBlockedReason(state, 0)).toBe('This device cannot remove itself.');
+  });
+
+  it('refuses an index that is not in the list', () => {
+    expect(removalBlockedReason(withDevices(), 7)).toBe(
+      'That device is no longer in the list.',
+    );
+  });
+});
+
 describe('TOGGLES registry', () => {
   it('pairs every get with a set on the same feature family', () => {
     for (const { key, get, set } of TOGGLES) {
@@ -139,6 +198,48 @@ describe('TOGGLES registry', () => {
   it('uses unique keys and command IDs', () => {
     expect(new Set(TOGGLES.map((t) => t.key)).size).toBe(TOGGLES.length);
     expect(new Set(TOGGLES.map((t) => t.get.id)).size).toBe(TOGGLES.length);
+  });
+});
+
+describe('togglesFor', () => {
+  it('drops the toggles a known model does not have', () => {
+    // m4.json sets LowLatencyMode_MinFwVersion to 99.99.99 — never enabled.
+    const keys = togglesFor('M4AEBT Black').map((toggle) => toggle.key);
+    expect(keys).not.toContain('lowLatency');
+    expect(keys).toContain('touchControls');
+  });
+
+  it('shows everything for a model we do not recognise', () => {
+    // An unmatched model means no knowledge, not absence — the same choice
+    // sectionsForDevice makes before a capability table has been read.
+    expect(togglesFor('SOME-NEW-MODEL')).toHaveLength(TOGGLES.length);
+    expect(togglesFor(null)).toHaveLength(TOGGLES.length);
+  });
+
+  it('gives every toggle a feature the vocabulary names', () => {
+    for (const toggle of TOGGLES) {
+      expect(FEATURE_NAMES[toggle.feature], toggle.key).toBeTruthy();
+    }
+  });
+
+  it('pins the exact toggle set the M4 gets, not just that each maps to some feature', () => {
+    // The test above only checks that each toggle's `feature` names something
+    // in FEATURE_NAMES, so six of the eight toggle→feature mappings would
+    // survive being swapped for another feature the M4 also has. Pinning the
+    // whole returned set means a wrong mapping changes it and fails here —
+    // today the M4 is the only Sennheiser profile, so the blast radius of a
+    // silent mismapping is zero, but that stops being true the moment a
+    // second Sennheiser model exists.
+    const keys = togglesFor('M4AEBT Black').map((toggle) => toggle.key);
+    expect(keys).toEqual([
+      'bassBoost',
+      'smartPause',
+      'onHeadDetection',
+      'autoAnswer',
+      'comfortCall',
+      'touchControls',
+      'bluetoothCompatibility',
+    ]);
   });
 });
 
@@ -203,5 +304,17 @@ describe('durable state', () => {
     // Negotiated per connection, so the current value wins over the cache.
     const live = { ...initialState, info: { ...initialState.info, codec: 5 } };
     expect(applyDurable(live, captureDurable(connected)).info?.codec).toBe(5);
+  });
+
+  it('ignores a legacy snapshot containing audioMode', () => {
+    // audioMode was an invented feature that got removed without bumping
+    // SNAPSHOT_VERSION — safe only because applyDurable enumerates the fields
+    // it reads rather than spreading the snapshot wholesale. If this were
+    // ever "simplified" to `{ ...snapshot, codec: current.info.codec }`, a
+    // cache written by an older build would silently reintroduce the removed
+    // field. This test is what would catch that regression.
+    const legacy = { ...captureDurable(connected), audioMode: 'anc' };
+    const patch = applyDurable(initialState, legacy) as unknown as Record<string, unknown>;
+    expect('audioMode' in patch).toBe(false);
   });
 });

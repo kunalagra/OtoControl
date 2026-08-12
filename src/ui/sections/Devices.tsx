@@ -55,9 +55,7 @@ export function Devices({ device, state }: SectionProps) {
                       </Badge>
                     )}
 
-                    {/* Disconnecting ourselves would drop the control link this
-                        page runs on, so that action is withheld. */}
-                    {isSelf && entry.connected ? null : (
+                    <div className="flex shrink-0 items-center gap-2">
                       <Button
                         size="sm"
                         variant="outline"
@@ -68,7 +66,22 @@ export function Devices({ device, state }: SectionProps) {
                       >
                         {entry.connected ? 'Disconnect' : 'Connect'}
                       </Button>
-                    )}
+
+                      {/* The vendor app guards removal with a precondition
+                          rather than a confirmation: a connected device must be
+                          disconnected first. Our own row is never removable. */}
+                      {!isSelf && !entry.connected && (
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          disabled={disabled}
+                          className="text-muted-foreground"
+                          onClick={() => void device.removePairedDevice(entry.index)}
+                        >
+                          Remove
+                        </Button>
+                      )}
+                    </div>
                   </li>
                 )
               })}
@@ -78,6 +91,10 @@ export function Devices({ device, state }: SectionProps) {
               {connectedCount} connected
               {maxConnections !== null && ` of ${maxConnections} at once`}
               {maxConnections !== null && maxConnections > 1 && ' · multipoint'}
+              {devices.some((entry) => entry.connected && entry.index !== ownIndex) &&
+                ' · disconnect a device before removing it'}
+              {devices.some((entry) => entry.index === ownIndex && entry.connected) &&
+                ' · disconnecting this Mac ends the session'}
             </p>
           </>
         )}

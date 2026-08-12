@@ -2,12 +2,11 @@ import { describe, expect, it } from 'vitest';
 
 import {
   ANTI_WIND_OPTIONS,
-  AUDIO_MODE_OPTIONS,
-  AudioMode,
   AncMode,
   AntiWind,
   WearState,
   connectPairedDevice,
+  deletePairedDevice,
   disconnectPairedDevice,
   POWER_OFF_PRESETS,
   Timer,
@@ -16,8 +15,6 @@ import {
   formatVersion,
   getAncEnabled,
   getAncModes,
-  getAudioMode,
-  getAudioPromptMode,
   getBattery,
   getConnectionStatus,
   getModelId,
@@ -30,15 +27,14 @@ import {
   getTransparencyLevel,
   setAncEnabled,
   setAncMode,
-  setAudioMode,
   setSidetone,
   setTimer,
   setTouchControls,
   setTransparencyLevel,
   wearStateName,
 } from './commands';
-import { Vendor, encodeFrame, toHex } from './frame';
 import { SUBSCRIBED_FEATURES, SennheiserFeature, featureOf } from './features';
+import { Vendor, encodeFrame, toHex } from './frame';
 
 const payload = (...bytes: number[]) => Uint8Array.from(bytes);
 
@@ -150,6 +146,16 @@ describe('paired devices', () => {
     expect(disconnectPairedDevice.encode(2)).toEqual([2]);
     expect(connectPairedDevice.id).not.toBe(disconnectPairedDevice.id);
   });
+
+  it('encodes a delete for one entry', () => {
+    expect(deletePairedDevice.id).toBe(0x1405);
+    expect(deletePairedDevice.encode(3)).toEqual([3]);
+  });
+
+  it('belongs to device management, which is subscribed', () => {
+    expect(featureOf(deletePairedDevice.id)).toBe(SennheiserFeature.DeviceManagement);
+    expect(SUBSCRIBED_FEATURES).toContain(SennheiserFeature.DeviceManagement);
+  });
 });
 
 describe('anti-wind (three-state, not a toggle)', () => {
@@ -172,36 +178,6 @@ describe('anti-wind (three-state, not a toggle)', () => {
     expect(getAncModes.decode(payload(0x01, 0x02, 0x02, 0x00, 0x03, 0x00)).antiWind).toBe(
       AntiWind.Auto,
     );
-  });
-});
-
-describe('sound mode (audio mode)', () => {
-  it('uses the IDs BudsLink documents, not the audio-prompt pair', () => {
-    // 0x0801/0x0802 are voice prompts; sound mode is a separate command.
-    expect(getAudioMode.id).toBe(0x0804);
-    expect(setAudioMode.id).toBe(0x0803);
-    expect(getAudioMode.id).not.toBe(getAudioPromptMode.id);
-  });
-
-  it('offers the four modes from the M4 config', () => {
-    expect(AUDIO_MODE_OPTIONS.map((o) => o.value)).toEqual([
-      AudioMode.Off,
-      AudioMode.Equalizer,
-      AudioMode.Podcast,
-      AudioMode.Personalized,
-    ]);
-  });
-
-  it('round-trips each mode', () => {
-    for (const { value } of AUDIO_MODE_OPTIONS) {
-      expect(getAudioMode.decode(payload(value))).toBe(value);
-      expect(setAudioMode.encode(value)).toEqual([value]);
-    }
-  });
-
-  it('belongs to a subscribed feature, so mode changes push', () => {
-    expect(featureOf(getAudioMode.id)).toBe(SennheiserFeature.GenericAudio);
-    expect(SUBSCRIBED_FEATURES).toContain(SennheiserFeature.GenericAudio);
   });
 });
 

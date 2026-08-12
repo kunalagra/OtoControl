@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/button'
 import { Separator } from '@/components/ui/separator'
 import { cn } from '@/lib/utils'
 import type { ActiveDevice, DeviceManager } from '@/device/manager'
+import { SENNHEISER_DRIVER } from '@/device/driver'
 import { BatteryBar, DeviceImage } from '../device/DeviceImage'
 import { summarise } from '../device/summary'
 import { sectionsForDevice } from '../sections/registry'
@@ -29,14 +30,14 @@ export function Sidebar({ manager, active, activeSection, onSelect }: SidebarPro
     <aside className="bg-sidebar text-sidebar-foreground border-border hidden h-dvh w-72 shrink-0 flex-col gap-4 border-r p-4 md:flex lg:w-80 lg:p-5">
       <div className="flex flex-col gap-2">
         <DeviceImage
-          brand={active.brand}
+          brand={active.driver.brand}
           status={active.state.status}
           model={summary.model}
           hasDevice={summary.hasDevice}
           colourCode={summary.colourCode}
-          noiseLevel={active.brand === 'sennheiser' ? active.state.noise.transparencyLevel : null}
-          ancEnabled={active.brand === 'sennheiser' ? active.state.noise.ancEnabled : null}
-          wearState={active.brand === 'sennheiser' ? active.state.wearState : null}
+          noiseLevel={active.id === SENNHEISER_DRIVER.id ? active.state.noise.transparencyLevel : null}
+          ancEnabled={active.id === SENNHEISER_DRIVER.id ? active.state.noise.ancEnabled : null}
+          wearState={active.id === SENNHEISER_DRIVER.id ? active.state.wearState : null}
           className="-mx-1"
         />
 
