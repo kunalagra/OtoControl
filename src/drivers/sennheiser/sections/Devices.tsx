@@ -2,6 +2,7 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { cn } from '@/lib/utils'
+import { machineLabel } from '@/ui/machineLabel'
 import type { SectionProps } from './types'
 
 /**
@@ -10,6 +11,7 @@ import type { SectionProps } from './types'
  */
 export function Devices({ device, state }: SectionProps) {
   const { devices, maxConnections, ownIndex } = state.connections
+  const ownLabel = machineLabel(navigator.platform)
   const disabled = state.status !== 'connected'
   const connectedCount = devices.filter((entry) => entry.connected).length
 
@@ -51,7 +53,7 @@ export function Devices({ device, state }: SectionProps) {
 
                     {isSelf && (
                       <Badge variant="secondary" className="shrink-0">
-                        This Mac
+                        {ownLabel}
                       </Badge>
                     )}
 
@@ -94,7 +96,7 @@ export function Devices({ device, state }: SectionProps) {
               {devices.some((entry) => entry.connected && entry.index !== ownIndex) &&
                 ' · disconnect a device before removing it'}
               {devices.some((entry) => entry.index === ownIndex && entry.connected) &&
-                ' · disconnecting this Mac ends the session'}
+                ` · disconnecting ${ownLabel} ends the session`}
             </p>
           </>
         )}
