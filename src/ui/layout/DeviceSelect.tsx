@@ -5,8 +5,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import type { ActiveDevice, DeviceManager } from '@/device/manager'
-import { M4_SERVICE_UUID } from '@/device/transport'
+import type { ActiveDevice, DeviceManager } from '@/core/manager'
+import { M4_SERVICE_UUID } from '@/core/transport'
 
 interface Props {
   manager: DeviceManager

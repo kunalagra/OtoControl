@@ -27,3 +27,6 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Ad-hoc format-patch dumps — never belong in the repo
+*.patch

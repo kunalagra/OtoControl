@@ -7,6 +7,75 @@ A restructure so a new manufacturer is *one new folder and one registry entry*,
 with no edits to existing drivers and no shared file that knows which driver it
 is serving.
 
+> **OUTCOME (phase 5, Task 6).** The second half was achieved; the first was
+> not, and the gap is worth stating plainly rather than leaving the headline to
+> imply otherwise.
+>
+> **Achieved:** no edits to existing drivers, and no shared file *imports* a
+> driver. Verified by five gates that are all empty — `core → ui`,
+> `ui → drivers`, `ui → descriptors`, and both cross-driver directions.
+> Neither driver can see the other.
+>
+> **Not achieved:** adding a manufacturer touches **nine** sites, not two.
+> Beyond the new `drivers/<name>/` directory it needs three separate edits in
+> `core/driver.ts` (the `DRIVERS` entry, a re-export, and `DriverId`, which is
+> hand-spelled from the descriptors rather than derived from `DRIVERS`), plus
+> `core/brand.ts`, `core/transport.ts`, `core/profiles.ts`, `core/manager.ts`,
+> `ui/device/summary.ts`, `ui/device/artwork.ts`, `ui/sections/registry.ts`, and a
+> `public/devices/<brand>/` asset folder.
+>
+> *(An earlier version of this block said eight sites, five loud, three silent,
+> and singled out `core/transport.ts` as "the one that matters" among the silent
+> ones. A whole-branch review corrected it: `transport.ts` is **loud**, and the
+> site it displaced from the silent list is the most silent of all. The
+> corrected tally follows — it is nine sites, five loud, four silent.)*
+>
+> **Five fail loudly if forgotten:**
+> - `core/driver.ts` — a missing `DriverId` arm collapses `Extract` to `never`,
+>   so the new `ActiveDevice` arm cannot be satisfied.
+> - `core/brand.ts` — widening `Brand` breaks `IMPLEMENTED`'s `Record<Brand, …>`
+>   in `core/profiles.ts` until an entry is added.
+> - `core/profiles.ts` — as above.
+> - `core/manager.ts` — `manager.test.ts`'s "every entry in `DRIVERS` is fully
+>   wired" test iterates the table and catches an unextended `active` branch.
+> - `core/transport.ts` — **loud, despite appearances.** A missing
+>   `KNOWN_SERVICES` row would make the driver unreachable at runtime
+>   (`requestPort` builds the browser picker's filter from that table, so the
+>   device is never offered) — but the same `manager.test.ts` loop catches it
+>   first: `driver.services[0]` is `undefined`, `select` finds nothing, and
+>   `active` falls back to Sennheiser, failing the assertion.
+>
+> **Four are silent**, and they are the real residue:
+> - `public/devices/<brand>/` — the most silent of the lot. `asset()` in
+>   `ui/device/artwork.ts` concatenates a URL string; nothing validates the file
+>   exists. A missing folder is a 404 and a broken image, invisible to `tsc`,
+>   the suite, and the build.
+> - `ui/sections/registry.ts` — `SECTION_ICONS` is keyed by section id with a
+>   defensive `RiSettings3Line` fallback. A third driver declaring a section id
+>   outside `{noise, sound, devices, system, debug}` silently gets the settings
+>   glyph, quietly falsifying the invariant that fallback's own comment asserts.
+> - `ui/device/artwork.ts:234` — `brand === 'sony' ? … : …` falls through to
+>   Sennheiser with no exhaustiveness check.
+> - `ui/device/summary.ts` — *conditionally* silent. A third `ActiveDevice` arm
+>   widens the post-guard `active`, so `state.battery` fails to compile unless
+>   the third state is shape-compatible with Sennheiser's. When it is, the
+>   device renders under the literal label `'Sennheiser headphones'`.
+>
+> Closing the `ui/` sites would mean each driver supplying `battery`, `model`,
+> `hasDevice`, `colourCode`, an artwork resolver and its own section icons on
+> its descriptor — drivers constructing the UI's view model. That is a larger
+> claim than phase 5's "sever edges, change no behaviour" contract, so it was
+> deliberately left.
+>
+> **And the honest framing of what remains.** `ui/` is free of driver
+> *imports*, which is what the gates measure — it is not driver-agnostic. It
+> still contains a Momentum service UUID (`ui/layout/DeviceSelect.tsx`), a Sony
+> colour table and a Sennheiser colourway table (`ui/device/artwork.ts`, ~180
+> of its 235 lines), two hardcoded brand display names, and a per-driver icon
+> union. A driver also still reaches *up* into it:
+> `drivers/sony/sections/SonySystem.tsx` imports `sonyColourName` from
+> `@/ui/device/artwork`. This phase built the boundary, not the tier.
+
 ---
 
 ## 1. Background
@@ -174,7 +243,7 @@ observation — which is exactly the two-jobs problem a thin session is meant to
 avoid. `snapshot`/`restore` depend on the state shape and on `Persistable`,
 not on the transport, so they belong next to the state object they operate on,
 which is `StateStore`, not `DeviceSession`. Each device composes one of each,
-as sibling fields — see `src/device/stateStore.ts` for the store's own
+as sibling fields — see `src/core/stateStore.ts` for the store's own
 reasoning.
 
 It does **not** own the connect sequence. Note the split inside `autoConnect`:
@@ -216,7 +285,30 @@ hardcoded constants.
 
 ### 3.6 What is deleted
 
-`Brand`; the `ActiveDevice` discriminated union; `SENNHEISER_SECTIONS` /
+> **CORRECTION (phase 5, Task 5).** This section is wrong on its first two
+> entries. `Brand` and `ActiveDevice` both still exist, deliberately, and
+> phase 3 leaving them in place was correct rather than an oversight.
+>
+> **`Brand` is not deletable.** It is `'sennheiser' | 'sony'`, while driver ids
+> are `'sennheiser-gaia' | 'sony-mdr'` — disjoint value sets, mapped by
+> `DeviceDriver.brand` and looked up in `manager.ts`'s `#selectedBrand()`.
+> `Brand` is the protocol-family and asset-namespace key: it decides GAIA vs
+> MDR framing, discriminates the `PROFILES` table, types `KnownService.brand`,
+> and names the `public/devices/<brand>/` directories that exist on disk. It is
+> deliberately coarser than `id` so one manufacturer can own more than one
+> driver — a second Sony protocol or Sennheiser generation needs exactly that.
+> Collapsing it into the driver id would change values, not just types, and
+> would require editing expectations in four test files.
+>
+> **`ActiveDevice` is also kept** — see `manager.ts:74`, where it is documented
+> as deliberate.
+>
+> A phase-5 task was written on the assumption this section was right. Its
+> implementer checked the premise against the source, found it false, and
+> refused to carry it out. See the correction block in
+> `docs/superpowers/plans/2026-08-12-file-moves.md`, Task 5.
+
+What is genuinely deleted: `SENNHEISER_SECTIONS` /
 `SONY_SECTIONS` / `SENNHEISER_COMPONENTS` / `SONY_COMPONENTS`; `DeviceManager`'s
 named `readonly sennheiser` and `readonly sony` fields; the `sectionsForDevice`
 Sony special-case.
@@ -255,8 +347,9 @@ Only then does anything move. Each subsequent phase ends green.
    `DeviceSession`; extract state subscribers and snapshot/restore into a
    sibling `StateStore`. Both replace duplicated plumbing in the two device
    classes.
-3. **Driver contract and registry** — descriptors, `DRIVERS`, UUID lookup;
-   delete `Brand` and the `ActiveDevice` union.
+3. **Driver contract and registry** — descriptors, `DRIVERS`, UUID lookup.
+   (This step originally said "delete `Brand` and the `ActiveDevice` union".
+   Both are kept — see the correction in §3.6.)
 4. **Shared panels** — extract Equalizer, DeviceInfo, Toggles, AutoPowerOff,
    Battery into `ui/panels/`.
 5. **File moves** — relocate into `core/`, `drivers/*`, `ui/*`.

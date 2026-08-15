@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useSyncExternalStore } from 'react'
 
-import { DeviceManager } from '@/device/manager'
-import type { ActiveDevice } from '@/device/manager'
+import { DeviceManager } from '@/core/manager'
+import type { ActiveDevice } from '@/core/manager'
 
 /** One manager per page — the headphones accept a single control connection. */
 const manager = new DeviceManager()

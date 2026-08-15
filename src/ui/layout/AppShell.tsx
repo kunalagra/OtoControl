@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react'
 
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
-import type { ActiveDevice } from '@/device/manager'
+import type { ActiveDevice } from '@/core/manager'
 import { componentFor, sectionsForDevice } from '../sections/registry'
 import { NoDevice } from '../sections/NoDevice'
 import { useDevices } from '../useDevice'

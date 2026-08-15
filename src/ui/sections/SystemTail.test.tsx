@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest';
 
 import { About } from './About';
 import { SystemTail } from './SystemTail';
+import { profileFor } from '@/core/profiles';
 
 /**
  * Inspects the returned element tree directly — no DOM needed, and it asserts
@@ -21,8 +22,8 @@ const marker = (name: string) => ({ __marker: name }) as unknown as ReactElement
 
 const isAbout = (child: unknown): boolean => isValidElement(child) && child.type === About;
 
-/** No profile matches a null model, so the not-supported card renders nothing. */
-const base = { brand: 'sennheiser', model: null } as const;
+/** No profile, so the not-supported card renders nothing. */
+const base = { profile: null } as const;
 
 const indexOfMarker = (kids: unknown[], name: string): number =>
   kids.findIndex((child) => child != null && (child as { __marker?: string }).__marker === name);
@@ -70,8 +71,7 @@ describe('SystemTail', () => {
     // than among the app-level ones the tail exists to order.
     const kids = childrenOf(
       SystemTail({
-        brand: 'sony',
-        model: 'WH-1000XM5',
+        profile: profileFor('sony', 'WH-1000XM5'),
         capabilities: marker('capabilities'),
       }) as ReactElement,
     );

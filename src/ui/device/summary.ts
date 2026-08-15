@@ -1,7 +1,4 @@
-import { codecName as gaiaCodecName, wearStateName } from '@/gaia/commands'
-import { codecName as sonyCodecName } from '@/mdr/commands'
-import type { ActiveDevice } from '@/device/manager'
-import { SONY_DRIVER } from '@/device/driver'
+import type { ActiveDevice } from '@/core/manager'
 
 /**
  * A brand-neutral view of what the sidebar and mobile header need.
@@ -9,6 +6,20 @@ import { SONY_DRIVER } from '@/device/driver'
  * This is the one place the two protocols are genuinely normalised: both report
  * a model, a battery level and a codec, even though they get there by different
  * commands and Sony reports two cells where Sennheiser reports one.
+ *
+ * Normalising is all it does. It used to import both codec tables and the GAIA
+ * wear-state names to fill `codec` and `detail`, which made the shared tier
+ * know two drivers by name for the sake of two enum lookups. It branched on
+ * the driver id and picked the matching table, so it was correct — but only
+ * because a hand-maintained pairing of branch to import alias stayed in step.
+ * The tables share no meaning at all: 0x00 is SBC to Sennheiser and Unsettled
+ * to Sony, 0x01 AAC vs SBC, 0x02 aptX vs AAC, 0xff None vs Other, and even
+ * their fallbacks differ (decimal vs hex). One mistaken alias would have
+ * silently mislabelled every codec, with no test able to see it.
+ * Both now come off the descriptor (`codecName`, `statusLine`), so the
+ * naming lives with the table it reads. What is left below still branches on
+ * `active.id`, but only to read plain fields of that driver's own state — no
+ * vendor table, no enum, nothing that needed importing a driver.
  */
 export interface DeviceSummary {
   model: string
@@ -21,6 +32,8 @@ export interface DeviceSummary {
   /** Whatever else is worth a line — wear state, or per-earbud levels. */
   detail: string | null
   colourCode: number | null
+  /** True when worn, or when the driver cannot tell — see `DeviceDriver.worn`. */
+  worn: boolean
 }
 
 /**
@@ -33,26 +46,17 @@ export interface DeviceSummary {
 const fallbackName = (status: string, brandName: string): string =>
   status === 'connected' || status === 'connecting' ? brandName : 'No device'
 
-/**
- * One earbud's level plus what its charge status implies.
- *
- * A bud in the case leaves the tandem link, so the device reports UNKNOWN with
- * level 0 rather than a charge state. That absence — not the charge status —
- * is what indicates the case.
- */
-const earbud = (cell: {
-  level: number
-  charging: boolean
-  onPower: boolean
-  present: boolean
-}): string => {
-  if (!cell.present) return 'in case'
-  return `${cell.level}%${cell.charging ? ' ⚡' : cell.onPower ? ' ⏻' : ''}`
-}
-
 export function summarise(active: ActiveDevice): DeviceSummary {
-  if (active.id === SONY_DRIVER.id) {
-    const { state } = active
+  // The `DriverId` literal, rather than reading `.id` back off the Sony
+  // descriptor: this needs one string to narrow the union on, and importing a
+  // whole descriptor — device class, React components, section list — to get
+  // that string is a dependency on the Sony driver that the shared tier must
+  // not have. It also hid behind `core/driver.ts`'s re-export, so the
+  // `ui -> drivers` check passed while the coupling was still there. The
+  // check is no weaker for the change: `active.id` is a union of literals, so
+  // a wrong one is a compile error, not a branch that is quietly never taken.
+  if (active.id === 'sony-mdr') {
+    const { driver, state } = active
     const cells = state.battery
       ? [state.battery.left, state.battery.right]
       : state.singleBattery
@@ -67,23 +71,22 @@ export function summarise(active: ActiveDevice): DeviceSummary {
       // The lower of those actually reporting is what limits you.
       battery: reporting.length ? Math.min(...reporting.map((cell) => cell.level)) : null,
       charging: reporting.some((cell) => cell.charging),
-      codec: state.codec === null ? null : sonyCodecName(state.codec),
-      // Reported per earbud, so shown per earbud rather than collapsed.
-      detail: state.battery
-        ? `L ${earbud(state.battery.left)} · R ${earbud(state.battery.right)}`
-        : null,
+      codec: driver.codecName(state),
+      detail: driver.statusLine(state),
       colourCode: state.info.colour?.colour ?? null,
+      worn: driver.worn(state),
     }
   }
 
-  const { state } = active
+  const { driver, state } = active
   return {
     model: state.info.model ?? fallbackName(state.status, 'Sennheiser headphones'),
     hasDevice: state.info.model !== null,
     battery: state.battery,
     charging: state.charging === true,
-    codec: state.info.codec === null ? null : gaiaCodecName(state.info.codec),
-    detail: state.wearState === null ? null : wearStateName(state.wearState),
+    codec: driver.codecName(state),
+    detail: driver.statusLine(state),
     colourCode: null,
+    worn: driver.worn(state),
   }
 }

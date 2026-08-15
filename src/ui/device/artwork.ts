@@ -8,12 +8,15 @@
  * Aspect ratios differ per vendor — Sennheiser's heroes are 2.016:1, Sony's
  * 2.561:1 — so each entry carries its own, and the frame matches the source
  * rather than letterboxing it.
+ *
+ * Keyed on `Brand` rather than `DriverId`, deliberately: the key *is* the
+ * asset folder name under `public/devices/`, and it is the same key
+ * `PROFILES` is filed under — this module reads a profile for every aspect
+ * and slug it resolves. A driver id would fork the two apart for no gain.
  */
 
-import type { Brand } from '@/device/brand'
-import { profileFor } from '@/device/profiles'
-
-export type { Brand }
+import type { Brand } from '@/core/brand'
+import { profileFor } from '@/core/profiles'
 
 export interface DeviceArtwork {
   hero: string

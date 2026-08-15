@@ -1,8 +1,8 @@
 import type { ReactNode } from 'react'
 
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { FEATURE_NAMES, profileFor, unsupportedFeatures } from '@/device/profiles'
-import type { Brand } from '@/device/brand'
+import { FEATURE_NAMES, unsupportedFeatures } from '@/core/profiles'
+import type { DeviceProfile } from '@/core/profiles'
 import { About } from './About'
 
 /**
@@ -13,8 +13,7 @@ import { About } from './About'
  * it has covered everything. Nothing renders for a model we have no profile
  * for, since then we have no basis for the claim.
  */
-function MissingFeatures({ brand, model }: { brand: Brand; model: string | null }) {
-  const profile = profileFor(brand, model)
+function MissingFeatures({ profile }: { profile: DeviceProfile | null }) {
   const missing = profile ? unsupportedFeatures(profile) : []
   if (missing.length === 0) return null
 
@@ -51,9 +50,17 @@ interface SystemTailProps {
   advanced?: ReactNode
   /** The "Reported capabilities" card for this brand. */
   capabilities: ReactNode
-  /** Used to look up the device profile, for the not-supported-yet list. */
-  brand: Brand
-  model: string | null
+  /**
+   * The connected model's profile, for the not-supported-yet list, or null
+   * when nothing has identified itself or no profile matches.
+   *
+   * A profile rather than the `brand` + `model` pair this used to take: only
+   * `MissingFeatures` ever wanted them, and only to call `profileFor` and get
+   * exactly this back. Taking the answer instead of the lookup keys is what
+   * lets a shared component stop naming brands at all — each driver's own
+   * System section supplies its own profile.
+   */
+  profile: DeviceProfile | null
 }
 
 /**
@@ -64,10 +71,10 @@ interface SystemTailProps {
  * then About** — narrowing from "your headphones" to "this app". Each brand
  * page rendering its own tail let the order drift apart, so it lives here.
  */
-export function SystemTail({ advanced, capabilities, brand, model }: SystemTailProps) {
+export function SystemTail({ advanced, capabilities, profile }: SystemTailProps) {
   return (
     <>
-      <MissingFeatures brand={brand} model={model} />
+      <MissingFeatures profile={profile} />
       {advanced}
       {capabilities}
       <About />

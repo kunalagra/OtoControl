@@ -1,8 +1,8 @@
 import { RiHeadphoneLine } from '@remixicon/react'
 
 import { Card, CardContent } from '@/components/ui/card'
-import type { DeviceManager } from '@/device/manager'
-import type { ActiveDevice } from '@/device/manager'
+import type { DeviceManager } from '@/core/manager'
+import type { ActiveDevice } from '@/core/manager'
 import { ConnectionControls } from '../layout/Sidebar'
 
 interface Props {

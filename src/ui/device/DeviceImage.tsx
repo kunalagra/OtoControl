@@ -1,10 +1,9 @@
 import { RiHeadphoneLine } from '@remixicon/react'
 
-import { WearState } from '@/gaia/commands'
 import { cn } from '@/lib/utils'
-import type { ConnectionStatus } from '@/device/state'
+import type { ConnectionStatus } from '@/core/connection'
 import { artworkFor } from './artwork'
-import type { Brand } from '@/device/brand'
+import type { Brand } from '@/core/brand'
 
 interface DeviceImageProps {
   status: ConnectionStatus
@@ -18,7 +17,16 @@ interface DeviceImageProps {
   /** 0–100, where 0 is full cancelling and 100 full transparency. */
   noiseLevel: number | null
   ancEnabled: boolean | null
-  wearState: number | null
+  /**
+   * Whether the device is on the wearer's head; dims the render when it is
+   * not. Defaults to true, because a driver that cannot tell should not dim.
+   *
+   * A boolean rather than the raw wear state this used to take: deciding
+   * `wearState === WearState.OnHead` here meant a shared component importing
+   * the GAIA enum, and neither of the two callers could pass anything but
+   * `null` for Sony anyway. `DeviceDriver.worn` answers it per driver now.
+   */
+  worn?: boolean
   className?: string
 }
 
@@ -38,11 +46,10 @@ export function DeviceImage({
   colourCode,
   noiseLevel,
   ancEnabled,
-  wearState,
+  worn = true,
   className,
 }: DeviceImageProps) {
   const connected = status === 'connected'
-  const worn = wearState === null || wearState === WearState.OnHead
   const artwork = artworkFor(brand, model, colourCode)
   const level = noiseLevel ?? 50
 

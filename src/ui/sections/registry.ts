@@ -7,22 +7,14 @@ import {
 } from '@remixicon/react'
 import type { RemixiconComponentType } from '@remixicon/react'
 
-import type { ActiveDevice } from '@/device/manager'
-import type { DriverSection, SectionComponent } from '@/device/driver'
-import { Debug } from './Debug'
-import { Devices } from './Devices'
-import { Noise } from './Noise'
-import { Sound } from './Sound'
-import { System } from './System'
-import { SonyNoise } from './sony/SonyNoise'
-import { SonySound } from './sony/SonySound'
-import { SonySystem } from './sony/SonySystem'
+import type { ActiveDevice } from '@/core/manager'
+import type { DriverSection, SectionComponent } from '@/core/driver'
 
 /**
  * A section as the nav renders it: a driver's own `DriverSection` plus the
  * icon that names it visually. The icon is attached here, in the UI layer,
  * rather than carried on `DriverSection` itself — see the comment on
- * `DriverSection` in `device/driver.ts` for why that split exists.
+ * `DriverSection` in `core/driver.ts` for why that split exists.
  */
 export interface Section extends DriverSection {
   icon: RemixiconComponentType
@@ -55,8 +47,8 @@ const withIcon = (section: DriverSection): Section => ({
  *
  * Goes through `active.driver` rather than switching on a brand: the driver
  * already knows its own section list and, for Sony, the one rule that gates
- * noise control on capabilities read from the device (see `SONY_DRIVER` in
- * `device/driver.ts`). This function used to restate that rule itself, with
+ * noise control on capabilities read from the device (see the descriptor in
+ * `drivers/sony/driver.ts`). This function used to restate that rule itself, with
  * a "keep in sync" comment tying it to the driver's copy; now there is only
  * one copy, so there is nothing left to drift.
  *
@@ -66,7 +58,7 @@ const withIcon = (section: DriverSection): Section => ({
  * discriminant TypeScript can use to see that once `driver` and `state` are
  * read as separate expressions. The local widening below is how that gets
  * past the type checker; it mirrors the one cast `DRIVERS` itself needs in
- * `driver.ts`, for the same reason, and costs nothing at this call site
+ * `core/driver.ts`, for the same reason, and costs nothing at this call site
  * because the correlation always genuinely holds.
  */
 export function sectionsForDevice(active: ActiveDevice): Section[] {
@@ -89,17 +81,3 @@ export function componentFor(
   const components: Record<string, unknown> = active.driver.components
   return components[sectionId] as SectionComponent<unknown, unknown> | undefined
 }
-
-export const SENNHEISER_COMPONENTS = {
-  noise: Noise,
-  sound: Sound,
-  devices: Devices,
-  system: System,
-  debug: Debug,
-} as const
-
-export const SONY_COMPONENTS = {
-  noise: SonyNoise,
-  sound: SonySound,
-  system: SonySystem,
-} as const
