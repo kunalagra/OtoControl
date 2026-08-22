@@ -30,6 +30,7 @@ export function MobileHeader({
         model={summary.model}
         hasDevice={summary.hasDevice}
         colourCode={summary.colourCode}
+        productCode={'productCode' in summary ? summary.productCode : null}
         noiseLevel={active.id === 'sennheiser-gaia' ? active.state.noise.transparencyLevel : null}
         ancEnabled={active.id === 'sennheiser-gaia' ? active.state.noise.ancEnabled : null}
         worn={summary.worn}

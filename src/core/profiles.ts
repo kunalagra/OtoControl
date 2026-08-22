@@ -26,6 +26,7 @@
  */
 
 import type { Brand } from './brand';
+import { SONY_CATALOG_MODELS } from './sonyModels.generated';
 
 /**
  * One vocabulary across brands.
@@ -114,7 +115,195 @@ export interface DeviceProfile {
 
 const F = Feature;
 
-export const PROFILES: readonly DeviceProfile[] = [
+/** Escapes a literal name for embedding in a `RegExp`. */
+const escapeRegExp = (text: string): string => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+// --- Nothing / CMF ------------------------------------------------------------
+//
+// Nothing's model is not readable over serial — ear-web reads it from FastPair
+// advertising — so these match on the display name a snapshot carried, or on a
+// B1xx base code if one ever reaches `info.model`. Live capability probing,
+// not this table, decides what the UI offers on a real connection.
+
+const nothingProfile = (
+  id: string,
+  name: string,
+  base: string,
+  anc: boolean,
+  extra: readonly FeatureId[] = [],
+  form: 'earbuds' | 'over-ear' = 'earbuds',
+): DeviceProfile => ({
+  id,
+  name,
+  brand: 'nothing',
+  // The base code and the display name, whichever a snapshot happened to keep.
+  match: new RegExp(`${base}|${name.replace(/[()]/g, '\\$&')}`, 'i'),
+  form,
+  battery: form === 'over-ear' ? 'single' : 'dual',
+  // Buds charge in a case; over-ears and the neckband have none.
+  hasCase: form === 'earbuds' && id !== 'cmf-neckband-pro' && id !== 'cmf-clip-pro',
+  features: [
+    ...(anc ? [F.Anc, F.Transparency] : []),
+    F.Equalizer,
+    F.BassBoost,
+    F.WearDetection,
+    F.SmartPause,
+    F.TouchAssignment,
+    F.LowLatency,
+    ...extra,
+  ],
+  // The B1xx base code lowercased keys the CDN render table in
+  // ui/device/nothingCdn.generated.ts — the official app's own images.
+  artwork: base.toLowerCase(),
+  artworkAspect: 1,
+  artworkColours: [],
+});
+
+// --- Soundcore ---------------------------------------------------------------
+//
+// Keyed on the Anker product code the serial number begins with ("39510…"
+// → a3951), which is the only model identification the wire protocol offers.
+// Names are the official app's own (`products.generated.ts`); features are
+// what the hardware ships with, intersected with IMPLEMENTED at the UI.
+
+const soundcoreProfile = (
+  code: string,
+  name: string,
+  form: 'earbuds' | 'over-ear' = 'earbuds',
+): DeviceProfile => ({
+  id: code,
+  name,
+  brand: 'soundcore',
+  // The bare product code (from the serial) or the marketing name — which
+  // arrives either with its "soundcore" prefix (Gadgetbridge matches
+  // "soundcore Liberty 4 NC" on the wire) or without it, so both are matched.
+  match: new RegExp(
+    [code, name, name.replace(/^soundcore\s+/i, '')]
+      .map(escapeRegExp)
+      .join('|'),
+    'i',
+  ),
+  form,
+  battery: form === 'over-ear' ? 'single' : 'dual',
+  hasCase: form === 'earbuds',
+  features: [F.Anc, F.Transparency, F.Equalizer, F.WearDetection],
+  artwork: code,
+  artworkAspect: 1,
+  artworkColours: [],
+});
+
+const SOUNDCORE_PROFILES: readonly DeviceProfile[] = [
+  soundcoreProfile('a3951', "Soundcore Liberty Air 2 Pro", 'earbuds'),
+  soundcoreProfile('a3035', "soundcore Space One", 'over-ear'),
+  soundcoreProfile('a3040', "Soundcore Space Q45", 'over-ear'),
+  soundcoreProfile('a3062', "soundcore Space One Pro", 'over-ear'),
+  soundcoreProfile('a3927', "Soundcore Life A1", 'earbuds'),
+  soundcoreProfile('a3933', "Soundcore Life Note 3", 'earbuds'),
+  soundcoreProfile('a3936', "Soundcore Space A40", 'earbuds'),
+  soundcoreProfile('a3937', "soundcore P41i", 'earbuds'),
+  soundcoreProfile('a3939', "Soundcore Life P3", 'earbuds'),
+  soundcoreProfile('a3943', "soundcore Life Note C", 'earbuds'),
+  soundcoreProfile('a3944', "soundcore Life P2 Mini", 'earbuds'),
+  soundcoreProfile('a3945', "Soundcore Life Note 3S", 'earbuds'),
+  soundcoreProfile('a3947', "soundcore Liberty 4 NC", 'earbuds'),
+  soundcoreProfile('a3948', "soundcore A20i", 'earbuds'),
+  soundcoreProfile('a3949', "soundcore P20i", 'earbuds'),
+  soundcoreProfile('a3952', "Soundcore Liberty 3 Pro", 'earbuds'),
+  soundcoreProfile('a3953', "Soundcore Liberty 4", 'earbuds'),
+  soundcoreProfile('a3954', "soundcore Liberty 4 Pro", 'earbuds'),
+  soundcoreProfile('a3955', "soundcore P40i", 'earbuds'),
+  soundcoreProfile('a3957', "soundcore Liberty 5", 'earbuds'),
+  soundcoreProfile('a3958', "soundcore A30i", 'earbuds'),
+  soundcoreProfile('a3959', "soundcore P30i", 'earbuds'),
+  soundcoreProfile('a3982', "Soundcore Life Dot 3i", 'earbuds'),
+  soundcoreProfile('a3983', "Soundcore Life Note 3i", 'earbuds'),
+  soundcoreProfile('a3994', "soundcore K20i", 'earbuds'),
+];
+
+/**
+ * Every headphone-class model in Sony's own Sound Connect catalog
+ * (`sonyModels.generated.ts`) becomes a profile — this table is the whole
+ * Sony model list, verified or not.
+ *
+ * **Nothing is declared blind.** Feature lists are deliberately empty:
+ * Sony devices negotiate their capability table live on every connect and
+ * that read always wins, so a guessed feature could only ever be wrong
+ * twice — once in the gap card, once in reality. Identity (name, form
+ * factor, battery layout, square cloud render) is what a profile
+ * contributes here, and identity is exactly what the catalog knows.
+ */
+const SONY_CATALOG_PROFILES: readonly DeviceProfile[] = SONY_CATALOG_MODELS.map(
+  ({ name, form }): DeviceProfile => {
+    const id = name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+    return {
+      id,
+      name,
+      brand: 'sony',
+      // Anchored exact match. Sony reports the model string plainly over
+      // serial, and an unanchored name would let 'LinkBuds' swallow
+      // 'LinkBuds S' — neighbour-model collisions are what loose patterns
+      // are made of.
+      match: new RegExp(`^${escapeRegExp(name)}$`, 'i'),
+      form,
+      battery: form === 'over-ear' ? 'single' : 'dual',
+      hasCase: form === 'earbuds',
+      features: [],
+      artwork: id,
+      artworkAspect: 1,
+      artworkColours: [],
+    };
+  },
+);
+
+/**
+ * Keeps the first declaration for each id, so a generated table can overlap
+ * a hand-verified one without either knowing about the other: `PROFILES`
+ * lists verified sets first and generated ones after, and the later
+ * duplicate simply loses. A collision is announced — silent shadowing is
+ * the kind of bug that otherwise surfaces as "why is my verified profile
+ * ignored?"
+ */
+const dedupeById = (profiles: readonly DeviceProfile[]): readonly DeviceProfile[] => {
+  const seen = new Set<string>();
+  return profiles.filter((profile) => {
+    if (seen.has(profile.id)) {
+      console.warn(`[profiles] duplicate id '${profile.id}' — keeping the first declaration`);
+      return false;
+    }
+    seen.add(profile.id);
+    return true;
+  });
+};
+
+const NOTHING_PROFILES: readonly DeviceProfile[] = [
+  nothingProfile('nothing-ear-1', 'Nothing Ear (1)', 'B181', true, [F.PowerOff]),
+  nothingProfile('nothing-ear-stick', 'Nothing Ear (stick)', 'B157', false),
+  nothingProfile('nothing-ear-2', 'Nothing Ear (2)', 'B155', true),
+  nothingProfile('nothing-ear-a', 'Nothing Ear (a)', 'B162', true),
+  nothingProfile('nothing-ear', 'Nothing Ear', 'B171', true),
+  nothingProfile('nothing-ear-open', 'Nothing Ear (open)', 'B174', false),
+  nothingProfile('cmf-buds-pro', 'CMF Buds Pro', 'B163', true),
+  nothingProfile('cmf-buds', 'CMF Buds', 'B168', true),
+  nothingProfile('cmf-buds-pro-2', 'CMF Buds Pro 2', 'B172', true),
+  nothingProfile('cmf-neckband-pro', 'CMF Neckband Pro', 'B164', true),
+  // Newer than ear-web's coverage: flags from the official app's
+  // ear_white_list.json (v3.7.3). None have been spoken to over serial yet —
+  // the probe decides what is really there on first connect.
+  nothingProfile('nothing-ear-3', 'Nothing Ear (3)', 'B173', true),
+  nothingProfile('nothing-ear-a-2025', 'Nothing Ear (a) (2025)', 'B183', true),
+  nothingProfile('nothing-ear-3a', 'Nothing Ear (3a)', 'B190', true),
+  nothingProfile('cmf-buds-2', 'CMF Buds 2', 'B179', true),
+  nothingProfile('cmf-buds-2-plus', 'CMF Buds 2 Plus', 'B184', true),
+  nothingProfile('cmf-buds-2a', 'CMF Buds 2a', 'B185', true),
+  nothingProfile('cmf-buds-pro-2-v2', 'CMF Buds Pro 2 (2nd gen)', 'B187', true),
+  nothingProfile('cmf-clip-pro', 'CMF Clip Pro', 'B189', false),
+  nothingProfile('nothing-headphone-1', 'Nothing Headphone (1)', 'B170', true, [], 'over-ear'),
+  nothingProfile('nothing-headphone-a', 'Nothing Headphone (a)', 'B186', true, [], 'over-ear'),
+  nothingProfile('nothing-headphone-a-v2', 'Nothing Headphone (a) (2nd gen)', 'B198', true, [], 'over-ear'),
+  nothingProfile('cmf-headphone-pro', 'CMF Headphone Pro', 'B175', true, [], 'over-ear'),
+];
+
+export const PROFILES: readonly DeviceProfile[] = dedupeById([
   {
     id: 'momentum-4',
     name: 'MOMENTUM 4 Wireless',
@@ -145,136 +334,10 @@ export const PROFILES: readonly DeviceProfile[] = [
     // Sennheiser carries colour in the model string, not a colour byte.
     artworkColours: [],
   },
-  {
-    id: 'wf-c500',
-    name: 'WF-C500',
-    brand: 'sony',
-    match: /WF-C500/i,
-    form: 'earbuds',
-    battery: 'dual',
-    hasCase: true,
-    // Confirmed by a live capability read: 16 functions, no ANC, no ambient,
-    // no wear sensors and no assignable touch controls.
-    features: [F.Equalizer, F.Upscaling, F.ConnectionMode, F.VoicePrompts, F.PowerOff],
-    artwork: 'wf-c500',
-    artworkAspect: 2028 / 792,
-    // Black, White, Green, Orange — the four it shipped in.
-    artworkColours: [0x01, 0x02, 0x08, 0x0c],
-  },
-  {
-    id: 'wh-1000xm5',
-    name: 'WH-1000XM5',
-    brand: 'sony',
-    match: /WH-1000XM5/i,
-    form: 'over-ear',
-    battery: 'single',
-    hasCase: false,
-    /**
-     * From BudsLink's per-model config, not from hardware — nobody has
-     * connected one to this app yet. Its capability read will overrule this
-     * the moment someone does, which is exactly the intended behaviour.
-     */
-    features: [
-      F.Anc,
-      F.AmbientLevel,
-      F.SpeakToChat,
-      F.Equalizer,
-      F.Upscaling,
-      F.WearDetection,
-      F.SmartPause,
-      F.TouchAssignment,
-      F.VoicePrompts,
-      F.AutoPowerOff,
-      F.PowerOff,
-      F.Multipoint,
-    ],
-    artwork: 'wh-1000xm5',
-    // Square catalogue renders, unlike the WF-C500's wide product-page shots.
-    artworkAspect: 1,
-    // Black, Silver, Blue, Pink.
-    artworkColours: [0x01, 0x03, 0x05, 0x06],
-  },
-  {
-    id: 'wh-1000xm4',
-    name: 'WH-1000XM4',
-    brand: 'sony',
-    match: /WH-1000XM4/i,
-    form: 'over-ear',
-    battery: 'single',
-    hasCase: false,
-    features: [
-      F.Anc, F.AmbientLevel, F.SpeakToChat, F.Equalizer, F.Upscaling, F.WearDetection,
-      F.SmartPause, F.TouchAssignment, F.VoicePrompts, F.AutoPowerOff, F.PowerOff, F.Multipoint,
-    ],
-    artwork: 'wh-1000xm4',
-    artworkAspect: 1,
-    artworkColours: [0x01, 0x02, 0x03, 0x05],
-  },
-  {
-    id: 'wh-1000xm3',
-    name: 'WH-1000XM3',
-    brand: 'sony',
-    match: /WH-1000XM3/i,
-    form: 'over-ear',
-    battery: 'single',
-    hasCase: false,
-    features: [
-      F.Anc, F.AmbientLevel, F.Equalizer, F.Upscaling, F.WearDetection, F.SmartPause,
-      F.VoicePrompts, F.AutoPowerOff, F.PowerOff,
-    ],
-    artwork: 'wh-1000xm3',
-    artworkAspect: 1,
-    artworkColours: [0x01, 0x03],
-  },
-  {
-    id: 'wf-1000xm5',
-    name: 'WF-1000XM5',
-    brand: 'sony',
-    match: /WF-1000XM5/i,
-    form: 'earbuds',
-    battery: 'dual',
-    hasCase: true,
-    features: [
-      F.Anc, F.AmbientLevel, F.SpeakToChat, F.Equalizer, F.Upscaling, F.WearDetection,
-      F.SmartPause, F.TouchAssignment, F.VoicePrompts, F.PowerOff, F.Multipoint,
-    ],
-    artwork: 'wf-1000xm5',
-    artworkAspect: 1,
-    artworkColours: [0x01, 0x03, 0x06],
-  },
-  {
-    id: 'wf-1000xm4',
-    name: 'WF-1000XM4',
-    brand: 'sony',
-    match: /WF-1000XM4/i,
-    form: 'earbuds',
-    battery: 'dual',
-    hasCase: true,
-    features: [
-      F.Anc, F.AmbientLevel, F.SpeakToChat, F.Equalizer, F.Upscaling, F.WearDetection,
-      F.SmartPause, F.TouchAssignment, F.VoicePrompts, F.PowerOff,
-    ],
-    artwork: 'wf-1000xm4',
-    artworkAspect: 1,
-    artworkColours: [0x01, 0x03],
-  },
-  {
-    id: 'wf-1000xm3',
-    name: 'WF-1000XM3',
-    brand: 'sony',
-    match: /WF-1000XM3/i,
-    form: 'earbuds',
-    battery: 'dual',
-    hasCase: true,
-    features: [
-      F.Anc, F.AmbientLevel, F.Equalizer, F.Upscaling, F.WearDetection, F.SmartPause,
-      F.VoicePrompts, F.PowerOff,
-    ],
-    artwork: 'wf-1000xm3',
-    artworkAspect: 1,
-    artworkColours: [0x01, 0x03],
-  },
-];
+  ...SONY_CATALOG_PROFILES,
+  ...NOTHING_PROFILES,
+  ...SOUNDCORE_PROFILES,
+]);
 
 /**
  * What this app can actually control today, per brand.
@@ -311,6 +374,26 @@ export const IMPLEMENTED: Record<Brand, readonly FeatureId[]> = {
     F.AmbientLevel,
     F.AutoPowerOff,
     F.SmartPause,
+  ],
+  soundcore: [
+    F.Anc,
+    F.Transparency,
+    F.Equalizer,
+    F.BassBoost,
+    F.WearDetection,
+  ],
+  nothing: [
+    F.Anc,
+    F.Transparency,
+    F.Equalizer,
+    F.BassBoost,
+    F.WearDetection,
+    F.SmartPause,
+    F.TouchAssignment,
+    F.LowLatency,
+    // No F.PowerOff: Nothing's protocol has no power-off command — ear-web
+    // implements none and the official app cannot either. Ear (1)'s profile
+    // carries the feature, so listing it here would silently claim support.
   ],
 };
 

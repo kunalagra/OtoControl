@@ -156,51 +156,12 @@ export class DeviceSession<TClient> {
    * which can null that getter out from under `after` mid-flight, and every
    * existing driver's read helpers already tolerate that by re-checking it.
    */
-  async connectTo(port: SerialPort, after: (client: TClient) => Promise<void>): Promise<void> {
+  async connectTo(target: import('./transport').ConnectionTarget, after: (client: TClient) => Promise<void>): Promise<void> {
     const generation = (this.#generation += 1);
     this.#hooks.onStatus('connecting', null);
+    this.#teardownSuperseded();
 
-    // A live session from a previous connectTo — manager.connect() reaches
-    // this with no prior disconnect() — must be torn down before the new
-    // transport is even requested. Left in place, it keeps reading, and
-    // `onData` below would feed its bytes into whichever client ends up
-    // current. Mirrors `disconnect()`: abort in-flight work, then close.
-    //
-    // Deliberately no onDrop here — which means the superseded session's
-    // device state is *not* reset by this. `onStatus('connecting', ...)`
-    // right above only patches `status` and `error`; it does not touch
-    // `info`, `battery`, `eq`, or anything else `onDrop` would normally
-    // blank out. So the previous device's readings keep rendering, stale,
-    // under a "connecting" status until `refresh()` overwrites them once
-    // this connect lands. That gap pre-dates this fix and is not addressed
-    // here — it used to be masked by the leaked transport keeping the old
-    // client alive with its own (equally stale) values, rather than this
-    // now correctly-torn-down one.
-    //
-    // The generation bump just above means the close() below (like
-    // disconnect()'s) cannot be mistaken by #handleDrop for a fresh drop of
-    // this new connect.
-    const previousTransport = this.#transport;
-    const previousClient = this.#client;
-    this.#transport = null;
-    this.#client = null;
-    this.#detachLive();
-    if (previousClient) {
-      this.#hooks.abort(previousClient, new Error('superseded by a new connection'));
-    }
-    await previousTransport?.close().catch(() => undefined);
-
-    const transport = await this.#openTransport(port, {
-      onData: (chunk) => {
-        // Gated on the generation captured above, not on the live `#client`
-        // field — the latter would happily hand a superseded transport's
-        // bytes to whatever client is current by the time they arrive. See
-        // `onClose` just below, which has always used this same guard.
-        if (generation !== this.#generation) return;
-        if (this.#client) this.#hooks.handleData(this.#client, chunk);
-      },
-      onClose: (reason) => this.#handleDrop(generation, reason),
-    });
+    const transport = await this.#openTransport(target, this.#handlersFor(generation));
 
     // A drop landing in the open window above already ran #handleDrop — with
     // #client still null, since it is not assigned until below — and bumped
@@ -212,6 +173,83 @@ export class DeviceSession<TClient> {
       return;
     }
 
+    await this.#activate(transport, generation, after);
+  }
+
+  /**
+   * Takes over a transport the caller already opened — the single-connection
+   * BLE path. The manager resolves which driver owns a Bluetooth device only
+   * by connecting and listing its services; opening a second connection for
+   * the winning driver was the old shape, and rapid GATT
+   * connect→disconnect→connect cycles crash Chrome's browser process on
+   * macOS. Here the one connection is brand-resolved first and handed over
+   * without ever being closed in between.
+   *
+   * The transport must not have listeners wired yet: `GattTransport.start`
+   * attaches this session's generation-guarded handlers, exactly as the
+   * opener would have.
+   */
+  async adoptTransport(
+    transport: Transport & { start?(handlers: import('./transport').TransportHandlers): void },
+    after: (client: TClient) => Promise<void>,
+  ): Promise<void> {
+    const generation = (this.#generation += 1);
+    this.#hooks.onStatus('connecting', null);
+    this.#teardownSuperseded();
+
+    transport.start?.(this.#handlersFor(generation));
+    await this.#activate(transport, generation, after);
+  }
+
+  /** The guarded handler pair every transport this session owns receives. */
+  #handlersFor(generation: number): import('./transport').TransportHandlers {
+    return {
+      onData: (chunk) => {
+        // Gated on the generation captured at connect, not on the live
+        // `#client` field — the latter would happily hand a superseded
+        // transport's bytes to whatever client is current by the time they
+        // arrive. `onClose` uses this same guard via #handleDrop.
+        if (generation !== this.#generation) return;
+        if (this.#client) this.#hooks.handleData(this.#client, chunk);
+      },
+      onClose: (reason) => this.#handleDrop(generation, reason),
+    };
+  }
+
+  /**
+   * A live session from a previous connect — manager.connect() reaches
+   * connectTo with no prior disconnect() — must be torn down before the new
+   * transport is even requested. Left in place, it keeps reading, and its
+   * bytes would feed whichever client ends up current. Mirrors `disconnect()`:
+   * abort in-flight work, then close.
+   *
+   * Deliberately no onDrop here — which means the superseded session's device
+   * state is *not* reset by this. `onStatus('connecting', ...)` only patches
+   * `status` and `error`; it does not touch `info`, `battery`, `eq`, or
+   * anything else `onDrop` would normally blank out. So the previous device's
+   * readings keep rendering, stale, under a "connecting" status until
+   * `refresh()` overwrites them once this connect lands. That gap pre-dates
+   * this split and is not addressed here.
+   */
+  #teardownSuperseded(): void {
+    const previousTransport = this.#transport;
+    const previousClient = this.#client;
+    this.#transport = null;
+    this.#client = null;
+    this.#detachLive();
+    if (previousClient) {
+      this.#hooks.abort(previousClient, new Error('superseded by a new connection'));
+    }
+    void previousTransport?.close().catch(() => undefined);
+  }
+
+  /** Wires a freshly-secured transport into a live session and runs `after`. */
+  async #activate(
+    transport: Transport,
+    generation: number,
+    after: (client: TClient) => Promise<void>,
+  ): Promise<void> {
+    void generation;
     const client = this.#hooks.createClient(transport);
     this.#hooks.wire(client);
     for (const fn of this.#attachments) this.#liveUnwire.set(fn, fn(client));

@@ -8,18 +8,36 @@
 
 import type { Brand } from './brand';
 import { MomentumDevice } from '@/drivers/sennheiser/device';
-import { DRIVERS, SENNHEISER_DRIVER, SONY_DRIVER, driverForService } from '@/core/driver';
+import {
+  DRIVERS,
+  SENNHEISER_DRIVER,
+  SONY_DRIVER,
+  NOTHING_DRIVER,
+  SOUNDCORE_DRIVER,
+  driverForService,
+} from '@/core/driver';
 import type { DriverId } from '@/core/driver';
 import { SonyDevice } from '@/drivers/sony/sony';
+import { NothingDevice } from '@/drivers/nothing/device';
+import { SoundcoreDevice } from '@/drivers/soundcore/device';
 import type { DeviceState } from '@/drivers/sennheiser/state';
 import type { SonyState } from '@/drivers/sony/sony';
+import type { NothingState } from '@/drivers/nothing/device';
+import type { SoundcoreState } from '@/drivers/soundcore/device';
 import {
   findGrantedPort,
   isWebSerialSupported,
   listGrantedPorts,
   requestPort,
 } from '@/core/transport';
-import type { GrantedPort } from '@/core/transport';
+import type { ConnectionTarget, GrantedPort, Transport } from '@/core/transport';
+import {
+  GattTransport,
+  gattServiceBrand,
+  grantedGattDevices,
+  isWebBluetoothSupported,
+  requestGattDevice,
+} from '@/core/gattTransport';
 import {
   deviceLabel,
   preferredService,
@@ -38,7 +56,13 @@ import type { Persistable } from '@/core/persistence';
  * manager to dispatch across drivers without a brand switch.
  */
 interface Adoptable extends Persistable {
-  adoptPort(port: SerialPort): Promise<void>;
+  adoptPort(target: ConnectionTarget): Promise<void>;
+  /**
+   * Takes over an already-open transport — the single-connection BLE path.
+   * Optional because only BLE-capable drivers have one; the manager closes
+   * the transport itself when a driver cannot adopt it.
+   */
+  adoptTransport?(transport: Transport): Promise<void>;
   disconnect(): Promise<void>;
   refresh(): Promise<void>;
   /**
@@ -74,7 +98,9 @@ interface Adoptable extends Persistable {
  */
 export type ActiveDevice =
   | { id: Extract<DriverId, 'sennheiser-gaia'>; driver: typeof SENNHEISER_DRIVER; device: MomentumDevice; state: DeviceState }
-  | { id: Extract<DriverId, 'sony-mdr'>; driver: typeof SONY_DRIVER; device: SonyDevice; state: SonyState };
+  | { id: Extract<DriverId, 'sony-mdr'>; driver: typeof SONY_DRIVER; device: SonyDevice; state: SonyState }
+  | { id: Extract<DriverId, 'nothing-spp'>; driver: typeof NOTHING_DRIVER; device: NothingDevice; state: NothingState }
+  | { id: Extract<DriverId, 'soundcore-gatt'>; driver: typeof SOUNDCORE_DRIVER; device: SoundcoreDevice; state: SoundcoreState };
 
 /**
  * Whether the app knows of any device.
@@ -124,6 +150,8 @@ export class DeviceManager {
    */
   readonly #sennheiser = this.#devices[SENNHEISER_DRIVER.id] as MomentumDevice;
   readonly #sony = this.#devices[SONY_DRIVER.id] as SonyDevice;
+  readonly #nothing = this.#devices[NOTHING_DRIVER.id] as NothingDevice;
+  readonly #soundcore = this.#devices[SOUNDCORE_DRIVER.id] as SoundcoreDevice;
 
   /**
    * Which driver's device the UI should render, keyed by driver id, or null
@@ -204,7 +232,11 @@ export class DeviceManager {
     }
   }
 
-  /** Granted devices the user can switch between, labelled where known. */
+  /**
+   * Granted serial devices the user can switch between, labelled where known.
+   * BLE-granted devices are reachable through autoConnect rather than listed:
+   * Chrome offers no way to open their picker-free chooser entries here.
+   */
   get available(): Array<{ uuid: string; brand: Brand; label: string }> {
     return this.#granted.map(({ service }) => ({
       uuid: service.uuid,
@@ -304,18 +336,36 @@ export class DeviceManager {
    * only agree if this branch was actually kept in step.
    */
   get active(): ActiveDevice {
-    return this.#resolvedDriverId() === SONY_DRIVER.id
-      ? { id: SONY_DRIVER.id, driver: SONY_DRIVER, device: this.#sony, state: this.#sony.state }
-      : {
-          id: SENNHEISER_DRIVER.id,
-          driver: SENNHEISER_DRIVER,
-          device: this.#sennheiser,
-          state: this.#sennheiser.state,
-        };
+    const driverId = this.#resolvedDriverId();
+    if (driverId === SONY_DRIVER.id) {
+      return { id: SONY_DRIVER.id, driver: SONY_DRIVER, device: this.#sony, state: this.#sony.state };
+    }
+    if (driverId === NOTHING_DRIVER.id) {
+      return {
+        id: NOTHING_DRIVER.id,
+        driver: NOTHING_DRIVER,
+        device: this.#nothing,
+        state: this.#nothing.state,
+      };
+    }
+    if (driverId === SOUNDCORE_DRIVER.id) {
+      return {
+        id: SOUNDCORE_DRIVER.id,
+        driver: SOUNDCORE_DRIVER,
+        device: this.#soundcore,
+        state: this.#soundcore.state,
+      };
+    }
+    return {
+      id: SENNHEISER_DRIVER.id,
+      driver: SENNHEISER_DRIVER,
+      device: this.#sennheiser,
+      state: this.#sennheiser.state,
+    };
   }
 
   get supported(): boolean {
-    return isWebSerialSupported();
+    return isWebSerialSupported() || isWebBluetoothSupported();
   }
 
   subscribe(listener: Listener): () => void {
@@ -349,6 +399,72 @@ export class DeviceManager {
     await this.refreshAvailable();
   }
 
+  /**
+   * Shows the Bluetooth (LE) picker, then hands the *one* connection it opens
+   * to whichever driver the device's GATT services name.
+   *
+   * BLE has no equivalent of the serial port's service class id, so the driver
+   * is only knowable after connecting. This used to probe with a throwaway
+   * connection and reconnect for real — but rapid GATT
+   * connect→disconnect→connect cycles segfault Chrome's browser process on
+   * macOS (SIGSEGV in the Bluetooth run-loop, verified against a crash
+   * report), so the connection opened here is the one the driver keeps:
+   * `GattTransport.open` resolves it without wiring listeners, the service
+   * UUID picks the driver, and `adoptTransport` starts it in place.
+   */
+  async connectBluetooth(): Promise<void> {
+    if (!isWebBluetoothSupported()) return;
+    let device: BluetoothDevice;
+    try {
+      device = await requestGattDevice();
+    } catch (error) {
+      // A cancelled picker is the user's business, not an error. Anything
+      // else — a malformed filter, no adapter — must not vanish silently:
+      // it is exactly the failure that looks like "the button does nothing".
+      if (!(error instanceof DOMException) || error.name !== 'NotFoundError') {
+        console.warn('[manager] Bluetooth picker failed', error);
+      }
+      return;
+    }
+
+    await this.#adoptGattDevice(device);
+    await this.refreshAvailable();
+  }
+
+  /**
+   * The single-connection BLE adopt: open once, resolve the driver from the
+   * service the transport landed on, hand the transport over. Returns false
+   * when nothing about the device is recognised, so callers can try the next.
+   */
+  async #adoptGattDevice(device: BluetoothDevice): Promise<boolean> {
+    let transport: GattTransport;
+    try {
+      transport = await GattTransport.open(device);
+    } catch (error) {
+      console.warn('[manager] could not open the Bluetooth connection', error);
+      return false;
+    }
+
+    const brand = transport.serviceUuid ? gattServiceBrand(transport.serviceUuid) : null;
+    const driver = DRIVERS.find((entry) => entry.brand === brand);
+    if (!driver) {
+      console.warn('[manager] granted Bluetooth device speaks no known service', device.name ?? device.id);
+      await transport.close().catch(() => undefined);
+      return false;
+    }
+
+    this.#select(driver.id);
+    const adopter = this.#devices[driver.id] as Adoptable & {
+      adoptTransport?(transport: Transport): Promise<void>;
+    };
+    if (!adopter.adoptTransport) {
+      await transport.close().catch(() => undefined);
+      return false;
+    }
+    await adopter.adoptTransport(transport);
+    return true;
+  }
+
   /** Reconnects silently to a previously granted port, whichever driver it is. */
   async autoConnect(): Promise<boolean> {
     if (!isWebSerialSupported()) return false;
@@ -364,6 +480,23 @@ export class DeviceManager {
 
     this.#select(driver.id);
     await this.#devices[driver.id].adoptPort(granted.port);
+    if (this.#isConnected()) return true;
+
+    // No serial port answered — a previously granted BLE device still can.
+    // One connection per attempt, same as the picker path.
+    for (const device of await grantedGattDevices()) {
+      if (await this.#adoptGattDevice(device)) return true;
+    }
+    return false;
+  }
+
+  /**
+   * A method, not an inline `this.active.state.status === 'connected'`: the
+   * inline form narrows that property chain for the rest of the enclosing
+   * function, so a second check later (the BLE fallback in `autoConnect`)
+   * would compile as unreachable.
+   */
+  #isConnected(): boolean {
     return this.active.state.status === 'connected';
   }
 

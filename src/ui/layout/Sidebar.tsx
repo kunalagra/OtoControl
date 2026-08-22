@@ -1,9 +1,14 @@
-import { RiLoader4Line, RiRefreshLine } from '@remixicon/react'
+import { RiRefreshLine, RiErrorWarningLine } from '@remixicon/react'
 
+import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
+import { ButtonGroup } from '@/components/ui/button-group'
 import { Separator } from '@/components/ui/separator'
+import { Spinner } from '@/components/ui/spinner'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { cn } from '@/lib/utils'
 import type { ActiveDevice, DeviceManager } from '@/core/manager'
+import { isWebBluetoothSupported } from '@/core/gattTransport'
 import { BatteryBar, DeviceImage } from '../device/DeviceImage'
 import { summarise } from '../device/summary'
 import { sectionsForDevice } from '../sections/registry'
@@ -38,6 +43,7 @@ export function Sidebar({ manager, active, activeSection, onSelect }: SidebarPro
           model={summary.model}
           hasDevice={summary.hasDevice}
           colourCode={summary.colourCode}
+          productCode={'productCode' in summary ? summary.productCode : null}
           noiseLevel={active.id === 'sennheiser-gaia' ? active.state.noise.transparencyLevel : null}
           ancEnabled={active.id === 'sennheiser-gaia' ? active.state.noise.ancEnabled : null}
           worn={summary.worn}
@@ -149,49 +155,77 @@ export function ConnectionControls({
 
   if (status === 'unsupported') {
     return compact ? null : (
-      <p className="text-destructive text-xs">
-        This browser has no Web Serial API. Use Chrome, Edge or another Chromium browser.
-      </p>
+      <Alert variant="destructive">
+        <RiErrorWarningLine />
+        <AlertDescription>
+          This browser has neither Web Serial nor Web Bluetooth. Use Chrome, Edge or another
+          Chromium browser.
+        </AlertDescription>
+      </Alert>
     )
   }
 
   if (status === 'connected') {
     return (
-      <div className="flex gap-2">
-        <Button
-          variant="outline"
-          size="sm"
-          className={compact ? undefined : 'flex-1'}
-          onClick={() => void manager.refresh()}
-          title="Re-read every setting. Needed for settings the device never announces."
-        >
-          <RiRefreshLine className="size-3.5" />
-          {!compact && 'Refresh'}
-        </Button>
+      <ButtonGroup
+        {...(compact ? {} : { className: '[&>button]:flex-1' })}
+      >
+        <Tooltip>
+          <TooltipTrigger
+            render={
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => void manager.refresh()}
+              >
+                <RiRefreshLine data-icon="inline-start" />
+                {!compact && 'Refresh'}
+              </Button>
+            }
+          />
+          <TooltipContent>Re-read every setting. Needed for settings the device never announces.</TooltipContent>
+        </Tooltip>
         {!compact && (
           <Button variant="ghost" size="sm" onClick={() => void manager.disconnect()}>
             Disconnect
           </Button>
         )}
-      </div>
+      </ButtonGroup>
     )
   }
 
   return (
-    <Button
-      size={compact ? 'sm' : 'default'}
-      className={compact ? undefined : 'w-full'}
-      disabled={status === 'connecting'}
-      onClick={() => void manager.connect()}
-    >
-      {status === 'connecting' ? (
-        <>
-          <RiLoader4Line className="size-4 animate-spin" />
-          {!compact && 'Connecting'}
-        </>
-      ) : (
-        'Connect'
+    <div className={compact ? 'flex gap-2' : 'flex flex-col gap-2'}>
+      <Button
+        size={compact ? 'sm' : 'default'}
+        className={compact ? undefined : 'w-full'}
+        disabled={status === 'connecting'}
+        onClick={() => void manager.connect()}
+      >
+        {status === 'connecting' ? (
+          <>
+            <Spinner data-icon="inline-start" />
+            {!compact && 'Connecting'}
+          </>
+        ) : (
+          'Connect over serial'
+        )}
+      </Button>
+      {!compact && (
+        <Button
+          variant="outline"
+          size="sm"
+          disabled={status === 'connecting' || !isWebBluetoothSupported()}
+          onClick={() => void manager.connectBluetooth()}
+          title={
+            isWebBluetoothSupported()
+              ? 'For earbuds with no serial service — Soundcore, and Nothing over BLE. The buds may need to be advertising: open the case or re-enter pairing range.'
+              : 'This browser has no Web Bluetooth API.'
+          }
+        >
+          Connect over Bluetooth
+        </Button>
       )}
-    </Button>
+    </div>
   )
 }

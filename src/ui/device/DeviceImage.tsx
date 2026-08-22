@@ -1,7 +1,9 @@
+import { useState } from 'react'
 import { RiHeadphoneLine } from '@remixicon/react'
 
 import { cn } from '@/lib/utils'
 import type { ConnectionStatus } from '@/core/connection'
+import { Progress } from '@/components/ui/progress'
 import { artworkFor } from './artwork'
 import type { Brand } from '@/core/brand'
 
@@ -14,6 +16,12 @@ interface DeviceImageProps {
   brand?: Brand
   /** Sony reports colour separately; Sennheiser encodes it in the model. */
   colourCode?: number | null
+  /**
+   * Soundcore's Anker product code ("a3951"), read off the serial. The one
+   * model identity its wire protocol offers — artwork resolves from this in
+   * preference to the advertised name, which can be absent or truncated.
+   */
+  productCode?: string | null
   /** 0–100, where 0 is full cancelling and 100 full transparency. */
   noiseLevel: number | null
   ancEnabled: boolean | null
@@ -44,14 +52,29 @@ export function DeviceImage({
   hasDevice = true,
   brand = 'sennheiser',
   colourCode,
+  productCode,
   noiseLevel,
   ancEnabled,
   worn = true,
   className,
 }: DeviceImageProps) {
   const connected = status === 'connected'
-  const artwork = artworkFor(brand, model, colourCode)
+  const artwork = artworkFor(brand, model, colourCode, productCode)
   const level = noiseLevel ?? 50
+
+  // CDN-served artwork can fail to load — offline, or a URL the vendor has
+  // rotated. The swap order: remote hero → bundled fallback → placeholder
+  // frame. Each failure is remembered so a failing src does not loop; the
+  // comparison against the current hero self-heals when the src changes.
+  const [failedHeroSrc, setFailedHeroSrc] = useState<string | null>(null)
+  const [fallbackFailed, setFallbackFailed] = useState(false)
+  const heroSrc = connected ? artwork.hero : artwork.heroInactive
+  const heroFailed = failedHeroSrc === heroSrc
+  const src = !heroFailed
+    ? heroSrc
+    : !fallbackFailed && artwork.fallback
+      ? artwork.fallback
+      : ''
 
   const cancelling = ancEnabled && connected ? Math.max(0, (50 - level) / 50) : 0
   const transparency = ancEnabled && connected ? Math.max(0, (level - 50) / 50) : 0
@@ -70,6 +93,24 @@ export function DeviceImage({
       >
         <RiHeadphoneLine className="size-8" aria-hidden />
         <span className="sr-only">No device connected</span>
+      </div>
+    )
+  }
+
+  // Artwork that failed with nowhere local to fall back to — say so with the
+  // placeholder rather than an empty frame.
+  if (src === '') {
+    return (
+      <div
+        className={cn(
+          'border-border text-muted-foreground/50 flex w-full items-center justify-center',
+          'rounded-xl border border-dashed',
+          className,
+        )}
+        style={{ aspectRatio: artwork.aspect }}
+      >
+        <RiHeadphoneLine className="size-8" aria-hidden />
+        <span className="sr-only">Product art unavailable</span>
       </div>
     )
   }
@@ -109,7 +150,8 @@ export function DeviceImage({
       )}
 
       <img
-        src={connected ? artwork.hero : artwork.heroInactive}
+        src={src}
+        onError={() => (heroFailed ? setFallbackFailed(true) : setFailedHeroSrc(heroSrc))}
         alt={model ?? 'Connected headphones'}
         draggable={false}
         className={cn(
@@ -130,33 +172,23 @@ interface BatteryBarProps {
 /** Battery as a bar, so the device render is not constrained to a square. */
 export function BatteryBar({ battery, charging, className }: BatteryBarProps) {
   const tone =
-    battery === null
-      ? 'bg-muted-foreground/30'
-      : battery <= 15
-        ? 'bg-destructive'
-        : battery <= 30
-          ? 'bg-amber-500'
-          : 'bg-primary'
+    battery !== null && battery <= 15
+      ? '[&_[data-slot=progress-indicator]]:bg-destructive'
+      : battery !== null && battery <= 30
+        ? '[&_[data-slot=progress-indicator]]:bg-amber-500'
+        : undefined
 
   return (
     <div className={cn('flex items-center gap-2', className)}>
-      <div
-        className="bg-muted h-1.5 flex-1 overflow-hidden rounded-full"
-        role="progressbar"
+      <Progress
+        value={battery ?? 0}
         aria-label="Battery"
-        aria-valuenow={battery ?? undefined}
-        aria-valuemin={0}
-        aria-valuemax={100}
-      >
-        <div
-          className={cn(
-            'h-full rounded-full transition-[width] duration-700',
-            tone,
-            charging && 'animate-pulse',
-          )}
-          style={{ width: `${battery ?? 0}%` }}
-        />
-      </div>
+        className={cn(
+          'flex-1 [&_[data-slot=progress-track]]:h-1.5',
+          tone,
+          charging && 'animate-pulse',
+        )}
+      />
       <span className="text-muted-foreground shrink-0 text-xs tabular-nums">
         {battery === null ? '—' : `${battery}%`}
       </span>

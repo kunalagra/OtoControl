@@ -1,8 +1,14 @@
 import { RiHeadphoneLine } from '@remixicon/react'
 
-import { Card, CardContent } from '@/components/ui/card'
-import type { DeviceManager } from '@/core/manager'
-import type { ActiveDevice } from '@/core/manager'
+import {
+  Empty,
+  EmptyContent,
+  EmptyDescription,
+  EmptyHeader,
+  EmptyMedia,
+  EmptyTitle,
+} from '@/components/ui/empty'
+import type { DeviceManager, ActiveDevice } from '@/core/manager'
 import { ConnectionControls } from '../layout/Sidebar'
 
 interface Props {
@@ -22,25 +28,23 @@ export function NoDevice({ manager, active }: Props) {
   const unsupported = active.state.status === 'unsupported'
 
   return (
-    <Card>
-      <CardContent className="flex flex-col items-center gap-4 py-12 text-center">
-        <RiHeadphoneLine className="text-muted-foreground/40 size-12" />
-
-        <div className="flex flex-col gap-1.5">
-          <p className="text-sm font-medium">No device connected</p>
-          <p className="text-muted-foreground max-w-sm text-sm">
-            {unsupported
-              ? 'This browser has no Web Serial API, so it cannot reach your headphones. Use Chrome, Edge or another Chromium browser.'
-              : 'Connect a pair of headphones to get started. Which controls appear depends on what your headphones report.'}
-          </p>
-        </div>
-
-        {!unsupported && (
-          <div className="w-full max-w-56">
-            <ConnectionControls manager={manager} active={active} />
-          </div>
-        )}
-      </CardContent>
-    </Card>
+    <Empty>
+      <EmptyHeader>
+        <EmptyMedia variant="icon">
+          <RiHeadphoneLine />
+        </EmptyMedia>
+        <EmptyTitle>No device connected</EmptyTitle>
+        <EmptyDescription>
+          {unsupported
+            ? 'This browser has no Web Serial API, so it cannot reach your headphones. Use Chrome, Edge or another Chromium browser.'
+            : 'Connect a pair of headphones to get started. Which controls appear depends on what your headphones report.'}
+        </EmptyDescription>
+      </EmptyHeader>
+      {!unsupported && (
+        <EmptyContent className="max-w-56">
+          <ConnectionControls manager={manager} active={active} />
+        </EmptyContent>
+      )}
+    </Empty>
   )
 }

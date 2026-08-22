@@ -32,6 +32,8 @@ export interface DeviceSummary {
   /** Whatever else is worth a line — wear state, or per-earbud levels. */
   detail: string | null
   colourCode: number | null
+  /** Soundcore's Anker product code ("a3951"), when the serial gave one up. */
+  productCode?: string | null
   /** True when worn, or when the driver cannot tell — see `DeviceDriver.worn`. */
   worn: boolean
 }
@@ -55,6 +57,45 @@ export function summarise(active: ActiveDevice): DeviceSummary {
   // `ui -> drivers` check passed while the coupling was still there. The
   // check is no weaker for the change: `active.id` is a union of literals, so
   // a wrong one is a compile error, not a branch that is quietly never taken.
+  if (active.id === 'soundcore-gatt') {
+    const { driver, state } = active
+    // A side reporting null is absent (bud docked with the other one as host,
+    // say), not flat — it limits you no less than the lowest present cell.
+    const levels = state.battery
+      ? [state.battery.left.level, state.battery.right.level].filter(
+          (level): level is number => level !== null,
+        )
+      : []
+    return {
+      model: state.info.model ?? fallbackName(state.status, 'Soundcore earbuds'),
+      hasDevice: state.info.model !== null || state.info.serial !== null,
+      battery: levels.length ? Math.min(...levels) : null,
+      charging: state.battery ? state.battery.left.charging || state.battery.right.charging : false,
+      codec: driver.codecName(state),
+      detail: driver.statusLine(state),
+      colourCode: null,
+      productCode: state.info.productCode,
+      worn: driver.worn(state),
+    }
+  }
+
+  if (active.id === 'nothing-spp') {
+    const { driver, state } = active
+    const cells = [state.battery.left, state.battery.right, state.battery.case].filter(
+      (cell): cell is { level: number; charging: boolean } => cell !== null,
+    )
+    return {
+      model: state.info.model ?? fallbackName(state.status, 'Nothing / CMF earbuds'),
+      hasDevice: state.info.model !== null || state.info.firmware !== null,
+      battery: cells.length ? Math.min(...cells.map((cell) => cell.level)) : null,
+      charging: cells.some((cell) => cell.charging),
+      codec: driver.codecName(state),
+      detail: driver.statusLine(state),
+      colourCode: null,
+      worn: driver.worn(state),
+    }
+  }
+
   if (active.id === 'sony-mdr') {
     const { driver, state } = active
     const cells = state.battery

@@ -37,6 +37,8 @@ import type { DeviceProfile } from './profiles';
 import type { TransportOpener } from './transport';
 import { SENNHEISER_DRIVER } from '@/drivers/sennheiser/driver';
 import { SONY_DRIVER } from '@/drivers/sony/driver';
+import { NOTHING_DRIVER } from '@/drivers/nothing/driver';
+import { SOUNDCORE_DRIVER } from '@/drivers/soundcore/driver';
 
 /**
  * Re-exported so this module stays the single address for "a driver".
@@ -55,6 +57,8 @@ import { SONY_DRIVER } from '@/drivers/sony/driver';
  */
 export { SENNHEISER_DRIVER } from '@/drivers/sennheiser/driver';
 export { SONY_DRIVER } from '@/drivers/sony/driver';
+export { NOTHING_DRIVER } from '@/drivers/nothing/driver';
+export { SOUNDCORE_DRIVER } from '@/drivers/soundcore/driver';
 
 /**
  * Every driver id this app can produce, as a closed union.
@@ -81,7 +85,11 @@ export { SONY_DRIVER } from '@/drivers/sony/driver';
  * `core/transport.test.ts`, `core/profiles.test.ts`) and both named in spec
  * §3.2. `DeviceDriver.brand` below is the map from one to the other.
  */
-export type DriverId = typeof SENNHEISER_DRIVER.id | typeof SONY_DRIVER.id;
+export type DriverId =
+  | typeof SENNHEISER_DRIVER.id
+  | typeof SONY_DRIVER.id
+  | typeof NOTHING_DRIVER.id
+  | typeof SOUNDCORE_DRIVER.id;
 
 /**
  * How a driver obtains its device's transport.
@@ -228,6 +236,8 @@ export interface DeviceDriver<TDevice, TState> {
 export const DRIVERS: readonly DeviceDriver<never, never>[] = [
   SENNHEISER_DRIVER,
   SONY_DRIVER,
+  NOTHING_DRIVER,
+  SOUNDCORE_DRIVER,
 ] as unknown as readonly DeviceDriver<never, never>[];
 
 /** The driver that speaks a given RFCOMM service, or null if none does. */

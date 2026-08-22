@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 400" width="400" height="400">
+  <!-- Placeholder render for Soundcore devices until product artwork is added. -->
+  <g fill="none" stroke="#d7d7d7" stroke-width="3">
+    <circle cx="200" cy="185" r="110"/>
+    <circle cx="200" cy="185" r="86" stroke-dasharray="6 8"/>
+    <circle cx="200" cy="185" r="34" fill="#ececec" stroke="none"/>
+    <path d="M200 55 v-22 M200 337 v-22 M70 185 h-22 M352 185 h-22"/>
+  </g>
+  <text x="200" y="372" text-anchor="middle" font-family="ui-sans-serif, system-ui, sans-serif" font-size="20" fill="#a3a3a3">Soundcore</text>
+</svg>

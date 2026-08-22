@@ -3,11 +3,11 @@ import { describe, expect, it } from 'vitest';
 import {
   FEATURE_NAMES,
   Feature,
-  IMPLEMENTED,
   PROFILES,
   profileFor,
   unsupportedFeatures,
 } from './profiles';
+import { SONY_CATALOG_MODELS } from './sonyModels.generated';
 
 describe('profileFor', () => {
   it('matches the model string a Momentum reports', () => {
@@ -32,9 +32,11 @@ describe('profileFor', () => {
     expect(profileFor('sony', null)).toBeNull();
   });
 
-  it('does not let WF-C500 swallow WF-C510', () => {
-    // A neighbouring model number is the obvious way a loose pattern breaks.
-    expect(profileFor('sony', 'WF-C510')).toBeNull();
+  it('gives each neighbouring model its own profile rather than a loose match', () => {
+    // WF-C510 is in Sony's catalog, so it resolves — to its own entry, never
+    // to WF-C500's.
+    expect(profileFor('sony', 'WF-C510')?.id).toBe('wf-c510');
+    expect(profileFor('sony', 'WF-C510')?.name).toBe('WF-C510');
   });
 });
 
@@ -79,36 +81,17 @@ describe('unsupportedFeatures', () => {
     expect(m4.features).toContain(Feature.BluetoothCompatibility);
   });
 
-  it('shows the one WF-C500 feature we never wrote', () => {
-    // The device reports voice guidance and BudsLink declares it, but we have
-    // no command for it. Declaring the hardware honestly is what surfaced it.
-    const c500 = PROFILES.find((profile) => profile.id === 'wf-c500')!;
-    expect(unsupportedFeatures(c500)).toEqual([Feature.VoicePrompts]);
-  });
-
-  it('reports the XM5 gap honestly', () => {
-    const xm5 = PROFILES.find((profile) => profile.id === 'wh-1000xm5')!;
-    const missing = unsupportedFeatures(xm5);
-
-    // Noise control is built now — the headline feature works.
-    expect(missing).not.toContain(Feature.Anc);
-    expect(missing).not.toContain(Feature.AmbientLevel);
-    // As does everything it shares with the WF-C500.
-    expect(missing).not.toContain(Feature.Equalizer);
-    expect(missing).not.toContain(Feature.Upscaling);
-
-    // What is left is the honest to-do list, surfaced in the UI rather than
-    // hidden. Speak-to-chat is the next most visible one.
-    expect(missing).toContain(Feature.SpeakToChat);
-    expect(missing).toContain(Feature.Multipoint);
-  });
-
-  it('never lists a feature the brand implements', () => {
-    for (const profile of PROFILES) {
-      const implemented = new Set(IMPLEMENTED[profile.brand]);
-      for (const feature of unsupportedFeatures(profile)) {
-        expect(implemented.has(feature)).toBe(false);
-      }
+  it('declares no Sony features at all — the capability read is the truth', () => {
+    // The old hand-written layer carried feature lists: one hardware-verified
+    // (WF-C500), the rest declared blind from vendor configs. Every entry
+    // lost to the live capability read on each connect anyway, which made
+    // them a second source of truth for facts the device re-states better.
+    // The probe's Reported-capabilities card is now the only feature surface.
+    const sonyProfiles = PROFILES.filter((profile) => profile.brand === 'sony');
+    expect(sonyProfiles.length).toBeGreaterThan(0);
+    for (const profile of sonyProfiles) {
+      expect(profile.features, profile.id).toEqual([]);
+      expect(unsupportedFeatures(profile), profile.id).toEqual([]);
     }
   });
 });
@@ -116,11 +99,27 @@ describe('unsupportedFeatures', () => {
 describe('the wider Sony range', () => {
   const sony = PROFILES.filter((profile) => profile.brand === 'sony');
 
-  it('covers every model we hold renders for', () => {
-    expect(sony.map((profile) => profile.id).sort()).toEqual([
-      'wf-1000xm3', 'wf-1000xm4', 'wf-1000xm5', 'wf-c500',
-      'wh-1000xm3', 'wh-1000xm4', 'wh-1000xm5',
-    ]);
+  it('covers every headphone-class model in Sony\'s catalog', () => {
+    const ids = new Set(sony.map((profile) => profile.id));
+    // The generated table is the model list; every entry resolves.
+    for (const { name } of SONY_CATALOG_MODELS) {
+      const id = name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+      expect(ids.has(id), name).toBe(true);
+    }
+    // Speakers are excluded — they do not speak this driver's protocol.
+    expect(ids.has('linkbuds-speaker')).toBe(false);
+    expect(ids.has('srs-ns7')).toBe(false);
+    expect(ids.has('ult-field-1')).toBe(false);
+  });
+
+
+  it('classifies form factor from Sony\'s own naming', () => {
+    expect(profileFor('sony', 'INZONE Buds')?.form).toBe('earbuds');
+    expect(profileFor('sony', 'LinkBuds S')?.form).toBe('earbuds');
+    expect(profileFor('sony', 'WI-C600N')?.form).toBe('over-ear');
+    expect(profileFor('sony', 'ULT WEAR')?.form).toBe('over-ear');
+    expect(profileFor('sony', 'INZONE H9 II')?.battery).toBe('single');
+    expect(profileFor('sony', 'LinkBuds Clip')?.hasCase).toBe(true);
   });
 
   it('does not let one model number match another', () => {

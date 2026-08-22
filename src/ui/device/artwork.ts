@@ -17,6 +17,8 @@
 
 import type { Brand } from '@/core/brand'
 import { profileFor } from '@/core/profiles'
+import { NOTHING_CDN_IMAGES, defaultColourUrl } from './nothingCdn.generated'
+import { SONY_CATALOG_IMAGES, defaultSonyCatalogUrl } from './sonyCatalog.generated'
 
 export interface DeviceArtwork {
   hero: string
@@ -24,6 +26,12 @@ export interface DeviceArtwork {
   heroInactive: string
   /** width / height of the source image. */
   aspect: number
+  /**
+   * A bundled URL to swap in when `hero`/`heroInactive` fail to load — for
+   * artwork served from a CDN, offline. Absent when the hero is already local
+   * (Sony, Sennheiser) and cannot 404.
+   */
+  fallback?: string
 }
 
 const asset = (path: string): string => `${import.meta.env.BASE_URL}devices/${path}`
@@ -214,10 +222,103 @@ export function sonyView(
   return asset(`sony/${sonyModelSlug(model)}_${colour}_${available ? view : 'hero'}.webp`)
 }
 
+/**
+ * Sony's own catalog render for this model and colour, when the catalog
+ * knows one. Keyed by the model string itself — the serial protocol reports
+ * exactly the name the catalog carries — so artwork resolves for every model
+ * Sony lists, profile or no profile. The catalog is also the authority on
+ * which colours exist per model: a colour with no entry falls back to the
+ * default-colour render.
+ */
+function sonyCatalogHero(model: string | null, colourCode?: number | null): string | null {
+  if (!model) return null
+  const colours = SONY_CATALOG_IMAGES[model.trim().toLowerCase()]
+  if (!colours) return null
+  if (colourCode != null) {
+    const exact = colours[colourCode.toString(16).padStart(2, '0')]
+    if (exact) return exact
+  }
+  return defaultSonyCatalogUrl(colours)
+}
+
 function sonyArtwork(model: string | null, colourCode?: number | null): DeviceArtwork {
-  const hero = sonyView(model, colourCode, 'hero')
   const profile = profileFor('sony', model)
-  return { hero, heroInactive: hero, aspect: profile?.artworkAspect ?? SONY_ASPECT }
+  const local = sonyView(model, colourCode, 'hero')
+  const remote = sonyCatalogHero(model, colourCode)
+
+  // Cataloged but not yet profiled: Sony's render in its native square
+  // frame, and no bundled fallback — the only local art we hold belongs to
+  // other models, and showing one device's picture for another's would be
+  // worse than an empty frame.
+  if (remote && !profile) {
+    return { hero: remote, heroInactive: remote, aspect: 1 }
+  }
+
+  return {
+    // Sony's own render when the catalog knows this model+colour; the
+    // bundled product-page shot covers offline use and rotated links.
+    hero: remote ?? local,
+    heroInactive: remote ?? local,
+    aspect: profile?.artworkAspect ?? SONY_ASPECT,
+    ...(remote ? { fallback: local } : {}),
+  }
+}
+
+// --- Nothing ---------------------------------------------------------------
+
+/**
+ * Nothing's app ships no product renders either — it loads them from their
+ * CDN at runtime, from the URLs in its own `devices_info_list.json`. This app
+ * does the same with that config's URLs (`nothingCdn.generated.ts`), so no
+ * per-model art is bundled: a model costs one table entry, and renders stay
+ * current with Nothing's. One bundled webp covers offline use; the serial link
+ * itself needs nothing from the CDN.
+ *
+ * No greyed variant exists, so the disconnected state reuses the hero and
+ * relies on the desaturation the component applies.
+ */
+const NOTHING_FALLBACK = 'devices/nothing/fallback.webp'
+const NOTHING_ASPECT = 1
+
+function nothingArtwork(model: string | null): DeviceArtwork {
+  const slug = profileFor('nothing', model)?.artwork
+  const colours = slug ? NOTHING_CDN_IMAGES[slug] : undefined
+  const hero = (colours && defaultColourUrl(colours)) ?? import.meta.env.BASE_URL + NOTHING_FALLBACK
+  return { hero, heroInactive: hero, aspect: NOTHING_ASPECT, fallback: import.meta.env.BASE_URL + NOTHING_FALLBACK }
+}
+
+// --- Soundcore ---------------------------------------------------------------
+
+/**
+ * The official app bundles these renders in its APK (unlike Nothing, whose
+ * are on a CDN); extracted from the decompiled resources and resized. The
+ * A3951's render comes from SoundcoreManager's own assets instead — the
+ * current app no longer ships art for it. Anything else unmapped falls back
+ * to a placeholder.
+ *
+ * Colour variants exist in the resource naming for a couple of models, but
+ * the wire protocol carries no colour: the app reads it from BLE advertising
+ * this serial link cannot see, so every model shows its default render.
+ */
+const SOUNDCORE_HEROES = new Set([
+  'a3951',
+  'a3035', 'a3040', 'a3062', 'a3927', 'a3933', 'a3936', 'a3937', 'a3939', 'a3943', 'a3944',
+  'a3945', 'a3947', 'a3948', 'a3949', 'a3952', 'a3953', 'a3954', 'a3955', 'a3957', 'a3958',
+  'a3959', 'a3982', 'a3983', 'a3994',
+])
+
+function soundcoreArtwork(model: string | null, productCode?: string | null): DeviceArtwork {
+  // The product code wins: it is read off the serial itself, while the model
+  // string is whatever the device puts in its advertisement — a name that can
+  // be shortened ("Liberty Air 2 Pro") or missing entirely.
+  const slug =
+    (productCode && SOUNDCORE_HEROES.has(productCode) && productCode) ||
+    profileFor('soundcore', model)?.artwork
+  const hero =
+    slug && SOUNDCORE_HEROES.has(slug)
+      ? asset(`soundcore/${slug}_hero.webp`)
+      : asset('soundcore/placeholder.svg')
+  return { hero, heroInactive: hero, aspect: 1 }
 }
 
 // --- dispatch -------------------------------------------------------------
@@ -225,11 +326,15 @@ function sonyArtwork(model: string | null, colourCode?: number | null): DeviceAr
 /**
  * `colourCode` is only meaningful for brands that report colour separately;
  * Sennheiser carries it in the model string and ignores this.
+ * `productCode` is only meaningful for Soundcore.
  */
 export function artworkFor(
   brand: Brand,
   model: string | null,
   colourCode?: number | null,
+  productCode?: string | null,
 ): DeviceArtwork {
+  if (brand === 'soundcore') return soundcoreArtwork(model, productCode)
+  if (brand === 'nothing') return nothingArtwork(model)
   return brand === 'sony' ? sonyArtwork(model, colourCode) : sennheiserArtwork(model)
 }

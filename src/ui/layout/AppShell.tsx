@@ -1,6 +1,7 @@
 import { RiArrowLeftLine } from '@remixicon/react'
 import { useEffect, useState } from 'react'
 
+import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 import type { ActiveDevice } from '@/core/manager'
@@ -145,8 +146,8 @@ function StatusPill({ status, empty }: { status: string; empty: boolean }) {
         : 'text-destructive border-destructive/40'
 
   return (
-    <span className={`rounded-full border px-2.5 py-1 text-xs font-medium ${tone}`}>
+    <Badge variant="outline" className={`rounded-full px-2.5 py-1 text-xs font-medium ${tone}`}>
       {empty ? 'No device' : STATUS_LABELS[status]}
-    </span>
+    </Badge>
   )
 }

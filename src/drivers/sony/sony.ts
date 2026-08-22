@@ -58,6 +58,8 @@ import {
 import type { Persistable, SnapshotPayload } from '@/core/persistence';
 import type { FrameListener } from './mdr/client';
 import { isUnreachable, isWebSerialSupported, openSerialTransport, requestPort } from '@/core/transport';
+import type { ConnectionTarget } from '@/core/transport';
+import { isBluetoothTarget } from '@/core/transport';
 import type { TransportOpener } from '@/core/transport';
 import { DeviceSession } from '@/core/session';
 import type { SessionHooks } from '@/core/session';
@@ -266,7 +268,12 @@ export class SonyDevice implements Persistable {
    * Takes over a port the caller already obtained. Used when something else
    * showed the picker and resolved which brand the device is.
    */
-  async adoptPort(port: SerialPort): Promise<void> {
+  async adoptPort(port: ConnectionTarget): Promise<void> {
+    // Serial-only driver: a Bluetooth LE device has no RFCOMM port to adopt.
+    if (isBluetoothTarget(port)) {
+      this.#patch({ status: 'disconnected', error: 'This device speaks serial, not Bluetooth LE.' });
+      return;
+    }
     try {
       await this.#connectTo(port);
     } catch (error) {

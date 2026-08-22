@@ -635,3 +635,64 @@ describe('DeviceSession.grantedPortFor', () => {
     expect(port).toBeNull();
   });
 });
+
+describe('DeviceSession.adoptTransport', () => {
+  /** The shape the BLE path hands over: already open, listeners attached via start(). */
+  class StartableFakeTransport extends FakeTransport {
+    started: TransportHandlers | null = null;
+    startedCalls = 0;
+
+    start(handlers: TransportHandlers): void {
+      this.startedCalls += 1;
+      this.started = handlers;
+    }
+  }
+
+  it('starts the transport in place and reaches connected without an opener', async () => {
+    const calls: string[] = [];
+    const session = new DeviceSession<FakeClient>(
+      () => {
+        throw new Error('the opener must not be called on the adopt path');
+      },
+      trackingHooks(calls),
+    );
+
+    const transport = new StartableFakeTransport(
+      {} as import('./transport').TransportHandlers,
+    );
+    const afterCalls: string[] = [];
+    await session.adoptTransport(transport, async () => {
+      afterCalls.push('after');
+    });
+
+    // The session wired its handlers via start(), reported connected, ran after.
+    expect(transport.startedCalls).toBe(1);
+    expect(transport.started).not.toBeNull();
+    expect(calls).toEqual(['status:connecting:null', 'createClient', 'wire', 'status:connected:null']);
+    expect(afterCalls).toEqual(['after']);
+
+    // Bytes reaching the started handlers flow to the client, generation-gated.
+    transport.started!.onData(new Uint8Array([1]));
+    expect(session.client?.handled.length).toBe(1);
+
+    // A drop through the started handlers reports onDrop and clears the client.
+    transport.started!.onClose(new Error('link lost'));
+    expect(calls).toContain('drop:link lost');
+    expect(session.client).toBeNull();
+  });
+
+  it('is idempotent in start() only because GattTransport makes it so — adopting twice supersedes', async () => {
+    const calls: string[] = [];
+    const session = new DeviceSession<FakeClient>(immediateOpener(), trackingHooks(calls));
+    const first = new StartableFakeTransport({} as import('./transport').TransportHandlers);
+    const second = new StartableFakeTransport({} as import('./transport').TransportHandlers);
+
+    await session.adoptTransport(first, async () => undefined);
+    await session.adoptTransport(second, async () => undefined);
+
+    // The superseded transport's handlers go silent: its generation is stale.
+    first.started!.onData(new Uint8Array([9]));
+    second.started!.onData(new Uint8Array([1]));
+    expect(session.client?.handled).toEqual([new Uint8Array([1])]);
+  });
+});

@@ -94,6 +94,9 @@ describe('DeviceManager — every entry in DRIVERS is fully wired', () => {
     };
 
     for (const driver of DRIVERS) {
+      // A BLE-only driver has no serial service to stub a granted port for;
+      // its GATT registration is what driver.test.ts checks instead.
+      if (driver.services.length === 0) continue;
       const uuid = driver.services[0];
       stubGrantedPort(uuid);
 

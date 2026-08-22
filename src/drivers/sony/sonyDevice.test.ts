@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import { SonyDevice, captureDurable, initialSonyState } from './sony';
 import { FakeTransport, ascii } from '@/core/fakeTransport.test-helper';
-import type { Transport, TransportOpener } from '@/core/transport';
+import type { ConnectionTarget, Transport, TransportOpener } from '@/core/transport';
 import { Command, DeviceInfoType, Reply } from './mdr/commands';
 import { DataType, MdrDecoder, encodeFrame } from './mdr/frame';
 
@@ -91,7 +91,7 @@ describe('SonyDevice as a Persistable', () => {
 describe('SonyDevice transport seam', () => {
   it('opens through the injected opener and reports an unexpected drop', async () => {
     let transport: FakeTransport | null = null;
-    let openedWith: SerialPort | null = null;
+    let openedWith: ConnectionTarget | null = null;
     const open: TransportOpener = async (p, handlers) => {
       openedWith = p;
       transport = new FakeTransport(handlers);

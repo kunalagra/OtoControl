@@ -29,7 +29,14 @@ export const SONY_MDR_V2_UUID = '956c7b26-d49a-4ba8-b03f-b17d393cb6e2';
  */
 export const AIROHA_SERVICE_UUID = '00000000-deca-fade-deca-deafdecacaff';
 
-export type ProtocolGeneration = 'gaia' | 'mdr-v1' | 'mdr-v2';
+/**
+ * The serial service Nothing/CMF earbuds expose for their control protocol,
+ * from radiance-project/ear-web (the only public implementation). Not the
+ * standard SPP UUID, but it is what their firmware registers.
+ */
+export const NOTHING_SPP_UUID = 'aeac4a03-dff5-498f-843a-34487cf133eb';
+
+export type ProtocolGeneration = 'gaia' | 'mdr-v1' | 'mdr-v2' | 'nothing-v1';
 
 export interface KnownService {
   uuid: string;
@@ -53,6 +60,7 @@ export const KNOWN_SERVICES: KnownService[] = [
   { uuid: M4_SERVICE_UUID, brand: 'sennheiser', protocol: 'gaia' },
   { uuid: SONY_MDR_V2_UUID, brand: 'sony', protocol: 'mdr-v2' },
   { uuid: SONY_MDR_V1_UUID, brand: 'sony', protocol: 'mdr-v1' },
+  { uuid: NOTHING_SPP_UUID, brand: 'nothing', protocol: 'nothing-v1' },
 ];
 
 /**
@@ -77,6 +85,19 @@ export const servicesFor = (brand: Brand): readonly string[] =>
   KNOWN_SERVICES.filter((service) => service.brand === brand).map((service) => service.uuid);
 
 const BAUD_RATE = 115200;
+
+/**
+ * The RFCOMM-style services this app drives run at 115200, but Nothing/CMF
+ * earbuds speak their packet protocol over a 9600-baud link. A driver that
+ * needs a different rate builds its opener with this rather than the default.
+ */
+export const openSerialTransportAt = (baudRate: number): TransportOpener =>
+  (target, handlers) => {
+    if (isBluetoothTarget(target)) {
+      return Promise.reject(new Error('the serial transport cannot open a Bluetooth LE device'));
+    }
+    return SerialTransport.open(target, handlers, { baudRate });
+  };
 
 /**
  * The device is powered off, out of range, or not connected as audio.
@@ -134,6 +155,23 @@ export interface TransportHandlers {
 }
 
 /**
+ * What a connection is made to: a WebSerial port (Bluetooth Classic RFCOMM
+ * services) or a Web Bluetooth device (BLE GATT — see `gattTransport.ts`).
+ * Device classes dispatch on which, so one seam serves both carriers.
+ */
+export type ConnectionTarget = SerialPort | BluetoothDevice;
+
+/**
+ * Which carrier a target is, as a positive BLE check: `gatt` and `id` exist
+ * only on `BluetoothDevice` (a declared type predicate narrows where a bare
+ * `in` check cannot — `gatt` is optional in the DOM types). Detected
+ * positively rather than by absence because tests hand the seam empty-object
+ * `SerialPort` fakes, which look like "nothing" rather than "serial".
+ */
+export const isBluetoothTarget = (target: ConnectionTarget): target is BluetoothDevice =>
+  'gatt' in target || 'id' in target;
+
+/**
  * How a device class obtains a transport.
  *
  * Injected rather than called directly so tests can supply a fake. Both device
@@ -142,7 +180,7 @@ export interface TransportHandlers {
  * orchestration before a reviewer caught them by reading.
  */
 export type TransportOpener = (
-  port: SerialPort,
+  target: ConnectionTarget,
   handlers: TransportHandlers,
 ) => Promise<Transport>;
 
@@ -232,7 +270,11 @@ export class SerialTransport implements Transport {
     this.#handlers = handlers;
   }
 
-  static async open(port: SerialPort, handlers: TransportHandlers): Promise<SerialTransport> {
+  static async open(
+    port: SerialPort,
+    handlers: TransportHandlers,
+    options: { baudRate?: number } = {},
+  ): Promise<SerialTransport> {
     // Chrome 130+ reports whether the Bluetooth device is actually reachable.
     // Opening an unreachable port throws a generic "Failed to open serial
     // port", which says nothing about the cause — so check first and say so.
@@ -240,13 +282,15 @@ export class SerialTransport implements Transport {
       throw new PortUnreachableError();
     }
 
+    const baudRate = options.baudRate ?? BAUD_RATE;
+
     try {
-      await port.open({ baudRate: BAUD_RATE });
+      await port.open({ baudRate });
     } catch (error) {
       // A port this page left open can be recovered by closing and retrying.
       if (isAlreadyOpen(error)) {
         await port.close().catch(() => undefined);
-        await port.open({ baudRate: BAUD_RATE });
+        await port.open({ baudRate });
       } else {
         // Anything else is usually the RFCOMM channel being held elsewhere.
         // It is exclusive per device across the whole system, so another tab —
@@ -314,5 +358,9 @@ export class SerialTransport implements Transport {
 }
 
 /** The real one. Wrapped rather than passed as a bare static for clarity. */
-export const openSerialTransport: TransportOpener = (port, handlers) =>
-  SerialTransport.open(port, handlers);
+export const openSerialTransport: TransportOpener = (target, handlers) => {
+  if (isBluetoothTarget(target)) {
+    return Promise.reject(new Error('the serial transport cannot open a Bluetooth LE device'));
+  }
+  return SerialTransport.open(target, handlers);
+};

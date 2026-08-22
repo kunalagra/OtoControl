@@ -10,6 +10,7 @@ import {
   SONY_MDR_V1_UUID,
   SONY_MDR_V2_UUID,
 } from '@/core/transport';
+import { KNOWN_GATT_SERVICES } from '@/core/gattTransport';
 
 describe('driverForService', () => {
   it('resolves the Sennheiser control service to the GAIA driver', () => {
@@ -60,6 +61,8 @@ describe('DRIVERS', () => {
     const brandOf: Record<string, string> = {
       'sennheiser-gaia': 'sennheiser',
       'sony-mdr': 'sony',
+      'nothing-spp': 'nothing',
+      'soundcore-gatt': 'soundcore',
     };
     for (const driver of DRIVERS) {
       for (const profile of driver.profiles) {
@@ -156,7 +159,13 @@ describe('create', () => {
 describe('DeviceDriver.brand', () => {
   it('agrees with KNOWN_SERVICES about every service it claims', () => {
     for (const driver of DRIVERS) {
-      expect(driver.services.length).toBeGreaterThan(0);
+      // A BLE-only driver claims no serial service at all — but then its
+      // brand must be registered in the GATT table instead, or nothing can
+      // ever resolve a granted device to it.
+      if (driver.services.length === 0) {
+        expect(KNOWN_GATT_SERVICES.some((service) => service.brand === driver.brand)).toBe(true);
+        continue;
+      }
       for (const uuid of driver.services) {
         expect(KNOWN_SERVICES.find((service) => service.uuid === uuid)?.brand).toBe(driver.brand);
       }
