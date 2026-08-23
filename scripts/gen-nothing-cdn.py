@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Regenerate src/ui/device/nothingCdn.generated.ts from the official app.
+"""Regenerate src/drivers/nothing/nothingCdn.generated.ts from the official app.
 
 Source of truth: `devices_info_list.json` inside the decompiled Nothing X APK
 (com.nothing.smartcenter), at
@@ -79,7 +79,7 @@ def main() -> None:
     if missing:
         print(f'missing from config: {", ".join(missing)}', file=sys.stderr)
 
-    out = Path('src/ui/device/nothingCdn.generated.ts')
+    out = Path('src/drivers/nothing/nothingCdn.generated.ts')
     out.write_text(
         HEADER
         + 'export const NOTHING_CDN_IMAGES: Record<string, Record<string, string>> = {\n'

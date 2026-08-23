@@ -87,8 +87,11 @@ describe('summarise — Sony', () => {
     expect(summarise(sony({ codec: 0x02 })).codec).toBe('AAC');
   });
 
-  it('carries the colour code through for artwork', () => {
-    expect(summarise(sony({ info: { model: null, firmware: null, colour: { series: 0, colour: 1 } } })).colourCode).toBe(1);
+  it('resolves artwork through the driver, not the summary', () => {
+    // The colour byte never travels through the summary any more: the Sony
+    // driver's artwork strategy reads it off its own state.
+    expect(summarise(sony({ info: { model: null, firmware: null, colour: { series: 0, colour: 1 } } })).artwork)
+      .toBeDefined();
   });
 });
 
@@ -105,8 +108,9 @@ describe('summarise — Sennheiser', () => {
     );
   });
 
-  it('has no colour code — colour is in the model string', () => {
-    expect(summarise(sennheiser({})).colourCode).toBeNull();
+  it('resolves artwork from the model string, where colour lives', () => {
+    const summary = summarise(sennheiser({ info: { ...initialState.info, model: 'M4AEBT White' } }));
+    expect(summary.artwork.hero).toContain('sennheiser/m4/white_hero.webp');
   });
 
   it('falls back to the brand only while there is a connection to speak of', () => {

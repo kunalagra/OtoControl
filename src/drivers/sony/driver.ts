@@ -10,6 +10,7 @@
  */
 
 import type { DeviceDriver, DriverSection } from '@/core/driver';
+import { sonyArtwork } from './artwork';
 import { servicesFor } from '@/core/transport';
 import { PROFILES } from '@/core/profiles';
 import { codecName } from './mdr/commands';
@@ -93,4 +94,7 @@ export const SONY_DRIVER = {
   // wear state from it, so there is nothing to report and the render is left
   // undimmed — exactly what both callers got by hardcoding `null` before.
   worn: (_state: SonyState) => true,
+  // Catalog-only artwork; Sony's colour byte picks the render — see
+  // `./artwork.ts`.
+  artwork: (state: SonyState) => sonyArtwork(state.info.model, state.info.colour?.colour ?? null),
 } as const satisfies DeviceDriver<SonyDevice, SonyState>;

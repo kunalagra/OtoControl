@@ -13,7 +13,7 @@
  * on — that moved to `driver`/`id` in `manager.ts`, once there was a `DRIVERS`
  * table to move it onto. `Brand` remains for the things that are genuinely
  * keyed by protocol family rather than by a specific driver: `profiles.ts`,
- * `transport.ts`'s `KnownService`, `ui/device/artwork.ts`, and the manager's
+ * `transport.ts`'s `KnownService`, the vendor asset catalogs under `drivers/<vendor>/`, and the manager's
  * own sticky selection (`resolveBrand`/`knowsDevice`), whose tests pin these
  * exact two string values. Deleting it outright would mean folding all of
  * those into driver ids too, which is a larger change than retiring

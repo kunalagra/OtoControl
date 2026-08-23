@@ -1,7 +1,7 @@
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { SonyFunction, codecName } from '@/drivers/sony/mdr/commands'
 import type { SonyDevice, SonyState } from '@/drivers/sony/sony'
-import { sonyColourName } from '@/ui/device/artwork'
+import { sonyColourName } from '../artwork'
 // Called with the brand rather than through this driver's own descriptor:
 // `SONY_DRIVER` names this module in its components map, so importing the
 // descriptor back would close a runtime cycle. See the matching note in the

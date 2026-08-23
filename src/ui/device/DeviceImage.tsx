@@ -3,25 +3,20 @@ import { RiHeadphoneLine } from '@remixicon/react'
 
 import { cn } from '@/lib/utils'
 import type { ConnectionStatus } from '@/core/connection'
+import type { DeviceArtwork } from '@/core/artwork'
 import { Progress } from '@/components/ui/progress'
-import { artworkFor } from './artwork'
-import type { Brand } from '@/core/brand'
 
 interface DeviceImageProps {
   status: ConnectionStatus
   model: string | null
   /** False when no device has identified itself; shows a placeholder instead. */
   hasDevice?: boolean
-  /** Selects which vendor's renders to use. */
-  brand?: Brand
-  /** Sony reports colour separately; Sennheiser encodes it in the model. */
-  colourCode?: number | null
   /**
-   * Soundcore's Anker product code ("a3951"), read off the serial. The one
-   * model identity its wire protocol offers — artwork resolves from this in
-   * preference to the advertised name, which can be absent or truncated.
+   * Resolved by the active driver's `artwork` strategy — which files exist
+   * and how this vendor's identity maps onto them is vendor knowledge; this
+   * component only renders what it is handed.
    */
-  productCode?: string | null
+  artwork: DeviceArtwork
   /** 0–100, where 0 is full cancelling and 100 full transparency. */
   noiseLevel: number | null
   ancEnabled: boolean | null
@@ -35,6 +30,12 @@ interface DeviceImageProps {
    * `null` for Sony anyway. `DeviceDriver.worn` answers it per driver now.
    */
   worn?: boolean
+  /**
+   * Per-bud charging flags. When the artwork carries separate bud renders,
+   * the one charging in its case fades out — the official Soundcore app's
+   * presentation. Null or absent falls back to the single hero.
+   */
+  budCharging?: { left: boolean; right: boolean } | null
   className?: string
 }
 
@@ -50,16 +51,14 @@ export function DeviceImage({
   status,
   model,
   hasDevice = true,
-  brand = 'sennheiser',
-  colourCode,
-  productCode,
+  artwork,
   noiseLevel,
   ancEnabled,
   worn = true,
+  budCharging = null,
   className,
 }: DeviceImageProps) {
   const connected = status === 'connected'
-  const artwork = artworkFor(brand, model, colourCode, productCode)
   const level = noiseLevel ?? 50
 
   // CDN-served artwork can fail to load — offline, or a URL the vendor has
@@ -75,6 +74,8 @@ export function DeviceImage({
     : !fallbackFailed && artwork.fallback
       ? artwork.fallback
       : ''
+  const showBuds =
+    connected && budCharging !== null && !!artwork.budLeft && !!artwork.budRight
 
   const cancelling = ancEnabled && connected ? Math.max(0, (50 - level) / 50) : 0
   const transparency = ancEnabled && connected ? Math.max(0, (level - 50) / 50) : 0
@@ -149,16 +150,46 @@ export function DeviceImage({
         </svg>
       )}
 
-      <img
-        src={src}
-        onError={() => (heroFailed ? setFallbackFailed(true) : setFailedHeroSrc(heroSrc))}
-        alt={model ?? 'Connected headphones'}
-        draggable={false}
-        className={cn(
-          'relative size-full object-contain transition-opacity duration-500',
-          connected && !worn && 'opacity-60',
-        )}
-      />
+      {showBuds ? (
+        /* The official app's presentation: each bud its own render, the one
+           charging in the case faded to the background. Renders differ in
+           aspect per product, so each keeps its own shape inside its half. */
+        <div
+          className={cn(
+            'relative flex size-full items-center transition-opacity duration-500',
+            !worn && 'opacity-60',
+          )}
+        >
+          {(
+            [
+              ['Left', artwork.budLeft!, budCharging!.left],
+              ['Right', artwork.budRight!, budCharging!.right],
+            ] as const
+          ).map(([side, budSrc, charging]) => (
+            <img
+              key={side}
+              src={budSrc}
+              alt={`${side} earbud${charging ? ', charging in case' : ''}`}
+              draggable={false}
+              className={cn(
+                'size-1/2 object-contain transition-all duration-500',
+                charging && 'opacity-30 grayscale',
+              )}
+            />
+          ))}
+        </div>
+      ) : (
+        <img
+          src={src}
+          onError={() => (heroFailed ? setFallbackFailed(true) : setFailedHeroSrc(heroSrc))}
+          alt={model ?? 'Connected headphones'}
+          draggable={false}
+          className={cn(
+            'relative size-full object-contain transition-opacity duration-500',
+            connected && !worn && 'opacity-60',
+          )}
+        />
+      )}
     </div>
   )
 }

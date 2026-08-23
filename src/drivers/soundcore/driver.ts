@@ -9,6 +9,7 @@
  */
 
 import type { DeviceDriver, DriverSection } from '@/core/driver';
+import { soundcoreArtwork } from './assets';
 import { PROFILES } from '@/core/profiles';
 import { SoundcoreDevice } from './device';
 import type { SoundcoreState } from './device';
@@ -48,4 +49,7 @@ export const SOUNDCORE_DRIVER = {
   // The state response carries a wear-detection flag, but this driver never
   // decodes a worn state to act on, so the render stays undimmed.
   worn: (_state: SoundcoreState) => true,
+  // The product code read off the serial wins over the advertised name —
+  // see `./assets.ts`.
+  artwork: (state: SoundcoreState) => soundcoreArtwork(state.info.model, state.info.productCode),
 } as const satisfies DeviceDriver<SoundcoreDevice, SoundcoreState>;

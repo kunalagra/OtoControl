@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Regenerate src/ui/device/sonyCatalog.generated.ts from Sony's own catalog.
+"""Regenerate src/drivers/sony/sonyCatalog.generated.ts from Sony's own catalog.
 
 Source of truth: the Sound Connect app's GraphQL gateway (extracted from
 jp/co/sony/vim/framework/core/device/cloudmodelinfo/CloudModelInfoController).
@@ -130,7 +130,7 @@ def main() -> None:
         )
         lines.append(f"  '{slug}': {{\n    {entries},\n  }},")
 
-    out = Path("src/ui/device/sonyCatalog.generated.ts")
+    out = Path("src/drivers/sony/sonyCatalog.generated.ts")
     out.write_text(
         HEADER
         + "export const SONY_CATALOG_IMAGES: Record<string, Record<string, string>> = {\n"

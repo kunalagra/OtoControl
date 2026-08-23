@@ -136,19 +136,4 @@ describe('the wider Sony range', () => {
       expect(unsupportedFeatures(profile)).not.toContain(Feature.AmbientLevel);
     }
   });
-
-  it('only claims a colour render that exists on disk', async () => {
-    // Guards the mapping between artworkColours and the converted webp files.
-    const { readdirSync } = await import('node:fs');
-    const files = new Set(readdirSync('public/devices/sony'));
-    const slugs: Record<number, string> = {
-      0x01: 'black', 0x02: 'white', 0x03: 'silver',
-      0x05: 'blue', 0x06: 'pink', 0x08: 'green', 0x0c: 'orange',
-    };
-    for (const profile of sony) {
-      for (const code of profile.artworkColours) {
-        expect(files).toContain(`${profile.artwork}_${slugs[code]}_hero.webp`);
-      }
-    }
-  });
 });

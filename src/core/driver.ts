@@ -33,6 +33,7 @@
 import type { ComponentType } from 'react';
 
 import type { Brand } from './brand';
+import type { DeviceArtwork } from './artwork';
 import type { DeviceProfile } from './profiles';
 import type { TransportOpener } from './transport';
 import { SENNHEISER_DRIVER } from '@/drivers/sennheiser/driver';
@@ -160,7 +161,7 @@ export interface DeviceDriver<TDevice, TState> {
    * are filed under — see `Brand` in `core/brand.ts`. Named separately from
    * `id` on purpose: `id` names *this driver*; `brand` names the vocabulary
    * that data tables outside this file (`core/profiles.ts`, `transport.ts`,
-   * `ui/device/artwork.ts`) are still keyed by, and which the manager's
+   * the vendor asset catalogs under `drivers/<vendor>/`) are still keyed by, and which the manager's
    * sticky selection (`resolveBrand`/`knowsDevice`) is pinned to by its own
    * tests. One driver per brand today; nothing requires that stay true if a
    * driver ever needs a `Brand` finer-grained than one driver.
@@ -215,6 +216,19 @@ export interface DeviceDriver<TDevice, TState> {
    * instead of implied at two call sites.
    */
   worn(state: TState): boolean;
+  /**
+   * The artwork resolver for this vendor's devices: which renders exist and
+   * how identity (model string, colour byte, product code — whichever this
+   * protocol reports) maps onto them.
+   *
+   * The strategy lives here for the same reason `codecName` and `worn` do:
+   * the brands genuinely disagree on how artwork is resolved, and one shared
+   * resolver meant the UI tier held every vendor's catalog plus a branch per
+   * brand. Each driver now owns its catalog beside the protocol it resolves
+   * identity from (`drivers/<vendor>/assets.ts` or `artwork.ts`); the shared
+   * tier keeps only the `DeviceArtwork` shape (`core/artwork.ts`).
+   */
+  artwork(state: TState): DeviceArtwork;
 }
 
 /**

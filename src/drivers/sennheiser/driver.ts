@@ -14,6 +14,7 @@
  */
 
 import type { DeviceDriver, DriverSection } from '@/core/driver';
+import { sennheiserArtwork } from './assets';
 import { servicesFor } from '@/core/transport';
 import { PROFILES } from '@/core/profiles';
 import { WearState, codecName, wearStateName } from './gaia/commands';
@@ -92,4 +93,7 @@ export const SENNHEISER_DRIVER = {
   // "off your head", and dimming it because the device has not answered yet
   // would be a claim we cannot make.
   worn: (state: DeviceState) => state.wearState === null || state.wearState === WearState.OnHead,
+  // Renders resolve from the colour word in the model string itself —
+  // see `./assets.ts`.
+  artwork: (state: DeviceState) => sennheiserArtwork(state.info.model),
 } as const satisfies DeviceDriver<MomentumDevice, DeviceState>;

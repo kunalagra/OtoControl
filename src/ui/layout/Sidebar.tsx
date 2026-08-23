@@ -38,15 +38,14 @@ export function Sidebar({ manager, active, activeSection, onSelect }: SidebarPro
             the note in `ui/device/summary.ts` for why the shared tier must
             not import a whole descriptor to get one string out of it. */}
         <DeviceImage
-          brand={active.driver.brand}
           status={active.state.status}
           model={summary.model}
           hasDevice={summary.hasDevice}
-          colourCode={summary.colourCode}
-          productCode={'productCode' in summary ? summary.productCode : null}
           noiseLevel={active.id === 'sennheiser-gaia' ? active.state.noise.transparencyLevel : null}
           ancEnabled={active.id === 'sennheiser-gaia' ? active.state.noise.ancEnabled : null}
           worn={summary.worn}
+          artwork={summary.artwork}
+          budCharging={'budCharging' in summary ? summary.budCharging : null}
           className="-mx-1"
         />
 

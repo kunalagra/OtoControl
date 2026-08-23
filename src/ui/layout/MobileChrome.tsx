@@ -25,15 +25,14 @@ export function MobileHeader({
       {/* `DriverId` literal rather than the id off a descriptor, as in
           `Sidebar.tsx` — see `ui/device/summary.ts` for the reasoning. */}
       <DeviceImage
-        brand={active.driver.brand}
         status={status}
         model={summary.model}
         hasDevice={summary.hasDevice}
-        colourCode={summary.colourCode}
-        productCode={'productCode' in summary ? summary.productCode : null}
         noiseLevel={active.id === 'sennheiser-gaia' ? active.state.noise.transparencyLevel : null}
         ancEnabled={active.id === 'sennheiser-gaia' ? active.state.noise.ancEnabled : null}
         worn={summary.worn}
+        artwork={summary.artwork}
+        budCharging={'budCharging' in summary ? summary.budCharging : null}
         className="w-20 shrink-0"
       />
 

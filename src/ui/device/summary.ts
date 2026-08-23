@@ -1,3 +1,4 @@
+import type { DeviceArtwork } from '@/core/artwork'
 import type { ActiveDevice } from '@/core/manager'
 
 /**
@@ -31,9 +32,19 @@ export interface DeviceSummary {
   codec: string | null
   /** Whatever else is worth a line — wear state, or per-earbud levels. */
   detail: string | null
-  colourCode: number | null
-  /** Soundcore's Anker product code ("a3951"), when the serial gave one up. */
-  productCode?: string | null
+  /**
+   * The active driver's resolved artwork. Identity plumbing (colour bytes,
+   * product codes) used to travel through here as loose fields for
+   * `DeviceImage` to re-resolve; the driver's `artwork` strategy now does
+   * that with the state it is entitled to read.
+   */
+  artwork: DeviceArtwork
+  /**
+   * Per-bud charging flags, when the driver reports them — Soundcore pushes
+   * them live. Drives the official app's trick of fading the bud that is
+   * docked in the case charging; null when there is nothing per-bud to say.
+   */
+  budCharging?: { left: boolean; right: boolean } | null
   /** True when worn, or when the driver cannot tell — see `DeviceDriver.worn`. */
   worn: boolean
 }
@@ -73,8 +84,10 @@ export function summarise(active: ActiveDevice): DeviceSummary {
       charging: state.battery ? state.battery.left.charging || state.battery.right.charging : false,
       codec: driver.codecName(state),
       detail: driver.statusLine(state),
-      colourCode: null,
-      productCode: state.info.productCode,
+      artwork: driver.artwork(state),
+      budCharging: state.battery
+        ? { left: state.battery.left.charging, right: state.battery.right.charging }
+        : null,
       worn: driver.worn(state),
     }
   }
@@ -91,7 +104,7 @@ export function summarise(active: ActiveDevice): DeviceSummary {
       charging: cells.some((cell) => cell.charging),
       codec: driver.codecName(state),
       detail: driver.statusLine(state),
-      colourCode: null,
+      artwork: driver.artwork(state),
       worn: driver.worn(state),
     }
   }
@@ -114,7 +127,7 @@ export function summarise(active: ActiveDevice): DeviceSummary {
       charging: reporting.some((cell) => cell.charging),
       codec: driver.codecName(state),
       detail: driver.statusLine(state),
-      colourCode: state.info.colour?.colour ?? null,
+      artwork: driver.artwork(state),
       worn: driver.worn(state),
     }
   }
@@ -127,7 +140,7 @@ export function summarise(active: ActiveDevice): DeviceSummary {
     charging: state.charging === true,
     codec: driver.codecName(state),
     detail: driver.statusLine(state),
-    colourCode: null,
+    artwork: driver.artwork(state),
     worn: driver.worn(state),
   }
 }

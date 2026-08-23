@@ -633,6 +633,47 @@ empty earbud reports `0` with `NOT_CHARGING`.
 
 ---
 
+## Sennheiser — model strings for the post-M4 GAIA family ❓ open
+
+Profiles for the rest of the GAIA family (M5, MTW3/4/5, Accentum family, CX
+TW family, MOMENTUM Sport, HD 630 BT, HDR 275) are declared from the Smart
+Control Plus app's own product configs (v1.6.0) and its binary's strings.
+Only the M4's wire behaviour is hardware-verified; every other `match`
+pattern is evidence from the app, not a device:
+
+| Device | Pattern | Evidence |
+|---|---|---|
+| MOMENTUM 4 | `M4AEBT` | hardware (the one verified model string) |
+| MOMENTUM 5 | `M5AEBT` | app binary string |
+| MTW 3 | `MTW3`, `MTW3_B/G/W` | app binary strings |
+| MTW 4 | `MTW4`, `MTW4_WHITE`, `MTW4 BLACK GRAPHITE` | app binary strings |
+| MTW 5 | `MTW5`, `MTW5_WHITE` | app binary strings |
+| Accentum family | `ACCENTUM` + advertised names | app binary strings |
+| CX 200BT TW | `CX200_B`, `CX 200BT TW` | app binary strings |
+| CX Sport TW | `CX200TW1`, `CX Sport True Wireless` | app binary strings |
+| CX 500BT TW | `CX500BT1`, `CX 500BT` | app binary strings |
+| CX Plus TW | `CXPLUSTW1`, `CX Plus True Wireless` | app binary strings |
+| HD 630 BT | `HDB 630` | app binary string |
+| HDR 275 | `HDR 275` | app binary string |
+
+A reading is simply the `GET_MODEL_ID` (`01 01`) reply for your device, from
+the debug console. The exact string decides the profile match **and** the
+colourway render (the M4 reports e.g. `M4AEBT Black`).
+
+Two more gaps in the same area:
+
+- **Transport for the BLE-listed models.** The app connects to the M4, M5,
+  MTW3, CX 500BT and BTA1 over GATT on Android, yet our serial driver reaches
+  the M4 over RFCOMM fine — so the app's preference is not a protocol fact.
+  Whether each of the others also exposes the GAIA service over RFCOMM is
+  unknown until one is tried.
+- **Artwork for MTW5 / HD 630 / HDR 275.** The 1.6.0 app ships their renders
+  only inside its encrypted asset bundle, which also contains decoy dupes of
+  the plaintext images; the blobs we could not name are left unclaimed, and
+  those three profiles show the placeholder frame.
+
+---
+
 ## How to contribute a reading
 
 You need the device, Chrome (or any Chromium browser), and about two minutes.

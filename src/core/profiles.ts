@@ -103,14 +103,6 @@ export interface DeviceProfile {
    * headphones; the reverse leaves a band of empty space.
    */
   artworkAspect: number;
-  /**
-   * Colour codes we actually hold a render for, from Sony's `ModelColor`.
-   *
-   * Knowing a colour's *name* is universal; having a *picture* of it is per
-   * model. Without this, a WF-C500 reporting Silver would request a file that
-   * only the XM5 has.
-   */
-  artworkColours: readonly number[];
 }
 
 const F = Feature;
@@ -156,7 +148,6 @@ const nothingProfile = (
   // ui/device/nothingCdn.generated.ts — the official app's own images.
   artwork: base.toLowerCase(),
   artworkAspect: 1,
-  artworkColours: [],
 });
 
 // --- Soundcore ---------------------------------------------------------------
@@ -189,7 +180,6 @@ const soundcoreProfile = (
   features: [F.Anc, F.Transparency, F.Equalizer, F.WearDetection],
   artwork: code,
   artworkAspect: 1,
-  artworkColours: [],
 });
 
 const SOUNDCORE_PROFILES: readonly DeviceProfile[] = [
@@ -250,7 +240,6 @@ const SONY_CATALOG_PROFILES: readonly DeviceProfile[] = SONY_CATALOG_MODELS.map(
       features: [],
       artwork: id,
       artworkAspect: 1,
-      artworkColours: [],
     };
   },
 );
@@ -303,6 +292,224 @@ const NOTHING_PROFILES: readonly DeviceProfile[] = [
   nothingProfile('cmf-headphone-pro', 'CMF Headphone Pro', 'B175', true, [], 'over-ear'),
 ];
 
+// --- Sennheiser (GAIA family, beyond the M4) ---------------------------------
+//
+// Declared from the Smart Control Plus app's own product configs (v1.6.0,
+// decrypted in android-testing/sennheiser_m4_assets) cross-checked against the
+// app binary's model-id and Bluetooth-name strings. None of these have been
+// spoken to over serial yet — the M4 above is still the only hardware-verified
+// entry — so a feature listed here is the vendor's claim, not our reading.
+// The driver tolerates a rejected command, so an over-claim degrades a toggle;
+// an under-claim merely hides one.
+//
+// The config vocabulary maps onto ours as: NoiseControl → ANC+transparency,
+// AudioModes → bass boost (sound modes), ToneAndVoicePrompts → voice prompts,
+// OnHeadDetection → wear detection, ConnectionManagement → multipoint. Facts
+// with no equivalent here (FitTest, SoundZones, Auracast, telemetry…) stay out.
+//
+// `artwork` is the folder under `public/devices/sennheiser/` the renders were
+// extracted into, or '' for products whose art the app ships only in its
+// encrypted bundle (MTW5, HD 630, HDR 275) — those show the placeholder frame
+// until someone extracts it.
+
+const sennheiserProfile = (
+  id: string,
+  name: string,
+  match: RegExp,
+  form: 'earbuds' | 'over-ear',
+  features: readonly FeatureId[],
+  artwork: string,
+  artworkAspect = 1125 / 558,
+): DeviceProfile => ({
+  id,
+  name,
+  brand: 'sennheiser',
+  match,
+  form,
+  battery: form === 'over-ear' ? 'single' : 'dual',
+  hasCase: form === 'earbuds',
+  features,
+  artwork,
+  artworkAspect,
+});
+
+const SENNHEISER_PROFILES: readonly DeviceProfile[] = [
+  sennheiserProfile(
+    'momentum-5',
+    'MOMENTUM 5 Wireless',
+    /M5AEBT|MOMENTUM\s*5/i,
+    'over-ear',
+    [
+      F.Anc, F.Transparency, F.Equalizer, F.BassBoost, F.Sidetone,
+      F.WearDetection, F.SmartPause, F.AutoAnswer, F.ComfortCall,
+      F.TouchControls, F.VoicePrompts, F.AutoPowerOff, F.Multipoint,
+    ],
+    'm5',
+  ),
+  sennheiserProfile(
+    'momentum-tw-3',
+    'MOMENTUM True Wireless 3',
+    /MTW3|MOMENTUM\s*(?:TW|True\s*Wireless)\s*3/i,
+    'earbuds',
+    [
+      F.Anc, F.Transparency, F.Equalizer, F.BassBoost,
+      F.WearDetection, F.SmartPause, F.AutoAnswer,
+      F.TouchControls, F.VoicePrompts, F.AutoPowerOff, F.Multipoint,
+    ],
+    'mtw3',
+    1125 / 635,
+  ),
+  sennheiserProfile(
+    'momentum-tw-4',
+    'MOMENTUM True Wireless 4',
+    /MTW4|MOMENTUM\s*(?:TW|True\s*Wireless)\s*4/i,
+    'earbuds',
+    [
+      F.Anc, F.Transparency, F.Equalizer, F.BassBoost, F.Sidetone,
+      F.WearDetection, F.SmartPause, F.AutoAnswer,
+      F.TouchControls, F.VoicePrompts, F.AutoPowerOff, F.Multipoint,
+    ],
+    'mtw4',
+  ),
+  sennheiserProfile(
+    'momentum-tw-5',
+    'MOMENTUM True Wireless 5',
+    /MTW5|MOMENTUM\s*(?:TW|True\s*Wireless)\s*5/i,
+    'earbuds',
+    [
+      F.Anc, F.Transparency, F.Equalizer, F.BassBoost, F.Sidetone,
+      F.WearDetection, F.SmartPause, F.AutoAnswer,
+      F.TouchControls, F.VoicePrompts, F.AutoPowerOff, F.Multipoint,
+    ],
+    '',
+  ),
+  sennheiserProfile(
+    'momentum-sport',
+    'MOMENTUM Sport',
+    /MSPORT1|MOMENTUM\s*Sport/i,
+    'earbuds',
+    [
+      F.Anc, F.Transparency, F.Equalizer, F.BassBoost, F.Sidetone,
+      F.WearDetection, F.SmartPause, F.AutoAnswer,
+      F.TouchControls, F.VoicePrompts, F.AutoPowerOff, F.Multipoint,
+    ],
+    'm_sport1',
+  ),
+  // Ordered before plain ACCENTUM so the specific names claim their own
+  // models; the plain entry's lookahead then only sees the over-ear.
+  sennheiserProfile(
+    'accentum-open',
+    'ACCENTUM Open',
+    /AOWS1|ACCENTUM\s*Open/i,
+    'earbuds',
+    [
+      F.Transparency, F.Equalizer, F.BassBoost,
+      F.WearDetection, F.SmartPause, F.AutoAnswer,
+      F.TouchControls, F.VoicePrompts, F.AutoPowerOff, F.Multipoint,
+    ],
+    'aows1',
+  ),
+  sennheiserProfile(
+    'accentum-plus',
+    'ACCENTUM Plus Wireless',
+    /ACCENTUM\s*Plus/i,
+    'over-ear',
+    [
+      F.Anc, F.Transparency, F.Equalizer, F.Sidetone,
+      F.WearDetection, F.SmartPause, F.AutoAnswer, F.ComfortCall,
+      F.TouchControls, F.VoicePrompts, F.AutoPowerOff, F.Multipoint,
+    ],
+    'acc_plus1',
+  ),
+  sennheiserProfile(
+    'accentum-tw',
+    'ACCENTUM True Wireless',
+    /ACCENTUM\s*(?:TW|True\s*Wireless)/i,
+    'earbuds',
+    [
+      F.Anc, F.Transparency, F.Equalizer, F.BassBoost, F.Sidetone,
+      F.WearDetection, F.SmartPause, F.AutoAnswer,
+      F.TouchControls, F.VoicePrompts, F.AutoPowerOff, F.Multipoint,
+    ],
+    'acc_tw1',
+  ),
+  sennheiserProfile(
+    'accentum',
+    'ACCENTUM Wireless',
+    /^ACCENTUM(?!.*(plus|tw|true|open|clip))/i,
+    'over-ear',
+    [
+      F.Anc, F.Transparency, F.Equalizer, F.Sidetone,
+      F.VoicePrompts, F.AutoPowerOff, F.Multipoint,
+    ],
+    'acc1',
+  ),
+  sennheiserProfile(
+    'cx-200bt-tw',
+    'CX 200BT TW',
+    /CX\s*200(?!TW1)/i,
+    'earbuds',
+    [F.Equalizer, F.Sidetone, F.TouchControls, F.VoicePrompts, F.AutoPowerOff, F.Multipoint],
+    'cx200_tw',
+  ),
+  sennheiserProfile(
+    'cx-sport-tw',
+    'CX Sport True Wireless',
+    /CX200TW1|CX\s*Sport(\s*True\s*Wireless)?$/i,
+    'earbuds',
+    [F.Equalizer, F.Sidetone, F.TouchControls, F.VoicePrompts, F.AutoPowerOff, F.Multipoint],
+    'cx200tw1_sport',
+  ),
+  sennheiserProfile(
+    'cx-500bt-tw',
+    'CX 500BT True Wireless',
+    /CX\s*500/i,
+    'earbuds',
+    [
+      F.Anc, F.Transparency, F.Equalizer, F.Sidetone,
+      F.WearDetection, F.SmartPause, F.AutoAnswer,
+      F.TouchControls, F.VoicePrompts, F.AutoPowerOff, F.Multipoint,
+    ],
+    'cx500_tw',
+  ),
+  sennheiserProfile(
+    'cx-plus-tw',
+    'CX Plus True Wireless',
+    /CX\s*Plus|CXPLUSTW/i,
+    'earbuds',
+    [
+      F.Anc, F.Transparency, F.Equalizer, F.Sidetone,
+      F.WearDetection, F.SmartPause, F.AutoAnswer,
+      F.TouchControls, F.VoicePrompts, F.AutoPowerOff, F.Multipoint,
+    ],
+    'cx_plus_tw',
+  ),
+  sennheiserProfile(
+    'hd-630bt',
+    'HD 630 BT',
+    /HDB?\s*630/i,
+    'over-ear',
+    [
+      F.Anc, F.Transparency, F.Equalizer, F.BassBoost, F.Sidetone,
+      F.WearDetection, F.SmartPause, F.AutoAnswer, F.ComfortCall,
+      F.TouchControls, F.VoicePrompts, F.AutoPowerOff, F.Multipoint,
+    ],
+    '',
+  ),
+  sennheiserProfile(
+    'hdr-275',
+    'HDR 275',
+    /HDR\s*275/i,
+    'over-ear',
+    [F.Anc, F.Transparency, F.Equalizer, F.Sidetone, F.VoicePrompts, F.AutoPowerOff, F.Multipoint],
+    '',
+  ),
+  // Not included: BTA1 — a Bluetooth transmitter for TVs, not headphones; its
+  // feature set (Auracast broadcast, input source) has no overlap with ours.
+  // atwm1/hdw960/sb02m/sb02s appear in the app binary with artwork but ship no
+  // product config in this bundle, so there is no capability evidence to declare.
+];
+
 export const PROFILES: readonly DeviceProfile[] = dedupeById([
   {
     id: 'momentum-4',
@@ -329,11 +536,10 @@ export const PROFILES: readonly DeviceProfile[] = dedupeById([
       F.BluetoothCompatibility,
       F.Multipoint,
     ],
-    artwork: 'momentum-4',
+    artwork: 'm4',
     artworkAspect: 1125 / 558,
-    // Sennheiser carries colour in the model string, not a colour byte.
-    artworkColours: [],
   },
+  ...SENNHEISER_PROFILES,
   ...SONY_CATALOG_PROFILES,
   ...NOTHING_PROFILES,
   ...SOUNDCORE_PROFILES,
