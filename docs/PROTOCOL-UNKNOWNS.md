@@ -7,41 +7,22 @@ values fall back to a safe default rather than to something invented.
 If you own one of these devices, a reading takes about two minutes and closes a
 gap for everyone. See [How to contribute a reading](#how-to-contribute-a-reading).
 
+**When an entry is resolved it is deleted from here**, once the finding lives
+in the code that uses it — the byte layout in the decoder's own doc comment,
+the per-model table beside the model list. This file is for what is still
+unknown, not a changelog of what once was. Entries still marked ✅ below are
+ones whose substance has no home in code yet, so this is their only record;
+they should be moved and then removed.
+
+Resolved and removed so far: Sony's colourway enum (now in
+`drivers/sony/artwork.ts`), the multipoint paired-device list layout and its
+playback-status matching (`mdr/pairing.ts`), which assignable presets a model
+accepts (`mdr/assignable.ts`), Nothing's carrier and GATT-vs-SPP split
+(`core/gattTransport.ts`), its `DeviceModel` reply encoding, spatial-audio
+payload and four EQ command ids (`drivers/nothing/commands.ts`), and its
+per-model feature flags (`drivers/nothing/models.ts`).
+
 ---
-
-## Sony — colourway enum ✅ resolved
-
-Sony reports colour as one byte, via `CONNECT_GET_DEVICE_INFO` value type `0x03`.
-Unlike the other value types it carries **no length prefix**: the reply is
-`[0x05, 0x03, series, colour]`. Observed on a black WF-C500: `05 03 00 01`.
-
-**Resolved from `com.sony.songpal.util.modelinfo.ModelColor`** in the Sound
-Connect app — not inferred:
-
-| Byte | Colour | | Byte | Colour |
-|---|---|---|---|---|
-| `0x00` | Default | | `0x08` | Green |
-| `0x01` | Black | | `0x09` | Gray |
-| `0x02` | White | | `0x0A` | Gold |
-| `0x03` | Silver | | `0x0B` | Cream |
-| `0x04` | Red | | `0x0C` | Orange |
-| `0x05` | Blue | | `0x0D` | Brown |
-| `0x06` | Pink | | `0x0E` | Violet |
-| `0x07` | Yellow | | | |
-
-The enum also defines "-I" variants at **`base + 16`** (Black `0x01` / Black-I
-`0x11`) — the same colour rendered inactive. Normalise before looking up.
-
-`0x01` = Black is confirmed against hardware, which matches the enum.
-
-The same byte is broadcast in Sony's BLE advertisement at **offset 5**, so the
-app knows the colour before connecting; over RFCOMM we read it after connecting
-instead. It is a manufacturing constant per SKU: it identifies the colour the
-unit was built as, and cannot know about a case or skin fitted later.
-
-Naming a colour is not the same as having artwork for it — renders exist only
-for the four the WF-C500 ships in (black, white, green, orange). Any other
-colour resolves to the black render.
 
 ## Sony — undocumented device-info value type `0x04`
 
@@ -532,48 +513,26 @@ decompiling the Dart AOT snapshot.
 executed action looks like as much as an empty getter. Nothing observable
 changed on the headphones, but neither ID should be assumed read-only.
 
-## Soundcore — reachable but silent on macOS ❓ open, possibly blocked
+## Soundcore — battery resolution in the BLE advertisement ❓ open
 
-The Soundcore Liberty Air 2 Pro (model **A3951**) is *not* supported by this
-app, and a spike suggests it may not be reachable at all from a browser on
-macOS. Recorded so the next person does not repeat it.
+Soundcore battery works: the device pushes levels and charging flags as
+`01 03` / `01 04`, and the full state as `01 01`, all over the GATT link, and
+the driver reads them. What is unmapped is the **finer-grained** battery the
+official app shows, which comes from the manufacturer data in the device's BLE
+advertisement rather than from the control channel.
 
-What is established:
+`SoundcoreDevice.#watchAdvertisements` already logs that manufacturer data —
+company id and raw bytes — whenever frame debugging is on, precisely so the
+layout can be lined up against what the app displays. Nothing consumes it yet.
 
-- **Chrome enumerates it and opens it.** `spike/soundcore.html` granted two
-  RFCOMM services on the device, both reporting `connected=true`, and both
-  opened without error: standard SPP `00001101-0000-1000-8000-00805f9b34fb`
-  and `66666666-6666-6666-6666-666666666666`. With only that device connected,
-  both ports must belong to it.
-- **Our packet is right.** Soundcore framing is
-  `08 EE 00 00 00 | command(2) | length u16 LE | body | checksum`, checksum
-  being a wrapping byte sum. Our request-state encodes to
-  `08 EE 00 00 00 01 01 0A 00 02`, byte-identical to Oppzippy/OpenSCQ30's own
-  test vector (GPL-3, read as reference).
-- **Per-model service UUIDs come from gmallios/SoundcoreManager**, whose device
-  definitions record that Soundcore's vendor RFCOMM UUID varies per model in its
-  last five hex digits. Web Serial matches exact UUIDs only, so the spike offers
-  both the standard SPP service and an unfiltered picker rather than a mask.
-- **That is genuinely the first thing to send.** OpenSCQ30's A3951 definition
-  opens with `RequestState` — no handshake, no auth, no capability exchange.
-- **Both services answered nothing**, to that command, on either channel, with
-  no unsolicited traffic on connect either.
-- **The channel is dead inbound too.** With a port open and the read loop
-  running, operating the earbuds' own touch controls produced no bytes at all.
-  This is the decisive test: it rules out "we sent the wrong command", because
-  a live channel would carry the device's own state changes regardless of what
-  we asked for.
+Two obstacles beyond the layout itself. `watchAdvertisements()` is flag-gated
+on desktop Chrome and absent from Firefox and Safari, so even a mapped layout
+would be a best-effort extra rather than a dependable source. And Anker's
+company ids (`0x12ac`, `0xeee8`) are packed from the address prefix rather than
+registered, so the same id may carry different layouts across models.
 
-So the channel opens and then carries nothing in either direction. The
-explanation is the platform rather than the protocol: **OpenSCQ30 lists
-Windows, Linux and Android as supported — not macOS** — and ships no macOS
-connection backend. No known implementation has demonstrated this protocol over
-macOS RFCOMM, and how CoreBluetooth assigns an RFCOMM channel to a device
-already streaming A2DP/HFP is untested ground.
-
-**Treated as blocked below the browser.** More protocol work will not get past
-it; what would is evidence that any macOS program can talk to an A3951 over
-RFCOMM at all. Until that exists, this is not worth further time.
+A reading is a capture of the advertisement bytes alongside the percentage the
+official app shows at the same moment, for one model.
 
 ## Sony — which slot is the left earbud ❓ open
 

@@ -46,6 +46,47 @@ import {
   supportsNoiseVariant,
 } from './mdr/noise';
 import type { NoiseSettings } from './mdr/noise';
+import type { PairedDevice } from './mdr/pairing';
+import {
+  PAIRING_GET,
+  decodePairedDevices,
+  decodePlaybackDeviceNotify,
+  decodePlaybackFixed,
+  encodeConnectPairedDevice,
+  encodeDisconnectPairedDevice,
+  encodeSetPlaybackDevice,
+  encodeSetPlaybackFixed,
+  encodeUnpairDevice,
+  isPairedDevicesReply,
+  isPlaybackDeviceNotify,
+  isPlaybackFixedReply,
+  pairingTypeFor,
+} from './mdr/pairing';
+import {
+  decodeAssignable,
+  encodeGetAssignable,
+  encodeSetAssignable,
+  isAssignableReply,
+} from './mdr/assignable';
+import {
+  decodeVoiceGuidance,
+  decodeVoiceGuidanceVolume,
+  encodeSetVoiceGuidance,
+  encodeSetVoiceGuidanceVolume,
+  isVoiceGuidanceReply,
+  isVoiceGuidanceVolumeReply,
+} from './mdr/voiceGuidance';
+import {
+  decodeSpeakToChatConfig,
+  decodeSpeakToChatEnabled,
+  encodeGetSpeakToChatConfig,
+  encodeGetSpeakToChatEnabled,
+  encodeSetSpeakToChatConfig,
+  encodeSetSpeakToChatEnabled,
+  isSpeakToChatConfigReply,
+  isSpeakToChatEnabledReply,
+  speakToChatInquiryFor,
+} from './mdr/speakToChat';
 import {
   SystemInquiryType,
   decodeAutoPowerOff,
@@ -101,6 +142,31 @@ export interface SonyState {
   autoPowerOff: number | null;
   /** Pause playback when the headphones come off, resume when put back on. */
   pauseOnRemoval: boolean | null;
+  /**
+   * Speak-to-chat (Type 2), when the device reports the capability: whether
+   * it is on, and the sensitivity/timeout it runs with. Null as a whole when
+   * the device has no speak-to-chat; individual nulls when the device has the
+   * toggle but not the config pair.
+   */
+  speakToChat: { enabled: boolean | null; sensitivity: number | null; timeout: number | null } | null;
+  /** Per-side touch assignment, on earbuds that report it. */
+  touchAssignment: { left: number; right: number } | null;
+  /**
+   * Voice guidance (voice notifications), on devices that report it — the
+   * one setting that lives on the second command table. `volume` is null on
+   * devices without the adjustment capability.
+   */
+  voiceGuidance: { enabled: boolean | null; volume: number | null } | null;
+  /**
+   * The headphones' own paired-device list and audio routing, when they
+   * report pairing-device management. Distinct from OS pairing: this is what
+   * the headphones themselves remember.
+   */
+  connections: {
+    devices: PairedDevice[];
+    playbackMac: string | null;
+    playbackFixed: boolean | null;
+  } | null;
   /** Function IDs the device reported. Empty until connected. */
   capabilities: Set<number>;
 }
@@ -120,11 +186,15 @@ export const initialSonyState: SonyState = {
   noiseVariant: null,
   autoPowerOff: null,
   pauseOnRemoval: null,
+  speakToChat: null,
+  touchAssignment: null,
+  voiceGuidance: null,
+  connections: null,
   capabilities: new Set(),
 };
 
 /** Bumped when `captureDurable` changes shape; older caches are then dropped. */
-export const SONY_SNAPSHOT_VERSION = 2;
+export const SONY_SNAPSHOT_VERSION = 4;
 
 /**
  * The settings worth remembering between sessions.
@@ -141,6 +211,10 @@ export interface SonyDurableState {
   eq: EqSettings | null;
   autoPowerOff: number | null;
   pauseOnRemoval: boolean | null;
+  speakToChat: { enabled: boolean | null; sensitivity: number | null; timeout: number | null } | null;
+  touchAssignment: { left: number; right: number } | null;
+  voiceGuidance: { enabled: boolean | null; volume: number | null } | null;
+  connections: { devices: PairedDevice[]; playbackMac: string | null; playbackFixed: boolean | null } | null;
   /** A Set on the state; an array here, because JSON has no Set. */
   capabilities: number[];
 }
@@ -152,6 +226,10 @@ export const captureDurable = (state: SonyState): SonyDurableState => ({
   eq: state.eq,
   autoPowerOff: state.autoPowerOff,
   pauseOnRemoval: state.pauseOnRemoval,
+  speakToChat: state.speakToChat,
+  touchAssignment: state.touchAssignment,
+  voiceGuidance: state.voiceGuidance,
+  connections: state.connections,
   capabilities: [...state.capabilities],
 });
 
@@ -168,6 +246,10 @@ export const applyDurable = (payload: object): Partial<SonyState> => {
     eq: snapshot.eq,
     autoPowerOff: snapshot.autoPowerOff ?? null,
     pauseOnRemoval: snapshot.pauseOnRemoval ?? null,
+    speakToChat: snapshot.speakToChat ?? null,
+    touchAssignment: snapshot.touchAssignment ?? null,
+    voiceGuidance: snapshot.voiceGuidance ?? null,
+    connections: snapshot.connections ?? null,
     capabilities: new Set(snapshot.capabilities),
   };
 };
@@ -186,6 +268,8 @@ export class SonyDevice implements Persistable {
   readonly #store: StateStore<SonyState>;
   readonly #session: DeviceSession<MdrClient>;
   #refreshing = false;
+  /** Connection-type byte the device's capabilities imply; null until read. */
+  #pairingType: number | null = null;
 
   constructor(openTransport: TransportOpener = openSerialTransport) {
     this.#store = new StateStore(
@@ -319,7 +403,89 @@ export class SonyDevice implements Persistable {
           this.#patch({ eq: decodeEq(payload) });
           break;
         case Reply.SystemParamNotify:
-          this.#patch({ pauseOnRemoval: decodeSystemToggle(payload).on });
+          // A system notification is only pause-on-removal when its inquiry
+          // byte says so; reading every one as such used to misfile a
+          // speak-to-chat push into the pause toggle.
+          if (payload[1] === SystemInquiryType.PlaybackControlByWearing) {
+            this.#patch({ pauseOnRemoval: decodeSystemToggle(payload).on });
+          } else if (isAssignableReply(payload)) {
+            this.#patch({ touchAssignment: decodeAssignable(payload) });
+          } else if (isSpeakToChatEnabledReply(payload)) {
+            this.#patch({
+              speakToChat: {
+                ...(this.#store.state.speakToChat ?? { sensitivity: null, timeout: null }),
+                enabled: decodeSpeakToChatEnabled(payload),
+              },
+            });
+          }
+          break;
+        case 0x39:
+          // Pairing/device-management notifications (table 2): the device
+          // list after any connection change, the fix after its own writes.
+          if (isPlaybackFixedReply(payload)) {
+            this.#patch({
+              connections: {
+                ...(this.#store.state.connections ?? { devices: [], playbackMac: null }),
+                playbackFixed: decodePlaybackFixed(payload),
+              },
+            });
+          } else if (
+            this.#pairingType !== null &&
+            isPairedDevicesReply(payload, this.#pairingType)
+          ) {
+            const { devices, playbackMac } = decodePairedDevices(payload, this.#pairingType);
+            this.#patch({
+              connections: {
+                ...(this.#store.state.connections ?? { playbackFixed: null }),
+                devices,
+                playbackMac,
+              },
+            });
+          }
+          break;
+        case 0x3d:
+          // The extended-param push that names the playback device outright.
+          // Without it, routing moved by the phone or the headphones is only
+          // noticed at the next full list read.
+          if (isPlaybackDeviceNotify(payload) && this.#store.state.connections) {
+            this.#patch({
+              connections: {
+                ...this.#store.state.connections,
+                playbackMac: decodePlaybackDeviceNotify(payload),
+              },
+            });
+          }
+          break;
+        case 0x49:
+          // Voice guidance lives on the second command table; its notify
+          // opcode is its own, not the SYSTEM family's.
+          if (isVoiceGuidanceReply(payload)) {
+            this.#patch({
+              voiceGuidance: {
+                ...(this.#store.state.voiceGuidance ?? { volume: null }),
+                enabled: decodeVoiceGuidance(payload),
+              },
+            });
+          } else if (isVoiceGuidanceVolumeReply(payload)) {
+            this.#patch({
+              voiceGuidance: {
+                ...(this.#store.state.voiceGuidance ?? { enabled: null }),
+                volume: decodeVoiceGuidanceVolume(payload),
+              },
+            });
+          }
+          break;
+        case Reply.SystemExtParamNotify:
+          if (isSpeakToChatConfigReply(payload)) {
+            const { sensitivity, timeout } = decodeSpeakToChatConfig(payload);
+            this.#patch({
+              speakToChat: {
+                ...(this.#store.state.speakToChat ?? { enabled: null }),
+                sensitivity,
+                timeout,
+              },
+            });
+          }
           break;
         case Reply.PowerParamNotify:
           this.#patch({ autoPowerOff: decodeAutoPowerOff(payload) });
@@ -492,6 +658,94 @@ export class SonyDevice implements Persistable {
       });
     }
 
+    // Speak-to-chat: the toggle and the sensitivity/timeout pair are two
+    // separate reads on two opcode pairs, gated by one capability. A device
+    // that answers the toggle but not the config keeps a null config — the
+    // reads are independent and each is tolerated alone.
+    if (speakToChatInquiryFor(this.#store.state.capabilities) !== null) {
+      this.#patch({ speakToChat: { enabled: null, sensitivity: null, timeout: null } });
+      await read('speak-to-chat', async () => {
+        const payload = await client.request(...(encodeGetSpeakToChatEnabled() as [number, number]));
+        this.#patch({
+          speakToChat: {
+            ...this.#store.state.speakToChat!,
+            enabled: decodeSpeakToChatEnabled(payload),
+          },
+        });
+      });
+      await read('speak-to-chat config', async () => {
+        const payload = await client.request(...(encodeGetSpeakToChatConfig() as [number, number]));
+        const { sensitivity, timeout } = decodeSpeakToChatConfig(payload);
+        this.#patch({ speakToChat: { ...this.#store.state.speakToChat!, sensitivity, timeout } });
+      });
+    }
+
+    // Per-side touch assignment, on its own reported capability (with the
+    // limited variant folded in — same inquiry, same shape).
+    if (has(SonyFunction.AssignableSetting) || has(SonyFunction.AssignableSettingWithLimitation)) {
+      await read('touch assignment', async () => {
+        const payload = await client.request(...(encodeGetAssignable() as [number, number]));
+        this.#patch({ touchAssignment: decodeAssignable(payload) });
+      });
+    }
+
+    // Voice guidance — table 2, so every request and write below carries
+    // `table: 2`. Any of the guidance capabilities opens the on/off read;
+    // only the volume-capable one opens the volume read.
+    const guidanceCapable =
+      has(SonyFunction.VoiceGuidanceWithLanguageSwitch) ||
+      has(SonyFunction.VoiceGuidanceOnOffOnly) ||
+      has(SonyFunction.VoiceGuidanceWithVolume);
+    if (guidanceCapable) {
+      this.#patch({ voiceGuidance: { enabled: null, volume: null } });
+      await read('voice guidance', async () => {
+        const payload = await client.request(0x46, 0x03, { table: 2 });
+        this.#patch({
+          voiceGuidance: {
+            ...this.#store.state.voiceGuidance!,
+            enabled: decodeVoiceGuidance(payload),
+          },
+        });
+      });
+      if (has(SonyFunction.VoiceGuidanceWithVolume)) {
+        await read('voice guidance volume', async () => {
+          const payload = await client.request(0x46, 0x20, { table: 2 });
+          this.#patch({
+            voiceGuidance: {
+              ...this.#store.state.voiceGuidance!,
+              volume: decodeVoiceGuidanceVolume(payload),
+            },
+          });
+        });
+      }
+    }
+
+    // The headphones' own paired-device list and routing (table 2). The list
+    // read needs the device's connection type; the routing fix rides the
+    // source-switch capability.
+    this.#pairingType = pairingTypeFor(this.#store.state.capabilities);
+    if (this.#pairingType !== null) {
+      this.#patch({ connections: { devices: [], playbackMac: null, playbackFixed: null } });
+      await read('paired devices', async () => {
+        const payload = await client.request(PAIRING_GET, this.#pairingType!, { table: 2 });
+        const { devices, playbackMac } = decodePairedDevices(payload, this.#pairingType!);
+        this.#patch({
+          connections: { ...this.#store.state.connections!, devices, playbackMac },
+        });
+      });
+      if (has(0x31)) {
+        await read('playback fix', async () => {
+          const payload = await client.request(PAIRING_GET, 0x01, { table: 2 });
+          this.#patch({
+            connections: {
+              ...this.#store.state.connections!,
+              playbackFixed: decodePlaybackFixed(payload),
+            },
+          });
+        });
+      }
+    }
+
     // Which NC/ASM variant this model speaks comes from its own capability
     // table, never from the model name — see `src/drivers/sony/mdr/noise.ts`.
     const variant = inquiryTypeFor(this.#store.state.capabilities);
@@ -592,6 +846,128 @@ export class SonyDevice implements Persistable {
       await client.write(encodeSystemToggle(SystemInquiryType.PlaybackControlByWearing, on));
     } catch (error) {
       this.#patch({ pauseOnRemoval: previous, error: describeError(error) });
+    }
+  }
+
+  async setSpeakToChatEnabled(on: boolean): Promise<void> {
+    const client = this.#session.client;
+    const current = this.#store.state.speakToChat;
+    if (!client) return;
+
+    this.#patch({
+      speakToChat: { ...(current ?? { sensitivity: null, timeout: null }), enabled: on },
+    });
+    try {
+      await client.write(encodeSetSpeakToChatEnabled(on));
+    } catch (error) {
+      this.#patch({ speakToChat: current, error: describeError(error) });
+    }
+  }
+
+  async setPairedDeviceConnected(mac: string, connected: boolean): Promise<void> {
+    const client = this.#session.client;
+    const type = this.#pairingType;
+    if (!client || type === null) return;
+    try {
+      await client.write(
+        connected ? encodeConnectPairedDevice(type, mac) : encodeDisconnectPairedDevice(type, mac),
+        { table: 2 },
+      );
+    } catch (error) {
+      this.#patch({ error: describeError(error) });
+    }
+    // The list arrives as a notification after the device acts; no echo to
+    // optimistically patch against.
+  }
+
+  async unpairDevice(mac: string): Promise<void> {
+    const client = this.#session.client;
+    const type = this.#pairingType;
+    if (!client || type === null) return;
+    try {
+      await client.write(encodeUnpairDevice(type, mac), { table: 2 });
+    } catch (error) {
+      this.#patch({ error: describeError(error) });
+    }
+  }
+
+  async setPlaybackDevice(mac: string): Promise<void> {
+    const client = this.#session.client;
+    const current = this.#store.state.connections;
+    if (!client) return;
+
+    this.#patch({ connections: { ...current!, playbackMac: mac } });
+    try {
+      await client.write(encodeSetPlaybackDevice(mac), { table: 2 });
+    } catch (error) {
+      this.#patch({ connections: current, error: describeError(error) });
+    }
+  }
+
+  async setPlaybackFixed(enabled: boolean): Promise<void> {
+    const client = this.#session.client;
+    const current = this.#store.state.connections;
+    if (!client) return;
+
+    this.#patch({ connections: { ...current!, playbackFixed: enabled } });
+    try {
+      await client.write(encodeSetPlaybackFixed(enabled), { table: 2 });
+    } catch (error) {
+      this.#patch({ connections: current, error: describeError(error) });
+    }
+  }
+
+  async setVoiceGuidance(enabled: boolean): Promise<void> {
+    const client = this.#session.client;
+    const current = this.#store.state.voiceGuidance;
+    if (!client) return;
+
+    this.#patch({ voiceGuidance: { ...(current ?? { volume: null }), enabled } });
+    try {
+      await client.write(encodeSetVoiceGuidance(enabled), { table: 2 });
+    } catch (error) {
+      this.#patch({ voiceGuidance: current, error: describeError(error) });
+    }
+  }
+
+  async setVoiceGuidanceVolume(level: number): Promise<void> {
+    const client = this.#session.client;
+    const current = this.#store.state.voiceGuidance;
+    if (!client) return;
+
+    this.#patch({ voiceGuidance: { ...(current ?? { enabled: null }), volume: level } });
+    try {
+      await client.write(encodeSetVoiceGuidanceVolume(level), { table: 2 });
+    } catch (error) {
+      this.#patch({ voiceGuidance: current, error: describeError(error) });
+    }
+  }
+
+  async setTouchAssignment(left: number, right: number): Promise<void> {
+    const client = this.#session.client;
+    const previous = this.#store.state.touchAssignment;
+    if (!client) return;
+
+    this.#patch({ touchAssignment: { left, right } });
+    try {
+      await client.write(encodeSetAssignable(left, right));
+    } catch (error) {
+      this.#patch({ touchAssignment: previous, error: describeError(error) });
+    }
+  }
+
+  async setSpeakToChatConfig(sensitivity: number, timeout: number): Promise<void> {
+    const client = this.#session.client;
+    const current = this.#store.state.speakToChat;
+    if (!client) return;
+
+    this.#patch({
+      speakToChat: { ...(current ?? { enabled: null }), sensitivity, timeout },
+    });
+    try {
+      await client.write(encodeSetSpeakToChatConfig(sensitivity, timeout));
+    } catch (error) {
+      this.#patch({ speakToChat: current, error: describeError(error) });
     }
   }
 

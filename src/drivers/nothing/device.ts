@@ -2,32 +2,35 @@
  * Nothing/CMF device orchestration.
  *
  * The shape mirrors `SonyDevice`, with one inversion: Sony gates polling on a
- * capability table the device reports in one query, while Nothing has no such
- * query — the model is not readable over SPP at all. So capabilities are
- * *probed*: every read the model table says might exist is attempted once on
- * connect, and one that times out marks the feature absent and hides its
- * section. A timeout here means "this model does not implement it", not a
- * failure (see `NothingUnsupportedError`).
+ * capability table the device reports in one query, while Nothing answers no
+ * equivalent. So capabilities are *probed*: every read the model table says
+ * might exist is attempted once on connect, and one that times out marks the
+ * feature absent and hides its section. A timeout here means "this model does
+ * not implement it", not a failure (see `NothingUnsupportedError`).
  *
- * Protocol bytes and semantics ported from radiance-project/ear-web.
+ * The official app's `GET_SUPPORTED_FEATURE 0xc00d` is *not* a replacement for
+ * that probe: its bitmask (`DeviceSupportFeature`) covers pairing, assistants,
+ * codecs and wear detection, not which EQ or spatial features a model has. It
+ * would settle two of our probes — ANC and in-ear detection — and nothing
+ * else. See `docs/PROTOCOL-UNKNOWNS.md`.
+ *
+ * Protocol bytes and semantics ported from radiance-project/ear-web, with the
+ * command ids cross-checked against the official app's `ProtocolConstant`.
  */
 
 import * as C from './commands';
 import type { Gesture, TripleBattery } from './commands';
 import { NothingClient } from './client';
 import type { NotificationListener } from './client';
-import { NOTHING_SPP_UUID } from '@/core/transport';
-import { modelForBase, modelForBluetoothName, modelForFirmware } from './models';
+import { modelForBase, modelForFirmware } from './models';
 import type { Persistable, SnapshotPayload } from '@/core/persistence';
 import {
-  isBluetoothTarget,
   isUnreachable,
   isWebSerialSupported,
   openSerialTransportAt,
   requestPort,
 } from '@/core/transport';
-import type { ConnectionTarget, Transport, TransportOpener } from '@/core/transport';
-import { GattTransport, openGattTransport } from '@/core/gattTransport';
+import type { ConnectionTarget, TransportOpener } from '@/core/transport';
 import { DeviceSession } from '@/core/session';
 import type { SessionHooks } from '@/core/session';
 import { StateStore } from '@/core/stateStore';
@@ -36,18 +39,20 @@ import { describeError } from '@/core/errors';
 import type { ConnectionStatus } from '@/core/connection';
 
 /**
- * Either carrier: BLE GATT (how the official app reaches the older models and
- * the only path Chrome's Bluetooth chooser grants) or the 9600-baud serial
- * service — unlike the 115200 the Sony/Sennheiser RFCOMM services use.
+ * Web Serial only, at 9600 baud — unlike the 115200 the Sony/Sennheiser
+ * RFCOMM services use.
+ *
+ * There used to be a BLE GATT branch here, opening `NOTHING_SPP_UUID` as a
+ * GATT service. That could never have worked: `aeac4a03…` is an RFCOMM
+ * service class, and the official app reaches every earphone through
+ * `getSppConnector(...)` with it while reserving GATT for firmware update
+ * alone. See the note in `core/gattTransport.ts`.
  */
-const openNothingTransport: TransportOpener = (target, handlers) =>
-  isBluetoothTarget(target)
-    ? openGattTransport(target, handlers, { serviceUuid: NOTHING_SPP_UUID })
-    : openSerialTransportAt(9600)(target, handlers);
+const openNothingTransport: TransportOpener = openSerialTransportAt(9600);
 
 export interface NothingInfo {
   model: string | null;
-  /** The `B1xx` base code, when known — from a snapshot, never the wire. */
+  /** The `B1xx` base code, when known — read off the wire, or from a snapshot. */
   modelBase: string | null;
   firmware: string | null;
 }
@@ -66,7 +71,8 @@ export type NothingCapability =
   | 'personalizedAnc'
   | 'gestures'
   | 'earFitTest'
-  | 'caseLed';
+  | 'caseLed'
+  | 'spatialAudio';
 
 export interface NothingState {
   status: ConnectionStatus;
@@ -85,6 +91,8 @@ export interface NothingState {
   /** Buds Pro 2's onboard "advanced" EQ profile toggle. */
   advancedEq: boolean | null;
   bassEnhance: { enabled: boolean; level: number } | null;
+  /** Spatial audio, and head tracking on the models that carry it. */
+  spatialAudio: C.SpatialAudio | null;
   inEarDetection: boolean | null;
   lowLatency: boolean | null;
   gestures: Gesture[] | null;
@@ -105,6 +113,7 @@ export const initialNothingState: NothingState = {
   diracEq: null,
   advancedEq: null,
   bassEnhance: null,
+  spatialAudio: null,
   inEarDetection: null,
   lowLatency: null,
   gestures: null,
@@ -113,7 +122,7 @@ export const initialNothingState: NothingState = {
 };
 
 /** Bumped when the durable payload changes shape; older caches are dropped. */
-export const NOTHING_SNAPSHOT_VERSION = 1;
+export const NOTHING_SNAPSHOT_VERSION = 2;
 
 export interface NothingDurableState {
   info: NothingInfo;
@@ -124,6 +133,7 @@ export interface NothingDurableState {
   diracEq: number | null;
   advancedEq: boolean | null;
   bassEnhance: { enabled: boolean; level: number } | null;
+  spatialAudio: C.SpatialAudio | null;
   inEarDetection: boolean | null;
   lowLatency: boolean | null;
   gestures: Gesture[] | null;
@@ -139,6 +149,7 @@ export const captureDurable = (state: NothingState): NothingDurableState => ({
   diracEq: state.diracEq,
   advancedEq: state.advancedEq,
   bassEnhance: state.bassEnhance,
+  spatialAudio: state.spatialAudio,
   inEarDetection: state.inEarDetection,
   lowLatency: state.lowLatency,
   gestures: state.gestures,
@@ -156,6 +167,7 @@ export const applyDurable = (payload: object): Partial<NothingState> => {
     diracEq: snapshot.diracEq ?? null,
     advancedEq: snapshot.advancedEq ?? null,
     bassEnhance: snapshot.bassEnhance ?? null,
+    spatialAudio: snapshot.spatialAudio ?? null,
     inEarDetection: snapshot.inEarDetection ?? null,
     lowLatency: snapshot.lowLatency ?? null,
     gestures: snapshot.gestures ?? null,
@@ -238,9 +250,6 @@ export class NothingDevice implements Persistable {
   }
 
   async adoptPort(target: ConnectionTarget): Promise<void> {
-    // A BLE device's advertised name is the one model identification the
-    // serial link never gives us — record it before anything else can fail.
-    if (isBluetoothTarget(target)) this.#rememberBluetoothName(target);
     try {
       await this.#connectTo(target);
     } catch (error) {
@@ -248,32 +257,10 @@ export class NothingDevice implements Persistable {
     }
   }
 
-  /**
-   * The single-connection BLE adopt: the manager resolved this driver from
-   * the transport's service, so the transport is already open — adopt it
-   * without ever closing and reopening the GATT link.
-   */
-  async adoptTransport(transport: Transport): Promise<void> {
-    if (transport instanceof GattTransport) this.#rememberBluetoothName(transport.device);
-    try {
-      await this.#session.adoptTransport(transport, async () => {
-        await this.refresh();
-      });
-    } catch (error) {
-      this.#patch({ status: 'disconnected', error: describeError(error) });
-    }
-  }
-
-  #rememberBluetoothName(device: BluetoothDevice): void {
-    if (!device.name) return;
-    const model = modelForBluetoothName(device.name);
-    if (model) {
-      this.#patch({ info: { ...this.#store.state.info, model: model.name, modelBase: model.base } });
-    } else {
-      // Unknown name still beats "unknown device" as a label.
-      this.#patch({ info: { ...this.#store.state.info, model: device.name } });
-    }
-  }
+  // No `adoptTransport`: that hook exists for drivers the manager resolves
+  // from a live GATT connection, and Nothing is not reachable that way (see
+  // the transport note above). `KNOWN_GATT_SERVICES` no longer lists this
+  // brand, so the manager can never route a GATT transport here.
 
   async connect(): Promise<void> {
     if (!isWebSerialSupported()) {
@@ -344,18 +331,47 @@ export class NothingDevice implements Persistable {
         }
       };
 
+      // Identity first, and off the wire: a Web Serial `SerialPort` carries no
+      // device name, so this read is the *only* thing that can tell a CMF
+      // Headphone Pro from an Ear (3). The official app asks the same command
+      // for the same reason, and decodes it the same way — the body is the
+      // product id as little-endian bytes, hex-encoded (see
+      // `decodeDeviceModel`). Not a capability: a model that stays silent is
+      // simply unnamed, which the UI already renders.
+      try {
+        const payload = await client.request(C.Read.DeviceModel);
+        const base = C.decodeDeviceModel(payload);
+        if (base) {
+          this.#patch({
+            info: {
+              ...this.#store.state.info,
+              modelBase: base,
+              // An unrecognised base code is still better than nothing.
+              model: modelForBase(base)?.name ?? base,
+            },
+          });
+        }
+      } catch (error) {
+        console.debug('[nothing] device model unavailable', error);
+      }
+
       await probe('battery', async () => {
         const payload = await client.request(C.Read.Battery);
         this.#patch({ battery: C.decodeBattery(payload) });
       });
 
       // Firmware is not a capability — every model answers it, and the
-      // model-name fallback hangs off it.
+      // model-name fallback hangs off it. `?? model` so a device that named
+      // itself above is not un-named by a firmware string we cannot map.
       try {
         const payload = await client.request(C.Read.Firmware);
         const firmware = C.decodeFirmware(payload);
         this.#patch({
-          info: { ...this.#store.state.info, firmware, model: this.#modelName(firmware) },
+          info: {
+            ...this.#store.state.info,
+            firmware,
+            model: this.#modelName(firmware) ?? this.#store.state.info.model,
+          },
         });
       } catch (error) {
         console.warn('[nothing] firmware read failed', error);
@@ -411,13 +427,18 @@ export class NothingDevice implements Persistable {
         this.#patch({ customEq: C.decodeCustomEq(payload) });
       });
 
+      await probe('spatialAudio', async () => {
+        const payload = await client.request(C.Read.SpatialAudio);
+        this.#patch({ spatialAudio: C.decodeSpatialAudio(payload) });
+      });
+
       this.#patch({ capabilities });
     } finally {
       this.#refreshing = false;
     }
   }
 
-  /** The display name, from the base code in a snapshot when the wire cannot say. */
+  /** The display name, from the base code the wire (or a snapshot) supplied. */
   #modelName(firmware: string | null): string | null {
     const fromBase = modelForBase(this.#store.state.info.modelBase);
     if (fromBase) return fromBase.name;
@@ -516,6 +537,27 @@ export class NothingDevice implements Persistable {
     }
   }
 
+  /**
+   * Spatial audio, and head tracking with it where the model has it.
+   *
+   * `headTracking` is only sent when this model reported it — the official app
+   * omits the byte rather than sending a zero, and a model without head
+   * tracking has no state for a second byte to mean anything against.
+   */
+  async setSpatialAudio(enabled: boolean, headTracking?: boolean): Promise<void> {
+    const client = this.#session.client;
+    const previous = this.#store.state.spatialAudio;
+    if (!client) return;
+
+    const head = previous?.headTracking === null ? null : headTracking ?? previous?.headTracking ?? null;
+    this.#patch({ spatialAudio: { enabled, headTracking: head } });
+    try {
+      await client.write(C.Write.SetSpatialAudio, C.encodeSpatialAudio(enabled, head));
+    } catch (error) {
+      this.#patch({ spatialAudio: previous, error: describeError(error) });
+    }
+  }
+
   async setInEarDetection(on: boolean): Promise<void> {
     const client = this.#session.client;
     const previous = this.#store.state.inEarDetection;
@@ -579,7 +621,7 @@ export class NothingDevice implements Persistable {
     const client = this.#session.client;
     if (!client) return;
     try {
-      await client.write(C.Write.RingBuds, C.encodeRing(left ? 0x02 : 0x03, ring));
+      await client.write(C.Write.RingBuds, C.encodeRing(left ? 'left' : 'right', ring));
     } catch (error) {
       this.#patch({ error: describeError(error) });
     }

@@ -333,3 +333,45 @@ describe('MdrClient.abort', () => {
     await expect(pending).rejects.toThrow('disconnected');
   });
 });
+
+describe('table-2 commands', () => {
+  const makeClient = (timeoutMs: number) => {
+    const transport = new FakeTransport();
+    const client = new MdrClient(transport, { timeoutMs });
+    const reply = (seq: number, payload: number[], dataType = DataType.Command1) =>
+      client.handleData(encodeFrame(dataType, seq, payload));
+    const ack = (seq: number) => client.handleData(encodeAck(seq));
+    const decodeWritten = () => transport.written.flatMap((f) => new MdrDecoder().push(f));
+    return { client, reply, ack, decodeWritten };
+  };
+
+  it('sends voice-guidance payloads as Command2 frames on request', async () => {
+    // Voice guidance lives in the second command table: same framing, same
+    // sequencing, different data-type byte. Sending it as Command1 would be
+    // accepted by no device that implements it.
+    vi.useFakeTimers();
+    const { client, reply, decodeWritten } = makeClient(50);
+    const pending = client.send([0x46, 0x03], { table: 2 });
+    await vi.advanceTimersByTimeAsync(0);
+
+    const frames = decodeWritten();
+    expect(frames.at(-1)?.dataType).toBe(DataType.Command2);
+    expect([...frames.at(-1)!.payload]).toEqual([0x46, 0x03]);
+
+    reply(1, [0x47, 0x03, 0x00, 0x00]);
+    await expect(pending).resolves.toBeDefined();
+    await vi.advanceTimersByTimeAsync(0);
+  });
+
+  it('writes to table 2 without waiting for a reply', async () => {
+    vi.useFakeTimers();
+    const { client, ack, decodeWritten } = makeClient(50);
+    const pending = client.write([0x48, 0x03, 0x00], { table: 2 });
+    await vi.advanceTimersByTimeAsync(0);
+    const frames = decodeWritten();
+    expect(frames.at(-1)?.dataType).toBe(DataType.Command2);
+    // A SET is confirmed by its ACK, never by a RET — see `write`'s docs.
+    ack(frames.at(-1)!.sequence);
+    await pending;
+  });
+});

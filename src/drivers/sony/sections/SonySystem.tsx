@@ -9,6 +9,7 @@ import { sonyColourName } from '../artwork'
 import { profileFor } from '@/core/profiles'
 import { Switch } from '@/components/ui/switch'
 import { AUTO_POWER_OFF_OPTIONS, autoPowerOffLabel } from '@/drivers/sony/mdr/settings'
+import { BUTTON_MODE_OPTIONS } from '@/drivers/sony/mdr/assignable'
 import { PowerOffButton } from './PowerOffButton'
 import { SystemTail } from '@/ui/sections/SystemTail'
 import { SettingRow } from '@/ui/controls/SettingRow'
@@ -40,6 +41,9 @@ const NAMED_FUNCTIONS: Array<[number, string]> = [
   [SonyFunction.AutoPowerOffWithWearingDetection, 'Auto power off (wear aware)'],
   [SonyFunction.PauseOnRemoval, 'Pause when removed'],
   [SonyFunction.SpeakToChat, 'Speak-to-chat'],
+  [SonyFunction.VoiceGuidanceWithLanguageSwitch, 'Voice notifications'],
+  [SonyFunction.VoiceGuidanceOnOffOnly, 'Voice notifications (on/off only)'],
+  [SonyFunction.VoiceGuidanceWithVolume, 'Voice notifications (with volume)'],
   [SonyFunction.SpeakToChatType2, 'Speak-to-chat (type 2)'],
   [SonyFunction.WearingStatusDetector, 'Wear detection'],
   [SonyFunction.NoiseCancellingOnOff, 'Noise cancelling'],
@@ -204,9 +208,114 @@ export function SonySystem({ device, state }: Props) {
 
       {behaviour}
 
+      <TouchAssignmentCard device={device} state={state} />
+
+      <VoiceGuidanceCard device={device} state={state} />
+
       {power}
 
       <SystemTail capabilities={capabilities} profile={profileFor('sony', state.info.model)} />
     </div>
+  )
+}
+
+/**
+ * Voice notifications. The one setting on the second command table — the
+ * device's own capability decides whether the volume row appears.
+ */
+function VoiceGuidanceCard({ device, state }: Props) {
+  const guidance = state.voiceGuidance
+  if (guidance === null) return null
+
+  return (
+    <Card data-size="sm">
+      <CardHeader>
+        <CardTitle>Voice notifications</CardTitle>
+      </CardHeader>
+      <CardContent className="flex flex-col gap-4">
+        <SettingRow label="Voice prompts" hint="Spoken status for battery and pairing.">
+          <Switch
+            checked={guidance.enabled === true}
+            disabled={state.status !== 'connected' || guidance.enabled === null}
+            onCheckedChange={(enabled) => void device.setVoiceGuidance(enabled)}
+          />
+        </SettingRow>
+
+        {guidance.volume !== null && (
+          <SettingRow label="Prompt volume" hint="How loud the spoken prompts are.">
+            <div className="flex gap-1.5">
+              {[-2, -1, 0, 1, 2].map((level) => (
+                <button
+                  key={level}
+                  type="button"
+                  disabled={state.status !== 'connected'}
+                  aria-pressed={guidance.volume === level}
+                  aria-label={`Prompt volume ${level > 0 ? `+${level}` : level}`}
+                  onClick={() => void device.setVoiceGuidanceVolume(level)}
+                  className={
+                    guidance.volume === level
+                      ? 'border-primary bg-primary/10 rounded-lg border px-2 py-1.5 text-xs font-medium tabular-nums'
+                      : 'border-border hover:border-muted-foreground/40 rounded-lg border px-2 py-1.5 text-xs font-medium tabular-nums'
+                  }
+                >
+                  {level > 0 ? `+${level}` : level}
+                </button>
+              ))}
+            </div>
+          </SettingRow>
+        )}
+      </CardContent>
+    </Card>
+  )
+}
+
+/**
+ * What each earbud's touch surface does. The reply only says what is
+ * assigned *now*; which alternatives a model offers is not on the wire, so
+ * every mode is offered and the device rejects one it lacks — the write's
+ * error surfaces rather than a silently shortened list pretending to be the
+ * device's own.
+ */
+function TouchAssignmentCard({ device, state }: Props) {
+  const touch = state.touchAssignment
+  if (touch === null) return null
+
+  const side = (label: string, hint: string, current: number, pick: (mode: number) => void) => (
+    <SettingRow label={label} hint={hint}>
+      <div className="flex flex-wrap justify-end gap-1.5">
+        {BUTTON_MODE_OPTIONS.map((option) => (
+          <button
+            key={option.value}
+            type="button"
+            disabled={state.status !== 'connected'}
+            aria-pressed={current === option.value}
+            onClick={() => pick(option.value)}
+            className={
+              current === option.value
+                ? 'border-primary bg-primary/10 rounded-lg border px-2.5 py-1.5 text-xs font-medium'
+                : 'border-border hover:border-muted-foreground/40 rounded-lg border px-2.5 py-1.5 text-xs font-medium'
+            }
+          >
+            {option.label}
+          </button>
+        ))}
+      </div>
+    </SettingRow>
+  )
+
+  return (
+    <Card data-size="sm">
+      <CardHeader>
+        <CardTitle>Touch controls</CardTitle>
+      </CardHeader>
+      <CardContent className="flex flex-col gap-4">
+        {side('Left earbud', 'What the left touch surface does.', touch.left, (mode) =>
+          void device.setTouchAssignment(mode, touch.right),
+        )}
+        {side('Right earbud', 'What the right touch surface does.', touch.right, (mode) =>
+          void device.setTouchAssignment(touch.left, mode),
+        )}
+      </CardContent>
+    </Card>
   )
 }

@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import { NothingDecoder, crc16, encodePacket } from './frame';
 import * as C from './commands';
+import { NOTHING_MODELS } from './models';
 import { replyFor } from './client';
 
 const hex = (bytes: Uint8Array | number[]): string =>
@@ -104,5 +105,97 @@ describe('Nothing payload codecs', () => {
       enabled: true,
       level: 3,
     });
+  });
+});
+
+describe('spatial audio', () => {
+  it('decodes the one-byte form as spatial audio without head tracking', () => {
+    expect(C.decodeSpatialAudio(Uint8Array.from([0x01]))).toEqual({
+      enabled: true,
+      headTracking: null,
+    });
+    expect(C.decodeSpatialAudio(Uint8Array.from([0x00]))).toEqual({
+      enabled: false,
+      headTracking: null,
+    });
+  });
+
+  it('decodes the second byte as head tracking where the model sends it', () => {
+    expect(C.decodeSpatialAudio(Uint8Array.from([0x01, 0x01]))).toEqual({
+      enabled: true,
+      headTracking: true,
+    });
+    expect(C.decodeSpatialAudio(Uint8Array.from([0x01, 0x00]))).toEqual({
+      enabled: true,
+      headTracking: false,
+    });
+  });
+
+  it('returns null for an empty body rather than guessing a state', () => {
+    expect(C.decodeSpatialAudio(Uint8Array.from([]))).toBeNull();
+  });
+
+  it('omits the second byte unless head tracking is being set', () => {
+    // The official app sends one byte when there is no head tracking, not a
+    // zero — `BasicBoolean.obtainDataPacket` branches on `hasHead`.
+    expect(C.encodeSpatialAudio(true)).toEqual([0x01]);
+    expect(C.encodeSpatialAudio(false)).toEqual([0x00]);
+    expect(C.encodeSpatialAudio(true, null)).toEqual([0x01]);
+    expect(C.encodeSpatialAudio(true, true)).toEqual([0x01, 0x01]);
+    expect(C.encodeSpatialAudio(true, false)).toEqual([0x01, 0x00]);
+    expect(C.encodeSpatialAudio(false, true)).toEqual([0x00, 0x01]);
+  });
+
+  it('round-trips every shape the wire can carry', () => {
+    for (const bytes of [[0x00], [0x01], [0x00, 0x00], [0x01, 0x00], [0x01, 0x01]]) {
+      const decoded = C.decodeSpatialAudio(Uint8Array.from(bytes))!;
+      expect(C.encodeSpatialAudio(decoded.enabled, decoded.headTracking)).toEqual(bytes);
+    }
+  });
+});
+
+describe('ring my buds', () => {
+  it('encodes the side byte then the play state', () => {
+    expect(C.encodeRing('left', true)).toEqual([0x02, 0x01]);
+    expect(C.encodeRing('right', true)).toEqual([0x03, 0x01]);
+    // Stopping uses the same side byte with a silent second byte.
+    expect(C.encodeRing('left', false)).toEqual([0x02, 0x00]);
+  });
+});
+
+describe('device model', () => {
+  it('reverses the payload and hex-encodes it, as the app does', () => {
+    // A CMF Headphone Pro answers two bytes, little-endian: 0x75 0xB1.
+    expect(C.decodeDeviceModel(Uint8Array.from([0x75, 0xb1]))).toBe('B175');
+    expect(C.decodeDeviceModel(Uint8Array.from([0x62, 0xb1]))).toBe('B162');
+    expect(C.decodeDeviceModel(Uint8Array.from([0x90, 0xb1]))).toBe('B190');
+  });
+
+  it('is not reading ASCII — the codes are hex digits, not text', () => {
+    // The ASCII for "B175" decodes to something else entirely, which is what
+    // the old scanning decoder wrongly expected to see.
+    expect(C.decodeDeviceModel(Uint8Array.from([0x42, 0x31, 0x37, 0x35]))).toBe('35373142');
+  });
+
+  it('pads each byte to two digits', () => {
+    expect(C.decodeDeviceModel(Uint8Array.from([0x05, 0x0a]))).toBe('0A05');
+  });
+
+  it('handles the four-byte ids the app uses for non-earphones', () => {
+    // Watch Pro 2 is 34F72851 in the SKU catalogue.
+    expect(C.decodeDeviceModel(Uint8Array.from([0x51, 0x28, 0xf7, 0x34]))).toBe('34F72851');
+  });
+
+  it('returns null only for an empty body', () => {
+    expect(C.decodeDeviceModel(Uint8Array.from([]))).toBeNull();
+    expect(C.decodeDeviceModel(Uint8Array.from([0x00]))).toBe('00');
+  });
+
+  it('every base code in the model table is four hex digits', () => {
+    // Load-bearing: the decoder emits hex, so a non-hex base code could never
+    // be matched by `modelForBase`.
+    for (const model of NOTHING_MODELS) {
+      expect(model.base).toMatch(/^[0-9A-FB]{4}$/);
+    }
   });
 });

@@ -46,6 +46,9 @@ export const Reply = {
   PowerParamNotify: 0x29,
   SystemParam: 0xf7,
   SystemParamNotify: 0xf9,
+  /** Extended system params (speak-to-chat config): GET 0xfa/RET 0xfb/SET 0xfc/NTFY 0xfd. */
+  SystemExtParam: 0xfb,
+  SystemExtParamNotify: 0xfd,
 } as const;
 
 /** Second byte of `GetDeviceInfo`. */
@@ -441,6 +444,12 @@ export const SonyFunction = {
   PowerOff: 0x23,
   AutoPowerOff: 0x24,
   AutoPowerOffWithWearingDetection: 0x25,
+  /** Voice guidance, table 2: on/off with language switching. */
+  VoiceGuidanceWithLanguageSwitch: 0x44,
+  /** Voice guidance, table 2: only an on/off switch. */
+  VoiceGuidanceOnOffOnly: 0x45,
+  /** Voice guidance, table 2: includes the volume adjustment. */
+  VoiceGuidanceWithVolume: 0x42,
   /** Pause when the headphones are taken off. */
   PauseOnRemoval: 0xf1,
   SpeakToChat: 0xf2,

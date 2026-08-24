@@ -13,7 +13,8 @@ const port = {} as SerialPort;
  * Answers the reads a healthy device answers, and stays silent on the rest —
  * silence is how a real model says "not implemented", and the probe turns it
  * into an absent capability. ear-web gates the same queries on the model code
- * instead; over serial there is no model code, so the timeout *is* the gate.
+ * instead; this driver reads the code (`DeviceModel`) for the *name* but
+ * still lets the timeout gate the features.
  */
 function deviceReply(command: number): number[] | undefined {
   switch (command) {
@@ -22,6 +23,9 @@ function deviceReply(command: number): number[] | undefined {
       return [0x02, 0x02, 0x50, 0x03, 0xe0];
     case C.Read.Firmware:
       return ascii('US.B.1.2.3');
+    case C.Read.DeviceModel:
+      // The product id is little-endian bytes, not text: B162 is 0x62 0xB1.
+      return [0x62, 0xb1];
     case C.Read.EqPreset:
       return [0x00];
     case C.Read.AncMode:
@@ -70,6 +74,10 @@ describe('NothingDevice', () => {
 
     expect(device.state.status).toBe('connected');
     expect(device.state.info.firmware).toBe('US.B.1.2.3');
+    // Identity comes off the wire: a Web Serial port carries no device name,
+    // so this read is the only thing that can name the model.
+    expect(device.state.info.modelBase).toBe('B162');
+    expect(device.state.info.model).toBe('Nothing Ear (a)');
     expect(device.state.battery.left).toEqual({ level: 80, charging: false });
     // 0xe0: level 0x60 with the charging bit set.
     expect(device.state.battery.right).toEqual({ level: 96, charging: true });
@@ -128,5 +136,113 @@ describe('NothingDevice', () => {
       capabilities: [],
     });
     expect(device.state.info.firmware).toBe(before);
+  }, 20000);
+
+  it('reads spatial audio with head tracking, and writes both bytes back', async () => {
+    const sent: number[][] = [];
+    const open: TransportOpener = async (_p, handlers) => {
+      const transport = new FakeTransport(handlers);
+      transport.onWrite = (bytes) => {
+        const [frame] = new NothingDecoder().push(bytes);
+        if (!frame) return;
+        if (frame.command === C.Write.SetSpatialAudio) {
+          sent.push([...frame.payload]);
+          return; // writes are never answered
+        }
+        const reply =
+          frame.command === C.Read.SpatialAudio ? [0x01, 0x00] : deviceReply(frame.command) ?? [0x00];
+        queueMicrotask(() => transport.receive(encodePacket(frame.command & 0x7fff, frame.sequence, reply)));
+      };
+      return transport;
+    };
+
+    const device = new NothingDevice(open);
+    await device.adoptPort(port);
+
+    expect(device.state.capabilities.has('spatialAudio')).toBe(true);
+    expect(device.state.spatialAudio).toEqual({ enabled: true, headTracking: false });
+
+    // Turning head tracking on must keep the two-byte form: a model that
+    // reported head tracking has state for the second byte.
+    await device.setSpatialAudio(true, true);
+    expect(sent).toEqual([[0x01, 0x01]]);
+    expect(device.state.spatialAudio).toEqual({ enabled: true, headTracking: true });
+  }, 20000);
+
+  it('keeps spatial audio one byte wide on a model without head tracking', async () => {
+    const sent: number[][] = [];
+    const open: TransportOpener = async (_p, handlers) => {
+      const transport = new FakeTransport(handlers);
+      transport.onWrite = (bytes) => {
+        const [frame] = new NothingDecoder().push(bytes);
+        if (!frame) return;
+        if (frame.command === C.Write.SetSpatialAudio) {
+          sent.push([...frame.payload]);
+          return;
+        }
+        const reply =
+          frame.command === C.Read.SpatialAudio ? [0x00] : deviceReply(frame.command) ?? [0x00];
+        queueMicrotask(() => transport.receive(encodePacket(frame.command & 0x7fff, frame.sequence, reply)));
+      };
+      return transport;
+    };
+
+    const device = new NothingDevice(open);
+    await device.adoptPort(port);
+    expect(device.state.spatialAudio).toEqual({ enabled: false, headTracking: null });
+
+    await device.setSpatialAudio(true);
+    expect(sent).toEqual([[0x01]]);
+    expect(device.state.spatialAudio).toEqual({ enabled: true, headTracking: null });
+  }, 20000);
+
+  it('stays connected and unnamed when the model read goes unanswered', async () => {
+    // The model read is not a capability: a device that will not name itself
+    // must still connect and drive everything else, rather than the read
+    // failure taking the session down with it.
+    const open: TransportOpener = async (_p, handlers) => {
+      const transport = new FakeTransport(handlers);
+      transport.onWrite = (bytes) => {
+        const [frame] = new NothingDecoder().push(bytes);
+        if (!frame || frame.command === C.Read.DeviceModel) return;
+        const reply = deviceReply(frame.command) ?? [0x00];
+        queueMicrotask(() => transport.receive(encodePacket(frame.command & 0x7fff, frame.sequence, reply)));
+      };
+      return transport;
+    };
+
+    const device = new NothingDevice(open);
+    await device.adoptPort(port);
+
+    expect(device.state.status).toBe('connected');
+    expect(device.state.info.modelBase).toBeNull();
+    expect(device.state.info.model).toBeNull();
+    expect(device.state.info.firmware).toBe('US.B.1.2.3');
+    expect(device.state.capabilities.has('battery')).toBe(true);
+  }, 20000);
+
+  it('keeps a wire-read name a firmware string cannot account for', async () => {
+    // The firmware read patches `info` after the model read. It used to write
+    // `model: this.#modelName(firmware)` unconditionally, so a model that had
+    // just named itself was immediately un-named again — `modelForFirmware`
+    // returns null for every input.
+    const open: TransportOpener = async (_p, handlers) => {
+      const transport = new FakeTransport(handlers);
+      transport.onWrite = (bytes) => {
+        const [frame] = new NothingDecoder().push(bytes);
+        if (!frame) return;
+        const reply =
+          frame.command === C.Read.DeviceModel ? [0x75, 0xb1] : deviceReply(frame.command) ?? [0x00];
+        queueMicrotask(() => transport.receive(encodePacket(frame.command & 0x7fff, frame.sequence, reply)));
+      };
+      return transport;
+    };
+
+    const device = new NothingDevice(open);
+    await device.adoptPort(port);
+
+    expect(device.state.info.modelBase).toBe('B175');
+    expect(device.state.info.model).toBe('CMF Headphone Pro');
+    expect(device.state.info.firmware).toBe('US.B.1.2.3');
   }, 20000);
 });

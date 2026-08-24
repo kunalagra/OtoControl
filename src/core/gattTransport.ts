@@ -1,20 +1,28 @@
 /**
  * Web Bluetooth GATT transport, beside the WebSerial one in `transport.ts`.
  *
- * Nothing's ear protocol runs over either carrier — BLE GATT (how the
- * official app reaches the older models) or GATT-over-BR/EDR (what WebSerial
- * hands us) — and Gadgetbridge drives Ear (1) over BLE GATT with the *same*
- * service UUID and packet format. Soundcore's earbuds, which expose no serial
- * service at all, are reachable only through here.
+ * Soundcore only. Its earbuds expose no serial service at all, so BLE GATT is
+ * the only way to reach them; every other brand this app drives speaks RFCOMM
+ * and belongs to `transport.ts`.
  *
- * The client layers only see the `Transport` interface, so the Nothing client
- * runs unchanged over either carrier; the only per-vendor choice is how the
- * write and notify characteristics are picked within the service
- * (`CharacteristicPicker` below).
+ * Nothing used to be listed here too, on the assumption that its protocol ran
+ * over either carrier. It does not. `AEAC4A03-DFF5-498F-843A-34487CF133EB` is
+ * an RFCOMM *service class* UUID, not a GATT service: in the official app
+ * (com.nothing.smartcenter 3.7.3) every earphone connects through
+ * `EarphonesPluginImpl` → `getSppConnector(...)` with that UUID, and the only
+ * GATT it ever speaks is firmware update — service
+ * `66666666-6666-6666-6666-666666666666`, notify
+ * `77777777-7777-7777-7777-777777777777`, BLE scan filter `FD90`, used solely
+ * by `XBleOTAConnector`. Asking Chrome for `aeac4a03…` as a GATT service can
+ * therefore never resolve, so Nothing is Web Serial only.
+ *
+ * The client layers only see the `Transport` interface, so a client runs
+ * unchanged over either carrier; the only per-vendor choice is how the write
+ * and notify characteristics are picked within the service
+ * (`pickCharacteristics` below).
  */
 
 import type { Brand } from './brand';
-import { NOTHING_SPP_UUID } from './transport';
 import type { Transport, TransportHandlers } from './transport';
 
 /**
@@ -59,7 +67,6 @@ export interface KnownGattService {
 }
 
 export const KNOWN_GATT_SERVICES: readonly KnownGattService[] = [
-  { matches: (uuid) => uuid === NOTHING_SPP_UUID, brand: 'nothing' },
   { matches: isSoundcoreService, brand: 'soundcore' },
 ];
 
@@ -71,18 +78,17 @@ export const isWebBluetoothSupported = (): boolean =>
   typeof navigator !== 'undefined' && 'bluetooth' in navigator;
 
 /**
- * Shows the Bluetooth chooser. Devices are offered by manufacturer data
- * (Soundcore) or advertised service (Nothing), because that is what is
- * visible *before* connecting; the driver is resolved from the services the
- * device actually exposes once connected. Must be called from a user gesture.
+ * Shows the Bluetooth chooser. Devices are offered by Anker's manufacturer
+ * data, because that is what is visible *before* connecting; the driver is
+ * resolved from the services the device actually exposes once connected. Must
+ * be called from a user gesture.
  */
 export async function requestGattDevice(): Promise<BluetoothDevice> {
   return navigator.bluetooth.requestDevice({
-    filters: [
-      ...SOUNDCORE_COMPANY_IDS.map((companyIdentifier) => ({ manufacturerData: [{ companyIdentifier }] })),
-      { services: [NOTHING_SPP_UUID] },
-    ],
-    optionalServices: [...soundcoreServiceUuids(), NOTHING_SPP_UUID],
+    filters: SOUNDCORE_COMPANY_IDS.map((companyIdentifier) => ({
+      manufacturerData: [{ companyIdentifier }],
+    })),
+    optionalServices: soundcoreServiceUuids(),
   });
 }
 

@@ -218,7 +218,7 @@ export function ConnectionControls({
           onClick={() => void manager.connectBluetooth()}
           title={
             isWebBluetoothSupported()
-              ? 'For earbuds with no serial service — Soundcore, and Nothing over BLE. The buds may need to be advertising: open the case or re-enter pairing range.'
+              ? 'For earbuds with no serial service — Soundcore. The buds may need to be advertising: open the case or re-enter pairing range.'
               : 'This browser has no Web Bluetooth API.'
           }
         >

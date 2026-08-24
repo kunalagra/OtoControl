@@ -6,6 +6,16 @@
  * therefore empty — no serial picker entry can name this driver — and the
  * manager resolves it through the GATT service family instead
  * (`core/gattTransport.ts`'s `KNOWN_GATT_SERVICES`).
+ *
+ * **Do not retry the RFCOMM route.** An earlier spike reached an A3951 over
+ * Web Serial on macOS on both the standard SPP service and Soundcore's vendor
+ * one: Chrome enumerated and opened them, and the encoded request matched
+ * OpenSCQ30's own test vector byte for byte, but nothing came back on either
+ * channel — and operating the buds' own touch controls produced no inbound
+ * bytes either, which rules out "wrong command" and points at the platform.
+ * OpenSCQ30 supports Windows, Linux and Android but not macOS, and ships no
+ * macOS backend. BLE GATT is what unblocked this brand; RFCOMM stays a dead
+ * end until someone shows any macOS program talking to an A3951 over it.
  */
 
 import type { DeviceDriver, DriverSection } from '@/core/driver';

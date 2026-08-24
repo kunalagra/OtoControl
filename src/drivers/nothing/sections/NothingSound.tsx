@@ -34,6 +34,7 @@ export function NothingSound({ device, state }: Props) {
   const hasCustomEq = state.capabilities.has('customEq')
   const hasAdvancedEq = state.capabilities.has('advancedEq')
   const hasBass = state.capabilities.has('enhancedBass')
+  const hasSpatial = state.capabilities.has('spatialAudio')
 
   const eqActive = state.eqPreset !== null && state.eqPreset !== EqPreset.Advanced
 
@@ -284,6 +285,43 @@ export function NothingSound({ device, state }: Props) {
         </Card>
       )}
 
+      {hasSpatial && state.spatialAudio !== null && (
+        <Card data-size="sm">
+          <CardHeader>
+            <CardTitle>Spatial audio</CardTitle>
+          </CardHeader>
+          <CardContent className="flex flex-col gap-3">
+            <SettingRow
+              label="Spatial audio"
+              hint="Places the sound in a fixed space around you."
+            >
+              <Switch
+                checked={state.spatialAudio.enabled}
+                disabled={disabled}
+                onCheckedChange={(on) => void device.setSpatialAudio(on)}
+              />
+            </SettingRow>
+
+            {/* Only the models whose reply carried a second byte have head
+                tracking; on the rest there is no such setting to show. */}
+            {state.spatialAudio.headTracking !== null && (
+              <SettingRow
+                label="Head tracking"
+                hint="Anchors the sound to the source as you turn your head."
+              >
+                <Switch
+                  checked={state.spatialAudio.headTracking}
+                  disabled={disabled || !state.spatialAudio.enabled}
+                  onCheckedChange={(on) =>
+                    void device.setSpatialAudio(state.spatialAudio!.enabled, on)
+                  }
+                />
+              </SettingRow>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
       <Card data-size="sm">
         <CardContent>
           <SettingRow
@@ -299,7 +337,7 @@ export function NothingSound({ device, state }: Props) {
         </CardContent>
       </Card>
 
-      {!hasEq && !hasDiracEq && !hasAdvancedEq && !hasBass && (
+      {!hasEq && !hasDiracEq && !hasAdvancedEq && !hasBass && !hasSpatial && (
         <Card data-size="sm">
           <CardContent>
             <p className="text-muted-foreground text-sm">

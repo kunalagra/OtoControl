@@ -19,6 +19,7 @@ import type { SonyState } from './sony';
 import { SonyNoise } from './sections/SonyNoise';
 import { SonySound } from './sections/SonySound';
 import { SonySystem } from './sections/SonySystem';
+import { SonyConnections } from './sections/SonyConnections';
 
 /**
  * No debug section for Sony yet: the console decodes GAIA frames and sweeps
@@ -28,6 +29,7 @@ import { SonySystem } from './sections/SonySystem';
 const SONY_SECTIONS: DriverSection[] = [
   { id: 'noise', label: 'Noise control' },
   { id: 'sound', label: 'Sound' },
+  { id: 'devices', label: 'Connections' },
   { id: 'system', label: 'System' },
 ];
 
@@ -35,13 +37,14 @@ const SONY_SECTIONS: DriverSection[] = [
  * Which component renders each of the ids above — formerly
  * `SONY_COMPONENTS` in `ui/sections/registry.ts`.
  *
- * Three entries to Sennheiser's five, and no `debug`: the map is keyed by
+ * Four entries to Sennheiser's five, and no `debug`: the map is keyed by
  * whatever ids this driver actually declares, never by a shared union of
  * every driver's.
  */
 const COMPONENTS = {
   noise: SonyNoise,
   sound: SonySound,
+  devices: SonyConnections,
   system: SonySystem,
 } as const;
 
@@ -79,7 +82,11 @@ export const SONY_DRIVER = {
     // hiding a section that is about to appear.
     const known = state.capabilities.size > 0;
     const hasNoise = !known || state.noiseVariant !== null;
-    return hasNoise ? SONY_SECTIONS : SONY_SECTIONS.filter((section) => section.id !== 'noise');
+    const hasPairing = !known || state.connections !== null;
+    return SONY_SECTIONS.filter(
+      (section) =>
+        (section.id !== 'noise' || hasNoise) && (section.id !== 'devices' || hasPairing),
+    );
   },
   components: COMPONENTS,
   codecName: (state: SonyState) => (state.codec === null ? null : codecName(state.codec)),

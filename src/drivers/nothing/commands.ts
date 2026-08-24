@@ -20,10 +20,30 @@ export const Read = {
   EqPreset: 0xc01f,
   CustomEq: 0xc044,
   EnhancedBass: 0xc04e,
+  /**
+   * The onboard "advanced" EQ profile — `GET_ADVANCE_CUSTOM_EQ_MODE`, likewise
+   * declared in `TWSDeviceExtKt`. Its band values are a separate pair,
+   * `0xc04d`/`0xf050`, which this driver does not read.
+   *
+   * `supportAdvanceEq()` is true on B155, B170, B171 and B173 — *not* on the
+   * Buds Pro 2 (B172), which this comment used to claim.
+   */
   AdvancedEq: 0xc04c,
   Firmware: 0xc042,
   LatencyMode: 0xc041,
-  DiracPreset: 0xc050, // Buds Pro 2 / CMF Buds only — the Dirac Opteo EQ
+  /**
+   * The `B1xx` product id. `GET_DEVICE_MODEL` in the official app's
+   * `ProtocolConstant`, which is also the only model identification available
+   * over SPP — see `decodeDeviceModel`.
+   */
+  DeviceModel: 0xc01c,
+  /**
+   * The Dirac Opteo EQ selector (Buds Pro 2 / CMF Buds). `GET_DIRAC_OPTEO_EQ`
+   * in the official app — declared in `TWSDeviceExtKt` rather than
+   * `ProtocolConstant`, which is where the EQ family lives.
+   */
+  DiracPreset: 0xc050,
+  SpatialAudio: 0xc04f,
 } as const;
 
 /** Write commands (0xF0xx); applied silently, never answered. */
@@ -38,9 +58,12 @@ export const Write = {
   StartEarFitTest: 0xf014,
   SetLatencyMode: 0xf040,
   SetCustomEq: 0xf041,
+  /** `SET_DIRAC_OPTEO_EQ`. */
   SetDiracPreset: 0xf01d,
+  /** `SET_ADVANCE_CUSTOM_EQ_MODE`; its values pair is `0xf050`. */
   SetAdvancedEq: 0xf04f,
   SetEnhancedBass: 0xf051,
+  SetSpatialAudio: 0xf052,
 } as const;
 
 /** Unsolicited notifications (0xE0xx). */
@@ -223,6 +246,32 @@ export function decodeFirmware(payload: Uint8Array): string {
   return Array.from(payload, (b) => String.fromCharCode(b)).join('');
 }
 
+/**
+ * The `B1xx` base code from a `DeviceModel` reply, or null for an empty body.
+ *
+ * **The body is not text.** It is the product id as raw bytes, little-endian:
+ * the official app's `DeviceModelEntity` reverses the payload and hex-encodes
+ * it uppercase —
+ * `byteArray.reversed().joinToString("") { "%02X".format(it) }` — and uses the
+ * result as the `productId` half of its `productId + colorHex` model lookup
+ * (`EarOneUnknownDevice.getModelIdByTws`).
+ *
+ * Which means every `B1xx` code *is* four hex digits, and a CMF Headphone Pro
+ * answers `[0x75, 0xB1]`, not the ASCII `"B175"`. The app's SKU catalogue
+ * agrees: earphone `deviceSpu.modelId`s are 4-character codes and its watches'
+ * are 8 (`34F72851`), exactly two and four bytes.
+ *
+ * An unrecognised id is returned as-is rather than rejected — the caller shows
+ * the raw code, which beats an unnamed device.
+ */
+export function decodeDeviceModel(payload: Uint8Array): string | null {
+  if (payload.length === 0) return null;
+  return Array.from(payload)
+    .reverse()
+    .map((b) => b.toString(16).padStart(2, '0').toUpperCase())
+    .join('');
+}
+
 /** In-ear detection: third payload byte, 1 = on. */
 export const decodeInEarDetection = (payload: Uint8Array): boolean | null =>
   payload.length > 2 ? payload[2] === 1 : null;
@@ -242,6 +291,54 @@ export const decodePersonalizedAnc = (payload: Uint8Array): boolean | null =>
   payload.length > 0 ? payload[0] === 1 : null;
 
 export const encodePersonalizedAnc = (on: boolean): number[] => [on ? 0x01 : 0x00];
+
+export interface SpatialAudio {
+  enabled: boolean;
+  /**
+   * Head tracking, on models that carry the second byte; null where the reply
+   * was one byte, meaning this model has spatial audio without it.
+   */
+  headTracking: boolean | null;
+}
+
+/**
+ * Spatial audio: `[enabled]`, or `[enabled, headTracking]` on models that
+ * track the head as well.
+ *
+ * Both bytes are the official app's `BasicBoolean` entity, which parses
+ * exactly this — `open = payload[0] == 1`, then `head = payload[1] == 1` only
+ * `if (payload.length > 1)` — and re-encodes it the same way. `GET_SPATIAL_
+ * AUDIO 0xc04f` / `SET_SPATIAL_AUDIO 0xf052` are its commands, built by
+ * `TWSDeviceExtKt.spatialAudio(device, enabled, head)`.
+ *
+ * Null for an empty body, rather than guessing at a state.
+ */
+export const decodeSpatialAudio = (payload: Uint8Array): SpatialAudio | null =>
+  payload.length < 1
+    ? null
+    : {
+        enabled: payload[0] === 0x01,
+        headTracking: payload.length > 1 ? payload[1] === 0x01 : null,
+      };
+
+/**
+ * Writes one byte, or two when the model has head tracking — the app omits
+ * the second byte entirely rather than sending a zero, so this does too.
+ */
+export const encodeSpatialAudio = (enabled: boolean, headTracking?: boolean | null): number[] =>
+  headTracking === undefined || headTracking === null
+    ? [enabled ? 0x01 : 0x00]
+    : [enabled ? 0x01 : 0x00, headTracking ? 0x01 : 0x00];
+
+/**
+ * `[side, playing]` — the side byte is 0x02 left, 0x03 right on every
+ * earbud model (0x06 marks the single-battery over-ears, which have no
+ * ringer). Stopping a ring reuses the side with a silent second byte.
+ */
+export const encodeRing = (side: 'left' | 'right', playing: boolean): number[] => [
+  side === 'left' ? 0x02 : 0x03,
+  playing ? 0x01 : 0x00,
+];
 
 /** Advanced EQ: first payload byte. */
 export const decodeAdvancedEq = (payload: Uint8Array): boolean | null =>
@@ -331,12 +428,6 @@ export const encodeGesture = (gesture: Gesture): number[] => [
 ];
 
 // --- find my earbuds / ear tip fit test ---------------------------------------
-
-/** Rings one bud (2 left, 3 right) or both; the trailing byte starts/stops. */
-export const encodeRing = (device: number, ring: boolean): number[] => [
-  device,
-  ring ? 0x01 : 0x00,
-];
 
 export const encodeEarFitTest = (): number[] => [0x01];
 

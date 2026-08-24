@@ -580,6 +580,10 @@ export const IMPLEMENTED: Record<Brand, readonly FeatureId[]> = {
     F.AmbientLevel,
     F.AutoPowerOff,
     F.SmartPause,
+    F.SpeakToChat,
+    F.TouchAssignment,
+    F.VoicePrompts,
+    F.Multipoint,
   ],
   soundcore: [
     F.Anc,

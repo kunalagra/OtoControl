@@ -150,7 +150,7 @@ export class MdrClient {
   request(
     command: number,
     inquiry?: number,
-    options: { timeoutMs?: number } = {},
+    options: { timeoutMs?: number; table?: 1 | 2 } = {},
   ): Promise<Uint8Array> {
     return this.send(inquiry === undefined ? [command] : [command, inquiry], options);
   }
@@ -164,23 +164,30 @@ export class MdrClient {
    */
   send(
     payload: number[],
-    options: { timeoutMs?: number; expectedReply?: number } = {},
+    options: { timeoutMs?: number; expectedReply?: number; table?: 1 | 2 } = {},
   ): Promise<Uint8Array> {
     const run = () =>
       this.#send(
         payload,
         options.expectedReply ?? replyFor(payload[0]),
         options.timeoutMs ?? this.#timeoutMs,
+        options.table ?? 1,
       );
     const result = this.#queue.then(run, run);
     this.#queue = result.catch(() => undefined);
     return result;
   }
 
-  async #send(payload: number[], reply: number, timeoutMs: number): Promise<Uint8Array> {
+  async #send(
+    payload: number[],
+    reply: number,
+    timeoutMs: number,
+    table: 1 | 2 = 1,
+  ): Promise<Uint8Array> {
     const command = payload[0];
     const inquiry = payload.length > 1 ? payload[1] : undefined;
-    const frame = encodeFrame(DataType.Command1, this.#sequence, payload);
+    const dataType = table === 2 ? DataType.Command2 : DataType.Command1;
+    const frame = encodeFrame(dataType, this.#sequence, payload);
     this.#sequence = nextSequence(this.#sequence);
 
     return new Promise<Uint8Array>((resolve, reject) => {
@@ -198,7 +205,7 @@ export class MdrClient {
       for (const listener of this.#frameListeners) {
         listener(
           {
-            dataType: DataType.Command1,
+            dataType,
             sequence: this.#sequence,
             payload: Uint8Array.from(payload),
             checksumOk: true,
@@ -225,15 +232,21 @@ export class MdrClient {
    * applied, and the new state arrives later as a notification rather than a
    * reply. Waiting for a RET here times out even though the write succeeded.
    */
-  write(payload: number[], options: { timeoutMs?: number } = {}): Promise<void> {
-    const run = () => this.#writeAndAwaitAck(payload, options.timeoutMs ?? this.#timeoutMs);
+  write(payload: number[], options: { timeoutMs?: number; table?: 1 | 2 } = {}): Promise<void> {
+    const run = () =>
+      this.#writeAndAwaitAck(payload, options.timeoutMs ?? this.#timeoutMs, options.table ?? 1);
     const result = this.#queue.then(run, run);
     this.#queue = result.catch(() => undefined);
     return result;
   }
 
-  async #writeAndAwaitAck(payload: number[], timeoutMs: number): Promise<void> {
-    const frame = encodeFrame(DataType.Command1, this.#sequence, payload);
+  async #writeAndAwaitAck(
+    payload: number[],
+    timeoutMs: number,
+    table: 1 | 2 = 1,
+  ): Promise<void> {
+    const dataType = table === 2 ? DataType.Command2 : DataType.Command1;
+    const frame = encodeFrame(dataType, this.#sequence, payload);
     this.#sequence = nextSequence(this.#sequence);
 
     return new Promise<void>((resolve, reject) => {
@@ -249,7 +262,7 @@ export class MdrClient {
       for (const listener of this.#frameListeners) {
         listener(
           {
-            dataType: DataType.Command1,
+            dataType,
             sequence: this.#sequence,
             payload: Uint8Array.from(payload),
             checksumOk: true,
