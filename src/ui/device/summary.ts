@@ -94,7 +94,14 @@ export function summarise(active: ActiveDevice): DeviceSummary {
 
   if (active.id === 'nothing-spp') {
     const { driver, state } = active
-    const cells = [state.battery.left, state.battery.right, state.battery.case].filter(
+    // `single` is the over-ears' one cell; earbuds leave it null and report
+    // the pair instead, so including all four needs no branch.
+    const cells = [
+      state.battery.left,
+      state.battery.right,
+      state.battery.case,
+      state.battery.single,
+    ].filter(
       (cell): cell is { level: number; charging: boolean } => cell !== null,
     )
     return {

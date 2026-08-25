@@ -633,6 +633,80 @@ Two more gaps in the same area:
 
 ---
 
+## Nothing — four commands the app declares and never touches ❓ open
+
+`ProtocolConstant` declares all four, and **nothing else in the app's ~29k
+decompiled Java files references any of them** — no request builder in
+`TWSDeviceExtKt`, no `ITWSParse` entity, no call site:
+
+| Command | Id | What we would get |
+|---|---|---|
+| `GET_SUPPORTED_GESTURE` | `0xc009` | which controls a model actually has — the honest fix for the over-ears, whose button/wheel/slider are not the per-bud pinches the gesture card assumes |
+| `GET_AUTO_POWER_OFF_TIME` / `SET` | `0xc011` / `0xf00b` | an idle-shutdown setting |
+| `GET_NOISE_REDUCTION_CONFIGURATION` | `0xc01d` | BudsLink sends this one and parses nothing back |
+| `GET_DUAL_DEVICE_LIST` / `SET_CONNECT_DEVICE` | `0xc028` / `0xf01b` | the multipoint *device list*; the on/off half is implemented |
+
+Two readings of that silence, and they cannot be told apart statically. Either
+the app never sends them, or — far likelier, since the app is Flutter — it
+drives them from Dart inside `libapp.so`, where there is no symbol to grep.
+Either way the Java gives us the id and nothing else: not the request payload,
+not the reply layout.
+
+So these will not be closed by reading harder. **A `btsnoop_hci.log` from a
+phone running Nothing X, with the relevant screen opened, is the only route.**
+A newer app build is not: 3.8.0 declares the same 304 constants as 3.7.3 and
+adds no reference to any of these four.
+
+## Nothing — 3D mode and scenario mode: shape known, values not ❓ open
+
+Unlike the four above, these two *do* have Java builders, so the wire shape is
+settled and only the semantics are missing:
+
+| Command | Id | Builder | Payload |
+|---|---|---|---|
+| 3D mode | `0xc026` / `0xf019` | `TWSDeviceExtKt.thirdSound` | one byte, an int |
+| Scenario mode | `0xc071` / `0xf075` | `TWSDeviceExtKt.scenarioMode` | one byte; parser `ScenarioModeEntity` reads `[mode]` |
+
+What is unknown is what the values *mean* — which int is which 3D mode, which
+scenario is which id, and what range each accepts. Neither builder constrains
+its argument and no enum names the values.
+
+3D mode is **distinct from** `SPATIAL_AUDIO 0xc04f`, which this driver already
+implements; the app carries both, so it is not a duplicate under another name.
+
+A capture closes both, and so would a screenshot of either screen paired with
+one read — the value the device reports for a named setting is the mapping.
+
+## Nothing — the in-ear detection *write* has two forms ❓ open
+
+The app's `setEarDetect` sends `[1, 1, enabled]` — count, feature id 1, value —
+and BudsLink's `setInEar` sends `[0, 0, enabled]`. Both are three bytes, and
+both projects work.
+
+This driver follows the app, on the standing rule that the vendor wins where a
+reading is unambiguous. But it is a real disagreement rather than a difference
+in style, and it is the first thing to try if in-ear detection ever fails to
+take on real hardware. The *read* is not in doubt: `0xc00e` is a list and the
+decoder addresses feature id 1 inside it.
+
+## Nothing — does registering unlock the other notifications? ❓ open
+
+The app defines 17 notification ids (`0xe001`–`0xe018`) and three commands for
+managing them: `GET_SUPPORTED_NOTIFICATION 0xc03d`,
+`GET_REGISTERED_NOTIFICATION 0xc03e` and `REGISTER_NOTIFICATION 0xf03e`.
+
+This driver sends none of the three, and handles three notification types —
+battery `0xe001`, ANC `0xe003` and fit-test result `0xe00d`. It is unknown
+whether that is all a device pushes unprompted, or whether the other fourteen
+are gated behind a registration we never perform. The connect handshake
+(`0xc001` → `0xf001`) *is* sent, so that is not the missing piece.
+
+Worth settling before concluding a device does not push a given event: it is
+one read of `0xc03d` against real hardware, and the answer decides whether ten
+unhandled notifications (device status, game mode, multipoint ×2, working
+status, LED sync, personalize sync, magic button, head track, LE audio,
+recording) are reachable at all.
+
 ## How to contribute a reading
 
 You need the device, Chrome (or any Chromium browser), and about two minutes.

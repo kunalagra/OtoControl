@@ -21,6 +21,24 @@ import type { NothingFrame } from './frame';
 /** ear-web polls at 100 ms intervals; replies come well inside this. */
 export const DEFAULT_TIMEOUT_MS = 1500;
 
+/**
+ * The timeout for a *capability probe*, where silence is the expected answer.
+ *
+ * `refresh` asks 22 questions and a model that implements none of the optional
+ * features answers none of them. At the default 1500 ms that is a 33-second
+ * connect, which is not a timeout problem so much as an arithmetic one.
+ *
+ * 400 ms is safe here because there is no slow case to accommodate: requests
+ * are serialised one at a time, so nothing of ours competes for the link, and
+ * an unsupported command produces *silence* rather than a late reply — a
+ * supported one lands well inside ear-web's 100 ms polling interval. Four times
+ * that is the margin.
+ *
+ * The cost of getting this wrong is a feature silently missing, so it is
+ * deliberately not tuned lower.
+ */
+export const PROBE_TIMEOUT_MS = 400;
+
 export class NothingUnsupportedError extends Error {
   constructor(command: number, ms: number) {
     super(

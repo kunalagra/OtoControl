@@ -20,6 +20,13 @@ interface Props {
  * be a dropdown with one entry. Labels come from the model string cached on a
  * previous connection — `port.getInfo()` exposes only a service ID, so an
  * unvisited device can only be named by brand.
+ *
+ * **Serial devices only.** `manager.available` comes from `listGrantedPorts()`,
+ * so a BLE device — every Soundcore — never appears here and cannot be
+ * switched back to once you move away from it; the only route back is the
+ * Bluetooth picker or `autoConnect`'s BLE fallback. Listing them would need
+ * `available` to merge `grantedGattDevices()` and to key entries on something
+ * other than a service UUID, since BLE has none.
  */
 export function DeviceSelect({ manager, active }: Props) {
   const available = manager.available

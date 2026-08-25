@@ -93,7 +93,13 @@ describe('NothingDevice', () => {
     for (const capability of ['customEq', 'gestures', 'enhancedBass', 'personalizedAnc'] as const) {
       expect(device.state.capabilities.has(capability)).toBe(false);
     }
-  }, 20000);
+    // This test walks the whole of `refresh` against a device that answers
+    // four reads, so every other request times out. That is the worst case the
+    // connect path can have: two reads at the full 1500 ms (the model read and
+    // the firmware read) and twenty at the 400 ms probe timeout — about 11 s.
+    // The budget is deliberately close to it, so making `refresh` ask more
+    // questions, or asking them more patiently, fails here first.
+  }, 16000);
 
   it('applies a battery notification pushed by the device', async () => {
     let transport: FakeTransport | null = null;

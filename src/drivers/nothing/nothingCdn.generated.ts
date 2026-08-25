@@ -5,9 +5,15 @@
  * rather than editing here.
  *
  * Keyed by the lowercased B1xx base code (the artwork slug `PROFILES` carries
- * for this brand), then by the official colourId. The colourId itself is only
- * readable over BLE, never over serial, so the artwork picker defaults to
- * black and cannot follow the device's actual colour.
+ * for this brand), then by the official colourId — two hex digits, exactly
+ * what `decodeColourId` returns.
+ *
+ * An earlier version of this comment said the colourId was "only readable
+ * over BLE, never over serial", so the picker defaulted to black. That was
+ * wrong: `GET_REMOTE_COLOR_ID 0xc00c` is an ordinary control-channel query
+ * (the official app's `TWSDeviceExtKt.remoteColor`), and the driver now reads
+ * it. The default is still the fallback for a device that does not answer, or
+ * a colour this table has no render for.
  *
  * Nothing's own app loads these same URLs at runtime; the CDN serves them
  * unauthenticated. One bundled webp (fallback.webp) covers offline use.
@@ -98,6 +104,11 @@ export const NOTHING_CDN_IMAGES: Record<string, Record<string, string>> = {
     '02': "https://d1zc89dd4u2mk2.cloudfront.net/device_sku/1783652947858_Igglybuff - Black@2x (2).png",
     '03': "https://d1zc89dd4u2mk2.cloudfront.net/device_sku/1783652915691_Igglybuff - Black@2x (1).png",
     '07': "https://d1zc89dd4u2mk2.cloudfront.net/device_sku/1783652936180_Igglybuff - Black@2x (3).png",
+  },
+  'b193': {
+    '01': "https://d1zc89dd4u2mk2.cloudfront.net/device_sku/1778663698029_Larvitar%20-%20Dark%20grey@2x%20(1).png",
+    '02': "https://d1zc89dd4u2mk2.cloudfront.net/device_sku/1778675656352_Larvitar%20-%20Orange@2x.png",
+    '03': "https://d1zc89dd4u2mk2.cloudfront.net/device_sku/1778732704815_Larvitar%20-%20Blue@2x.png",
   },
   'b170': {
     '01': "https://dmen2t88o28qi.cloudfront.net/device_sku/1750670100575_Elekid-Black.png",

@@ -47,6 +47,48 @@ describe('Sony durable state', () => {
     expect(patch.eq?.gains).toEqual([2, 1, 0, -1, 3, 0]);
   });
 
+  it('carries every captured field back into live state', () => {
+    // The guard that matters: adding a field to `captureDurable` and
+    // forgetting it in `applyDurable` is silent otherwise — the field simply
+    // stops surviving a restart, which no per-field test would notice. Sony
+    // gained four such fields at once (speak-to-chat, touch assignment, voice
+    // guidance, connections).
+    const populated: SonyState = {
+      ...connected,
+      autoPowerOff: 3,
+      pauseOnRemoval: true,
+      speakToChat: { enabled: true, sensitivity: 1, timeout: 2 },
+      touchAssignment: { left: 0x00, right: 0x20 },
+      voiceGuidance: { enabled: true, volume: -1 },
+      connections: {
+        devices: [
+          { mac: 'AA:BB:CC:DD:EE:FF', name: 'Pixel', status: 1, connected: true, classOfDevice: null },
+        ],
+        playbackMac: 'AA:BB:CC:DD:EE:FF',
+        playbackFixed: true,
+      },
+    };
+    const snapshot = captureDurable(populated);
+    const patch = applyDurable(snapshot) as Record<string, unknown>;
+
+    for (const key of Object.keys(snapshot)) {
+      expect(patch, `durable field "${key}" is captured but never applied`).toHaveProperty(key);
+    }
+    for (const key of Object.keys(snapshot).filter((k) => k !== 'capabilities')) {
+      expect(patch[key], `durable field "${key}" changed across the round trip`)
+        .toEqual((snapshot as unknown as Record<string, unknown>)[key]);
+    }
+  });
+
+  it('tolerates a snapshot written before a field existed', () => {
+    // Older caches are normally dropped by the version check, but
+    // `applyDurable` must not throw if one ever reaches it.
+    const patch = applyDurable({ info: connected.info, capabilities: [] } as object);
+    expect(patch.connections).toBeNull();
+    expect(patch.speakToChat).toBeNull();
+    expect(patch.capabilities).toBeInstanceOf(Set);
+  });
+
   it('never carries a status or an error back in', () => {
     const patch = applyDurable(captureDurable(connected));
     expect('status' in patch).toBe(false);

@@ -36,6 +36,18 @@ export const AIROHA_SERVICE_UUID = '00000000-deca-fade-deca-deafdecacaff';
  */
 export const NOTHING_SPP_UUID = 'aeac4a03-dff5-498f-843a-34487cf133eb';
 
+/**
+ * Nothing's BLE data service, from the official app's `EarphonesPluginImpl`
+ * (`dataService`: service `CA235943-…`, characteristic `68745353-…`, behind the
+ * `FD90` scan filter). Distinct from its OTA pair, `66666666-…`/`77777777-…`.
+ *
+ * Held here beside the RFCOMM service class because a Nothing device can be
+ * reached either way: over Web Serial through `NOTHING_SPP_UUID`, or over GATT
+ * — where devices have been observed exposing `NOTHING_SPP_UUID` itself as a
+ * service, so both are tried.
+ */
+export const NOTHING_BLE_DATA_UUID = 'ca235943-1810-45e6-8326-fc8ca3bc45ce';
+
 export type ProtocolGeneration = 'gaia' | 'mdr-v1' | 'mdr-v2' | 'nothing-v1';
 
 export interface KnownService {

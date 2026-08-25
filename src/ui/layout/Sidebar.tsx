@@ -166,30 +166,36 @@ export function ConnectionControls({
 
   if (status === 'connected') {
     return (
-      <ButtonGroup
-        {...(compact ? {} : { className: '[&>button]:flex-1' })}
-      >
-        <Tooltip>
-          <TooltipTrigger
-            render={
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => void manager.refresh()}
-              >
-                <RiRefreshLine data-icon="inline-start" />
-                {!compact && 'Refresh'}
-              </Button>
-            }
-          />
-          <TooltipContent>Re-read every setting. Needed for settings the device never announces.</TooltipContent>
-        </Tooltip>
-        {!compact && (
-          <Button variant="ghost" size="sm" onClick={() => void manager.disconnect()}>
-            Disconnect
-          </Button>
-        )}
-      </ButtonGroup>
+      <div className={compact ? 'flex gap-2' : 'flex flex-col gap-2'}>
+        <ButtonGroup
+          {...(compact ? {} : { className: '[&>button]:flex-1' })}
+        >
+          <Tooltip>
+            <TooltipTrigger
+              render={
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => void manager.refresh()}
+                >
+                  <RiRefreshLine data-icon="inline-start" />
+                  {!compact && 'Refresh'}
+                </Button>
+              }
+            />
+            <TooltipContent>Re-read every setting. Needed for settings the device never announces.</TooltipContent>
+          </Tooltip>
+          {!compact && (
+            <Button variant="ghost" size="sm" onClick={() => void manager.disconnect()}>
+              Disconnect
+            </Button>
+          )}
+        </ButtonGroup>
+        {/* Being connected is not a reason to hide the pickers: granting a
+            second device does not disturb the first. Only in the roomy
+            layout — the compact one has no space and can disconnect first. */}
+        {!compact && <DevicePickers manager={manager} status={status} verb="Add" />}
+      </div>
     )
   }
 
@@ -216,15 +222,65 @@ export function ConnectionControls({
           size="sm"
           disabled={status === 'connecting' || !isWebBluetoothSupported()}
           onClick={() => void manager.connectBluetooth()}
-          title={
-            isWebBluetoothSupported()
-              ? 'For earbuds with no serial service — Soundcore. The buds may need to be advertising: open the case or re-enter pairing range.'
-              : 'This browser has no Web Bluetooth API.'
-          }
+          title={BLUETOOTH_HINT}
         >
           Connect over Bluetooth
         </Button>
       )}
+    </div>
+  )
+}
+
+const BLUETOOTH_HINT =
+  'For Soundcore, which has no serial service, and for Nothing devices that answer over GATT. The buds may need to be advertising: open the case or re-enter pairing range.'
+
+/**
+ * The two ways to grant a device, for use while one is already connected.
+ *
+ * `manager.connect()`/`connectBluetooth()` grant, select and adopt without
+ * closing an existing session — the private `#select` only moves which driver
+ * is active — so adding a device of another brand leaves the first one live in
+ * the background. A second device of the *same* brand replaces that brand's
+ * session, because one driver instance holds one connection.
+ *
+ * Getting *back* to the first device works only for serial ones:
+ * `DeviceSelect` lists `manager.available`, which comes from
+ * `listGrantedPorts()` and so has no BLE entries. Switching through it also
+ * calls the public `select`, which disconnects every device first. So a
+ * Soundcore added here is reachable until you switch away from it — see the
+ * gap noted in `DeviceSelect`.
+ */
+function DevicePickers({
+  manager,
+  status,
+  verb,
+}: {
+  manager: DeviceManager
+  status: string
+  verb: string
+}) {
+  const bluetooth = isWebBluetoothSupported()
+  return (
+    <div className="flex gap-2">
+      <Button
+        variant="outline"
+        size="sm"
+        className="flex-1"
+        disabled={status === 'connecting'}
+        onClick={() => void manager.connect()}
+      >
+        {verb} over serial
+      </Button>
+      <Button
+        variant="outline"
+        size="sm"
+        className="flex-1"
+        disabled={status === 'connecting' || !bluetooth}
+        onClick={() => void manager.connectBluetooth()}
+        title={bluetooth ? BLUETOOTH_HINT : 'This browser has no Web Bluetooth API.'}
+      >
+        {verb} over Bluetooth
+      </Button>
     </div>
   )
 }

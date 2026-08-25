@@ -1,4 +1,5 @@
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Button } from '@/components/ui/button'
 import { Switch } from '@/components/ui/switch'
 import { cn } from '@/lib/utils'
 import { AncLevel } from '@/drivers/nothing/commands'
@@ -83,17 +84,67 @@ export function NothingNoise({ device, state }: Props) {
 
       {hasPersonalized && (
         <Card data-size="sm">
-          <CardContent>
+          <CardContent className="flex flex-col gap-3">
             <SettingRow
               label="Personalized ANC"
-              hint="Tunes the cancellation to the shape of your ears. Ear (2) only."
+              hint="Tunes the cancellation to the shape of your ears."
             >
               <Switch
-                checked={state.personalizedAnc === true}
+                checked={state.personalizedAnc?.enabled === true}
                 disabled={disabled || state.personalizedAnc === null}
                 onCheckedChange={(on) => void device.setPersonalizedAnc(on)}
               />
             </SettingRow>
+            {/* The fitting runs on the device; the calibration byte in the
+                reply is how it reports where it got to. */}
+            <SettingRow
+              label="Fit calibration"
+              hint={
+                state.personalizedAnc && state.personalizedAnc.calibration > 0
+                  ? `Last result: ${state.personalizedAnc.calibration}`
+                  : 'Measures your ears to tune the cancellation.'
+              }
+            >
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={disabled}
+                onClick={() => void device.startCalibration()}
+              >
+                Calibrate
+              </Button>
+            </SettingRow>
+          </CardContent>
+        </Card>
+      )}
+
+      {(state.capabilities.has('smartAnc') || state.capabilities.has('smartFree')) && (
+        <Card data-size="sm">
+          <CardContent className="flex flex-col gap-3">
+            {state.capabilities.has('smartAnc') && (
+              <SettingRow
+                label="Smart noise cancelling"
+                hint="Lets the device pick the level from your surroundings."
+              >
+                <Switch
+                  checked={state.smartAnc === true}
+                  disabled={disabled || state.smartAnc === null}
+                  onCheckedChange={(on) => void device.setSmartAnc(on)}
+                />
+              </SettingRow>
+            )}
+            {state.capabilities.has('smartFree') && (
+              <SettingRow
+                label="Smart free"
+                hint="Eases cancellation when nothing is playing."
+              >
+                <Switch
+                  checked={state.smartFree === true}
+                  disabled={disabled || state.smartFree === null}
+                  onCheckedChange={(on) => void device.setSmartFree(on)}
+                />
+              </SettingRow>
+            )}
           </CardContent>
         </Card>
       )}

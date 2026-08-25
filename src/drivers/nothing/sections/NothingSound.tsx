@@ -2,7 +2,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Slider } from '@/components/ui/slider'
 import { Switch } from '@/components/ui/switch'
 import { cn } from '@/lib/utils'
-import { DiracPreset, DIRAC_PRESET_NAMES, EqPreset, EQ_PRESET_NAMES } from '@/drivers/nothing/commands'
+import { DiracPreset, DIRAC_PRESET_NAMES, EqPreset, EQ_PRESET_NAMES, ClarityLevel, eqBandLabel } from '@/drivers/nothing/commands'
 import type { NothingDevice, NothingState } from '@/drivers/nothing/device'
 import { SettingRow } from '@/ui/controls/SettingRow'
 
@@ -24,8 +24,18 @@ const DIRAC_PRESETS = [
 ]
 
 /** ear-web's custom slider range, 0–10 per band. */
-const CUSTOM_RANGE = { min: 0, max: 10 }
-const CUSTOM_BAND_NAMES = ['Bass', 'Mid', 'Treble']
+/**
+ * Gain range for a band slider. The wire carries a float, so this is a UI
+ * choice rather than a protocol limit.
+ */
+const CUSTOM_RANGE = { min: -10, max: 10 }
+
+/** `ClarityBoostEntity.Level`. */
+const CLARITY_LEVELS: Array<[number, string]> = [
+  [ClarityLevel.Low, 'Low'],
+  [ClarityLevel.Mid, 'Medium'],
+  [ClarityLevel.High, 'High'],
+]
 
 export function NothingSound({ device, state }: Props) {
   const disabled = state.status !== 'connected'
@@ -36,7 +46,8 @@ export function NothingSound({ device, state }: Props) {
   const hasBass = state.capabilities.has('enhancedBass')
   const hasSpatial = state.capabilities.has('spatialAudio')
 
-  const eqActive = state.eqPreset !== null && state.eqPreset !== EqPreset.Advanced
+  // Advanced EQ overrides the preset row; there is no preset id for it.
+  const eqActive = state.eqPreset !== null && state.advancedEq !== true
 
   return (
     <div className="flex flex-col gap-4">
@@ -98,25 +109,30 @@ export function NothingSound({ device, state }: Props) {
                     >
                       Custom
                     </button>
-                    {state.customEq?.map((value, band) => (
-                      <SettingRow key={band} label={CUSTOM_BAND_NAMES[band]}>
+                    {state.customEq?.bands.map((band, index) => (
+                      <SettingRow key={index} label={eqBandLabel(band)} hint={`${Math.round(band.frequency)} Hz`}>
                         <div className="flex w-40 items-center gap-3">
                           <Slider
-                            value={[value]}
+                            value={[band.gain]}
                             min={CUSTOM_RANGE.min}
                             max={CUSTOM_RANGE.max}
                             step={1}
                             disabled={disabled}
-                            aria-label={`${CUSTOM_BAND_NAMES[band]} level`}
+                            aria-label={`${eqBandLabel(band)} gain`}
                             onValueChange={(next) => {
-                              if (!state.customEq) return
-                              const bands = [...state.customEq] as [number, number, number]
-                              bands[band] = Array.isArray(next) ? next[0] : next
-                              void device.setCustomEq(bands)
+                              const eq = state.customEq
+                              if (!eq) return
+                              const gain = Array.isArray(next) ? next[0] : next
+                              // Rebuild the whole structure: the write carries
+                              // every band's frequency and Q as well.
+                              void device.setCustomEq({
+                                ...eq,
+                                bands: eq.bands.map((b, i) => (i === index ? { ...b, gain } : b)),
+                              })
                             }}
                           />
                           <span className="text-muted-foreground w-6 text-right text-xs tabular-nums">
-                            {value}
+                            {band.gain}
                           </span>
                         </div>
                       </SettingRow>
@@ -254,25 +270,30 @@ export function NothingSound({ device, state }: Props) {
                     >
                       Custom
                     </button>
-                    {state.customEq?.map((value, band) => (
-                      <SettingRow key={band} label={CUSTOM_BAND_NAMES[band]}>
+                    {state.customEq?.bands.map((band, index) => (
+                      <SettingRow key={index} label={eqBandLabel(band)} hint={`${Math.round(band.frequency)} Hz`}>
                         <div className="flex w-40 items-center gap-3">
                           <Slider
-                            value={[value]}
+                            value={[band.gain]}
                             min={CUSTOM_RANGE.min}
                             max={CUSTOM_RANGE.max}
                             step={1}
                             disabled={disabled}
-                            aria-label={`${CUSTOM_BAND_NAMES[band]} level`}
+                            aria-label={`${eqBandLabel(band)} gain`}
                             onValueChange={(next) => {
-                              if (!state.customEq) return
-                              const bands = [...state.customEq] as [number, number, number]
-                              bands[band] = Array.isArray(next) ? next[0] : next
-                              void device.setCustomEq(bands)
+                              const eq = state.customEq
+                              if (!eq) return
+                              const gain = Array.isArray(next) ? next[0] : next
+                              // Rebuild the whole structure: the write carries
+                              // every band's frequency and Q as well.
+                              void device.setCustomEq({
+                                ...eq,
+                                bands: eq.bands.map((b, i) => (i === index ? { ...b, gain } : b)),
+                              })
                             }}
                           />
                           <span className="text-muted-foreground w-6 text-right text-xs tabular-nums">
-                            {value}
+                            {band.gain}
                           </span>
                         </div>
                       </SettingRow>
@@ -318,6 +339,112 @@ export function NothingSound({ device, state }: Props) {
                 />
               </SettingRow>
             )}
+          </CardContent>
+        </Card>
+      )}
+
+      {state.capabilities.has('advancedEqBands') && state.advancedEqBands && (
+        <Card data-size="sm">
+          <CardHeader>
+            <CardTitle>Advanced equalizer</CardTitle>
+            <p className="text-muted-foreground text-xs">
+              Eight parametric bands. Frequency and Q come from the device;
+              only the gains are edited here.
+            </p>
+          </CardHeader>
+          <CardContent className="flex flex-col gap-3">
+            {state.advancedEqBands.bands.map((band, index) => (
+              <SettingRow
+                key={index}
+                label={`${Math.round(band.frequency)} Hz`}
+                hint={eqBandLabel(band)}
+              >
+                <div className="flex w-40 items-center gap-3">
+                  <Slider
+                    value={[band.gain]}
+                    min={CUSTOM_RANGE.min}
+                    max={CUSTOM_RANGE.max}
+                    step={1}
+                    disabled={disabled}
+                    aria-label={`${Math.round(band.frequency)} Hz gain`}
+                    onValueChange={(next) => {
+                      const eq = state.advancedEqBands
+                      if (!eq) return
+                      const gain = Array.isArray(next) ? next[0] : next
+                      void device.setAdvancedEqBands({
+                        ...eq,
+                        bands: eq.bands.map((b, i) => (i === index ? { ...b, gain } : b)),
+                      })
+                    }}
+                  />
+                  <span className="text-muted-foreground w-6 text-right text-xs tabular-nums">
+                    {band.gain}
+                  </span>
+                </div>
+              </SettingRow>
+            ))}
+          </CardContent>
+        </Card>
+      )}
+
+      {state.capabilities.has('clarityBoost') && state.clarityBoost && (
+        <Card data-size="sm">
+          <CardContent className="flex flex-col gap-3">
+            <SettingRow
+              label="Clarity boost"
+              hint="Sharpens detail in the upper midrange."
+            >
+              <Switch
+                checked={state.clarityBoost.enabled}
+                disabled={disabled}
+                onCheckedChange={(on) => void device.setClarityBoost(on)}
+              />
+            </SettingRow>
+            <div
+              className={cn(
+                'flex flex-col gap-2 transition-opacity',
+                !state.clarityBoost.enabled && 'pointer-events-none opacity-40',
+              )}
+            >
+              <SettingRow label="Amount">
+                <div className="flex gap-1.5">
+                  {CLARITY_LEVELS.map(([level, name]) => (
+                    <button
+                      key={level}
+                      type="button"
+                      disabled={disabled}
+                      aria-pressed={state.clarityBoost?.level === level}
+                      onClick={() => void device.setClarityBoost(true, level)}
+                      className={cn(
+                        'rounded-lg border px-2.5 py-1.5 text-xs font-medium',
+                        state.clarityBoost?.level === level
+                          ? 'border-primary bg-primary/10'
+                          : 'border-border hover:border-muted-foreground/40',
+                      )}
+                    >
+                      {name}
+                    </button>
+                  ))}
+                </div>
+              </SettingRow>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {state.capabilities.has('lhdc') && (
+        <Card data-size="sm">
+          <CardContent>
+            <SettingRow
+              label="LHDC"
+              hint="High-bitrate codec, where the phone supports it."
+            >
+              <Switch
+                checked={state.lhdc === true}
+                disabled={disabled || state.lhdc === null}
+                onCheckedChange={(on) => void device.setLhdc(on)}
+              />
+            </SettingRow>
           </CardContent>
         </Card>
       )}

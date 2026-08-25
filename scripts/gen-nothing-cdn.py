@@ -18,7 +18,7 @@ from pathlib import Path
 # Every earphone model the driver knows, in drivers/nothing/models.ts order.
 WANTED = [
     'B181', 'B157', 'B155', 'B162', 'B171', 'B174', 'B163', 'B168', 'B172', 'B164',
-    'B173', 'B183', 'B190', 'B179', 'B184', 'B185', 'B187', 'B189',
+    'B173', 'B183', 'B190', 'B179', 'B184', 'B185', 'B187', 'B189', 'B193',
     'B170', 'B186', 'B198', 'B175',
 ]
 
@@ -29,9 +29,15 @@ HEADER = '''/**
  * rather than editing here.
  *
  * Keyed by the lowercased B1xx base code (the artwork slug `PROFILES` carries
- * for this brand), then by the official colourId. The colourId itself is only
- * readable over BLE, never over serial, so the artwork picker defaults to
- * black and cannot follow the device's actual colour.
+ * for this brand), then by the official colourId — two hex digits, exactly
+ * what `decodeColourId` returns.
+ *
+ * An earlier version of this comment said the colourId was "only readable
+ * over BLE, never over serial", so the picker defaulted to black. That was
+ * wrong: `GET_REMOTE_COLOR_ID 0xc00c` is an ordinary control-channel query
+ * (the official app's `TWSDeviceExtKt.remoteColor`), and the driver now reads
+ * it. The default is still the fallback for a device that does not answer, or
+ * a colour this table has no render for.
  *
  * Nothing's own app loads these same URLs at runtime; the CDN serves them
  * unauthenticated. One bundled webp (fallback.webp) covers offline use.

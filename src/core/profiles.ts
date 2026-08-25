@@ -129,7 +129,16 @@ const nothingProfile = (
   name,
   brand: 'nothing',
   // The base code and the display name, whichever a snapshot happened to keep.
-  match: new RegExp(`${base}|${name.replace(/[()]/g, '\\$&')}`, 'i'),
+  //
+  // Anchored, and that is load-bearing. Nothing's names nest inside one
+  // another — "CMF Buds" is a prefix of "CMF Buds 2", "CMF Buds Neo" and four
+  // more; "Nothing Ear" of "Nothing Ear (3)" and "Nothing Ear (open)" — and
+  // `profileFor` takes the first match in list order. Unanchored, 11 of the 23
+  // models resolved to an older sibling's profile and drew its product render:
+  // an Ear (3) showed an Ear, every CMF Buds 2 showed a CMF Buds. Matching the
+  // whole string is what keeps a longer name from being swallowed by a shorter
+  // one that happens to be declared first.
+  match: new RegExp(`^(?:${base}|${name.replace(/[()]/g, '\\$&')})$`, 'i'),
   form,
   battery: form === 'over-ear' ? 'single' : 'dual',
   // Buds charge in a case; over-ears and the neckband have none.
@@ -286,6 +295,7 @@ const NOTHING_PROFILES: readonly DeviceProfile[] = [
   nothingProfile('cmf-buds-2a', 'CMF Buds 2a', 'B185', true),
   nothingProfile('cmf-buds-pro-2-v2', 'CMF Buds Pro 2 (2nd gen)', 'B187', true),
   nothingProfile('cmf-clip-pro', 'CMF Clip Pro', 'B189', false),
+  nothingProfile('cmf-buds-neo', 'CMF Buds Neo', 'B193', true),
   nothingProfile('nothing-headphone-1', 'Nothing Headphone (1)', 'B170', true, [], 'over-ear'),
   nothingProfile('nothing-headphone-a', 'Nothing Headphone (a)', 'B186', true, [], 'over-ear'),
   nothingProfile('nothing-headphone-a-v2', 'Nothing Headphone (a) (2nd gen)', 'B198', true, [], 'over-ear'),
