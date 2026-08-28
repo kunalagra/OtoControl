@@ -1,3 +1,5 @@
+/// <reference types="node" />
+
 import { describe, expect, it } from 'vitest';
 
 import { soundcoreArtwork } from './assets';
