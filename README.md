@@ -29,6 +29,7 @@
 | **Sony** | WH-1000X series, WF-1000X series, LinkBuds, INZONE… | ✅ Capability-probed on connect |
 | **Nothing / CMF** | Ear (1)–(3), CMF Buds Pro, Headphone (a)… | ✅ Full controls incl. gestures & fit test |
 | **Soundcore** | Liberty Air 2 Pro, Space One, and more | ✅ ANC, EQ, tap customization, LDAC |
+| **OPPO / realme / OnePlus** (HeyMelody) | Enco Air series, Buds/Nord Buds, realme Buds… | 🧪 Battery, ANC, EQ — built from protocol reverse-engineering, unverified on real hardware |
 
 > [!NOTE]
 > Every model Sony's own catalog carries is recognized out of the box — its cloud catalog is the model list. Soundcore support targets the A3951 protocol family.
@@ -42,6 +43,7 @@
   * **Sony (MDR)** — noise cancelling / ambient, EQ, auto power off, power off, DSEE upscaling, connection mode
   * **Nothing / CMF** — ANC modes, presets + custom EQ, Advanced EQ, Dirac Opteo, bass enhance, touch assignment, low latency, find my buds, ear tip fit test
   * **Soundcore (BLE)** — battery, ANC scenes & custom transparency, 8-band custom EQ + 29 presets (incl. artist profiles), tap customization with enable/disable, wear detection, voice prompts, LDAC toggle
+  * **HeyMelody (SPP)** — the shared OPPO/realme/OnePlus app: device identification via a 137-model catalog, battery, ANC modes, EQ presets with full per-band curves
 * **Settings snapshots** cached locally per device, so last-known state survives reloads
 * **Frame-level debug console** for capturing raw protocol frames (`localStorage["otocontrol:debug-frames"] = "1"`)
 
@@ -86,6 +88,7 @@ Protocol knowledge stands on these projects (read as reference, never copied):
 * [Gadgetbridge](https://codeberg.org/Freeyourgadget/Gadgetbridge) — Soundcore wire semantics
 * [ear-web](https://gitlab.com/the-fonz/ear-web) & BudsLink — Nothing/CMF and Sony MDR specs
 * [ZenControl](https://github.com/Oein/sennheiser-desktop-client) — Sennheiser audio modes
+* [OppoPodsManager](https://github.com/Zhaoyi-ya/OppoPodsManager) and the OppoPods lineage it credits ([Leaf-lsgtky](https://github.com/Leaf-lsgtky/OppoPods), [1812z](https://github.com/1812z/OppoPods)) — OPPO/realme/OnePlus protocol corroboration
 
 Built with:
 
