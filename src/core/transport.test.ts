@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   AIROHA_SERVICE_UUID,
+  HEYMELODY_SPP_UUID,
   KNOWN_SERVICES,
   M4_SERVICE_UUID,
   PortOpenError,
@@ -11,6 +12,7 @@ import {
   SONY_MDR_V2_UUID,
   isUnreachable,
   serviceForPort,
+  servicesFor,
 } from './transport';
 
 /** Enough of a SerialPort for service resolution, which only reads getInfo(). */
@@ -66,12 +68,18 @@ describe('KNOWN_SERVICES', () => {
 
   it('maps every service to a brand that has artwork', () => {
     for (const { brand } of KNOWN_SERVICES) {
-      expect(['sennheiser', 'sony', 'nothing']).toContain(brand);
+      expect(['sennheiser', 'sony', 'nothing', 'heymelody']).toContain(brand);
     }
   });
 
   it('does not offer the Airoha service in the picker', () => {
     expect(KNOWN_SERVICES.map((s) => s.uuid)).not.toContain(AIROHA_SERVICE_UUID);
+  });
+});
+
+describe('servicesFor', () => {
+  it('resolves heymelody services', () => {
+    expect(servicesFor('heymelody')).toEqual([HEYMELODY_SPP_UUID]);
   });
 });
 

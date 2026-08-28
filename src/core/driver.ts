@@ -40,6 +40,7 @@ import { SENNHEISER_DRIVER } from '@/drivers/sennheiser/driver';
 import { SONY_DRIVER } from '@/drivers/sony/driver';
 import { NOTHING_DRIVER } from '@/drivers/nothing/driver';
 import { SOUNDCORE_DRIVER } from '@/drivers/soundcore/driver';
+import { HEYMELODY_DRIVER } from '@/drivers/heymelody/driver';
 
 /**
  * Re-exported so this module stays the single address for "a driver".
@@ -60,6 +61,7 @@ export { SENNHEISER_DRIVER } from '@/drivers/sennheiser/driver';
 export { SONY_DRIVER } from '@/drivers/sony/driver';
 export { NOTHING_DRIVER } from '@/drivers/nothing/driver';
 export { SOUNDCORE_DRIVER } from '@/drivers/soundcore/driver';
+export { HEYMELODY_DRIVER } from '@/drivers/heymelody/driver';
 
 /**
  * Every driver id this app can produce, as a closed union.
@@ -90,7 +92,8 @@ export type DriverId =
   | typeof SENNHEISER_DRIVER.id
   | typeof SONY_DRIVER.id
   | typeof NOTHING_DRIVER.id
-  | typeof SOUNDCORE_DRIVER.id;
+  | typeof SOUNDCORE_DRIVER.id
+  | typeof HEYMELODY_DRIVER.id;
 
 /**
  * How a driver obtains its device's transport.
@@ -252,6 +255,7 @@ export const DRIVERS: readonly DeviceDriver<never, never>[] = [
   SONY_DRIVER,
   NOTHING_DRIVER,
   SOUNDCORE_DRIVER,
+  HEYMELODY_DRIVER,
 ] as unknown as readonly DeviceDriver<never, never>[];
 
 /** The driver that speaks a given RFCOMM service, or null if none does. */

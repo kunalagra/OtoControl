@@ -296,3 +296,46 @@ describe('MomentumDevice self-disconnect', () => {
     expect(device.state.error).toBe('out of range');
   });
 });
+
+describe('MomentumDevice disconnect caching', () => {
+  it('keeps showing the identified model after an unexpected drop', async () => {
+    const harness = gaiaHarness(withPairedDevices());
+    const device = new MomentumDevice(harness.open);
+    await device.adoptPort(port);
+    expect(device.state.info.model).toBe('M4AEBT Black');
+
+    harness.transport().drop(new Error('The device has been lost.'));
+
+    // The sidebar identifies the device off `info.model` — losing it here
+    // is what makes a known Momentum 4 render as the generic "no device"
+    // placeholder the moment it drops, instead of its own dimmed artwork.
+    expect(device.state.status).toBe('disconnected');
+    expect(device.state.info.model).toBe('M4AEBT Black');
+    // The paired-device list is a live reading, not a setting — it must not
+    // survive alongside the identity fields above.
+    expect(device.state.connections.devices).toEqual([]);
+  });
+
+  it('keeps showing the identified model after a manual disconnect', async () => {
+    const harness = gaiaHarness(withPairedDevices());
+    const device = new MomentumDevice(harness.open);
+    await device.adoptPort(port);
+    expect(device.state.info.model).toBe('M4AEBT Black');
+
+    await device.disconnect();
+
+    expect(device.state.status).toBe('disconnected');
+    expect(device.state.info.model).toBe('M4AEBT Black');
+  });
+
+  it('makes no claim about a device that was never identified', async () => {
+    // `#lastKnownDurable()` is shared by `onDrop` and `disconnect()` — pinning
+    // it here against a device that never read anything is enough to cover
+    // both call sites without standing up a transport for each.
+    const device = new MomentumDevice();
+    await device.disconnect();
+
+    expect(device.state.status).toBe('disconnected');
+    expect(device.state.info.model).toBeNull();
+  });
+});

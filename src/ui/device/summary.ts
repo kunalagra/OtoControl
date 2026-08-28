@@ -139,6 +139,24 @@ export function summarise(active: ActiveDevice): DeviceSummary {
     }
   }
 
+  if (active.id === 'heymelody') {
+    const { driver, state } = active
+    return {
+      model: state.info.model ?? fallbackName(state.status, 'HeyMelody earbuds'),
+      // A valid `productId` with no catalog match (a model newer than this
+      // driver's catalog) still means a real device answered — see how the
+      // Soundcore and Nothing branches above use their own secondary identity
+      // field (`serial`/`firmware`) for exactly this case.
+      hasDevice: state.info.model !== null || state.info.productId !== null,
+      battery: state.battery.length ? Math.min(...state.battery.map((cell) => cell.level)) : null,
+      charging: state.battery.some((cell) => cell.charging),
+      codec: driver.codecName(state),
+      detail: driver.statusLine(state),
+      artwork: driver.artwork(state),
+      worn: driver.worn(state),
+    }
+  }
+
   const { driver, state } = active
   return {
     model: state.info.model ?? fallbackName(state.status, 'Sennheiser headphones'),

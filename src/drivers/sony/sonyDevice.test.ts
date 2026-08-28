@@ -144,6 +144,58 @@ describe('SonyDevice transport seam', () => {
   });
 });
 
+describe('SonyDevice disconnect caching', () => {
+  it('keeps showing the identified model after an unexpected drop', async () => {
+    let transport: FakeTransport | null = null;
+    const open: TransportOpener = async (_p, handlers) => {
+      transport = new FakeTransport(handlers);
+      transport.onWrite = (bytes) => {
+        const [frame] = new MdrDecoder().push(bytes);
+        if (!frame || frame.dataType !== DataType.Command1) return;
+        const reply = handshakeReply(frame.payload[0], frame.payload[1]);
+        if (!reply) return;
+        const sequence = frame.sequence;
+        queueMicrotask(() => transport?.receive(encodeFrame(DataType.Command1, sequence, reply)));
+      };
+      return transport;
+    };
+
+    const device = new SonyDevice(open);
+    await device.adoptPort(port);
+    expect(device.state.info.model).toBe('WF-C500');
+
+    transport!.drop(new Error('The device has been lost.'));
+
+    // The sidebar identifies the device off `info.model` — losing it here is
+    // what makes a known device render as the generic "no device" placeholder
+    // the moment it drops, instead of its own dimmed artwork.
+    expect(device.state.status).toBe('disconnected');
+    expect(device.state.info.model).toBe('WF-C500');
+  });
+
+  it('keeps showing the identified model after a manual disconnect', async () => {
+    const device = new SonyDevice(sonyHandshakeOpener());
+    await device.adoptPort(port);
+    expect(device.state.info.model).toBe('WF-C500');
+
+    await device.disconnect();
+
+    expect(device.state.status).toBe('disconnected');
+    expect(device.state.info.model).toBe('WF-C500');
+  });
+
+  it('makes no claim about a device that was never identified', async () => {
+    // `#lastKnownDurable()` is shared by `onDrop` and `disconnect()` — pinning
+    // it here against a device that never read anything is enough to cover
+    // both call sites without standing up a transport for each.
+    const device = new SonyDevice();
+    await device.disconnect();
+
+    expect(device.state.status).toBe('disconnected');
+    expect(device.state.info.model).toBeNull();
+  });
+});
+
 describe('SonyDevice connect race', () => {
   it('does not report connected when the transport drops before open resolves', async () => {
     // Same race as MomentumDevice's (see device.test.ts): SerialTransport's
@@ -483,5 +535,49 @@ describe('SonyDevice connections', () => {
     await device.setPlaybackDevice('11:22:33:44:55:66');
     expect(device.state.connections?.playbackMac).toBe('AA:BB:CC:DD:EE:FF');
     expect(device.state.error).not.toBeNull();
+  });
+
+  it('drops the paired-device list on an unexpected disconnect, not just the identity fields', async () => {
+    // `connected` on a paired-device entry is a live fact — "holds a link
+    // right now" (see `PairedDevice.status` in mdr/pairing.ts) — not a
+    // setting. It rides inside the same durable slice the disconnect-caching
+    // fix now carries across a drop, so this pins that the carry-over stops
+    // short of resurrecting a stale "Connected" badge for a peer we can no
+    // longer confirm anything about.
+    const { opener } = openerWithSupport([0x30, 0x31], {
+      '0x36:0x00': pairingListBody(),
+      '0x36:0x01': [0x37, 0x01, 0x00],
+    });
+    let transport: FakeTransport | null = null;
+    const wrapped: TransportOpener = async (p, handlers) => {
+      transport = (await opener(p, handlers)) as FakeTransport;
+      return transport;
+    };
+    const device = new SonyDevice(wrapped);
+    await device.adoptPort(port);
+    expect(device.state.connections?.devices.length).toBe(2);
+
+    transport!.drop(new Error('The device has been lost.'));
+
+    expect(device.state.status).toBe('disconnected');
+    // The model survives (the disconnect-caching fix); the live paired-device
+    // list does not.
+    expect(device.state.info.model).toBe('WF-C500');
+    expect(device.state.connections).toBeNull();
+  });
+
+  it('drops the paired-device list on a manual disconnect too', async () => {
+    const { opener } = openerWithSupport([0x30, 0x31], {
+      '0x36:0x00': pairingListBody(),
+      '0x36:0x01': [0x37, 0x01, 0x00],
+    });
+    const device = new SonyDevice(opener);
+    await device.adoptPort(port);
+    expect(device.state.connections?.devices.length).toBe(2);
+
+    await device.disconnect();
+
+    expect(device.state.info.model).toBe('WF-C500');
+    expect(device.state.connections).toBeNull();
   });
 });

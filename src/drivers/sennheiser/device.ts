@@ -154,6 +154,7 @@ export class MomentumDevice implements Persistable {
         const intentional = Date.now() - this.#intentionalDropAt < INTENTIONAL_DROP_GRACE_MS;
         this.#patch({
           ...initialState,
+          ...this.#lastKnownDurable(),
           status: 'disconnected',
           error: intentional || !reason ? null : describeError(reason),
         });
@@ -742,8 +743,25 @@ export class MomentumDevice implements Persistable {
     // So a manual disconnect can never inherit a pending self-disconnect's
     // grace window and misreport whatever happens next as intentional.
     this.#intentionalDropAt = 0;
+    const durable = this.#lastKnownDurable();
     const closed = this.#session.disconnect();
-    this.#patch({ ...initialState, status: 'disconnected' });
+    this.#patch({ ...initialState, ...durable, status: 'disconnected' });
     await closed;
+  }
+
+  /**
+   * Identity and settings worth carrying across a disconnect, so the sidebar
+   * keeps naming the device and rendering its artwork instead of collapsing
+   * to the generic "no device" placeholder the instant the link drops.
+   *
+   * Reuses the exact same durable slice `Persistable` caches to local
+   * storage — the split between what survives a disconnect and what does not
+   * is one decision, not two, and `applyDurable` already encodes it. Empty
+   * once nothing has ever been read, matching `StateStore.snapshot`'s own
+   * gate: a device we never identified has nothing worth keeping.
+   */
+  #lastKnownDurable(): Partial<DeviceState> {
+    const durable = this.#store.snapshot();
+    return durable ? applyDurable(initialState, durable) : {};
   }
 }

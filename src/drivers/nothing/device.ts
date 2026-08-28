@@ -272,6 +272,7 @@ export class NothingDevice implements Persistable {
       onDrop: (reason) =>
         this.#patch({
           ...initialNothingState,
+          ...this.#lastKnownDurable(),
           status: 'disconnected',
           error: reason ? describeError(reason) : null,
         }),
@@ -1087,8 +1088,25 @@ export class NothingDevice implements Persistable {
   // --- teardown --------------------------------------------------------------
 
   async disconnect(): Promise<void> {
+    const durable = this.#lastKnownDurable();
     const closed = this.#session.disconnect();
-    this.#patch({ ...initialNothingState, status: 'disconnected' });
+    this.#patch({ ...initialNothingState, ...durable, status: 'disconnected' });
     await closed;
+  }
+
+  /**
+   * Identity and settings worth carrying across a disconnect, so the sidebar
+   * keeps naming the device and rendering its artwork instead of collapsing
+   * to the generic "no device" placeholder the instant the link drops.
+   *
+   * Reuses the exact same durable slice `Persistable` caches to local
+   * storage — the split between what survives a disconnect and what does not
+   * is one decision, not two, and `applyDurable` already encodes it. Empty
+   * once nothing has ever been read, matching `StateStore.snapshot`'s own
+   * gate: a device we never identified has nothing worth keeping.
+   */
+  #lastKnownDurable(): Partial<NothingState> {
+    const durable = this.#store.snapshot();
+    return durable ? applyDurable(durable) : {};
   }
 }

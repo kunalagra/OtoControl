@@ -35,4 +35,4 @@
  * This module moved here from the now-retired `src/device/` alongside
  * `manager.ts`; it was never a candidate for deletion.
  */
-export type Brand = 'sennheiser' | 'sony' | 'nothing' | 'soundcore';
+export type Brand = 'sennheiser' | 'sony' | 'nothing' | 'soundcore' | 'heymelody';

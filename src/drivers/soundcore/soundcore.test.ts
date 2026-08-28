@@ -285,6 +285,10 @@ class FakeGattTransport extends FakeTransport {
   override receive(bytes: Uint8Array): void {
     this.#handlers?.onData(bytes);
   }
+  override drop(reason?: Error): void {
+    this.isOpen = false;
+    this.#handlers?.onClose(reason);
+  }
 }
 
 describe('SoundcoreDevice battery pushes', () => {
@@ -311,5 +315,71 @@ describe('SoundcoreDevice battery pushes', () => {
     transport.receive(frame(0x0103, [0xff, 0x04]));
     expect(device.state.battery!.left.level).toBeNull();
     expect(device.state.battery!.right.level).toBe(80);
+  });
+});
+
+/**
+ * Answers the three reads `refresh` makes, in the fixed order it makes them
+ * (state, then info, then LDAC) — the client's request queue is strictly
+ * sequential, so counting writes is enough to know which reply is due next.
+ * The state and info replies are real A3951 captures; info's serial resolves
+ * to a model name through `SOUNDCORE_PRODUCTS`, same as a real connect.
+ */
+function soundcoreEagerReplies(transport: FakeGattTransport): void {
+  let writes = 0;
+  transport.onWrite = () => {
+    writes += 1;
+    if (writes === 1) queueMicrotask(() => transport.receive(A3951_STATE_BYTES));
+    else if (writes === 2) queueMicrotask(() => transport.receive(A3951_INFO_BYTES));
+    else if (writes === 3) {
+      const kind = C.Kind.LdacState;
+      const raw = Uint8Array.from([0x09, 0xff, 0x00, 0x00, 0x01, kind >> 8, kind & 0xff, 0x0b, 0x00, 0x00]);
+      queueMicrotask(() => transport.receive(Uint8Array.from([...raw, checksum(raw)])));
+    }
+  };
+}
+
+describe('SoundcoreDevice disconnect caching', () => {
+  it('keeps showing the identified model after an unexpected drop', async () => {
+    const transport = new FakeGattTransport({ onData: () => {}, onClose: () => {} } as never);
+    soundcoreEagerReplies(transport);
+    const device = new SoundcoreDevice();
+    await device.adoptTransport(transport);
+    expect(device.state.info.model).toBe('Soundcore Liberty Air 2 Pro');
+
+    transport.drop(new Error('The device has been lost.'));
+
+    // The sidebar identifies the device off `info.model` — losing it here is
+    // what makes a known device render as the generic "no device" placeholder
+    // the moment it drops, instead of its own dimmed artwork.
+    expect(device.state.status).toBe('disconnected');
+    expect(device.state.info.model).toBe('Soundcore Liberty Air 2 Pro');
+    // Battery is a live reading, not a setting — it must not survive
+    // alongside the identity fields above.
+    expect(device.state.battery).toBeNull();
+  });
+
+  it('keeps showing the identified model after a manual disconnect', async () => {
+    const transport = new FakeGattTransport({ onData: () => {}, onClose: () => {} } as never);
+    soundcoreEagerReplies(transport);
+    const device = new SoundcoreDevice();
+    await device.adoptTransport(transport);
+    expect(device.state.info.model).toBe('Soundcore Liberty Air 2 Pro');
+
+    await device.disconnect();
+
+    expect(device.state.status).toBe('disconnected');
+    expect(device.state.info.model).toBe('Soundcore Liberty Air 2 Pro');
+  });
+
+  it('makes no claim about a device that was never identified', async () => {
+    // `#lastKnownDurable()` is shared by `onDrop` and `disconnect()` — pinning
+    // it here against a device that never read anything is enough to cover
+    // both call sites without standing up a transport for each.
+    const device = new SoundcoreDevice();
+    await device.disconnect();
+
+    expect(device.state.status).toBe('disconnected');
+    expect(device.state.info.model).toBeNull();
   });
 });

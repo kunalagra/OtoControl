@@ -252,3 +252,56 @@ describe('NothingDevice', () => {
     expect(device.state.info.firmware).toBe('US.B.1.2.3');
   }, 20000);
 });
+
+describe('NothingDevice disconnect caching', () => {
+  it('keeps showing the identified model after an unexpected drop', async () => {
+    let transport: FakeTransport | null = null;
+    const open: TransportOpener = async (_p, handlers) => {
+      transport = new FakeTransport(handlers);
+      transport.onWrite = (bytes) => {
+        const [frame] = new NothingDecoder().push(bytes);
+        if (!frame) return;
+        const reply = deviceReply(frame.command) ?? [0x00];
+        queueMicrotask(() => transport?.receive(encodePacket(frame.command & 0x7fff, frame.sequence, reply)));
+      };
+      return transport;
+    };
+
+    const device = new NothingDevice(open);
+    await device.adoptPort(port);
+    expect(device.state.info.model).toBe('Nothing Ear (a)');
+
+    transport!.drop(new Error('The device has been lost.'));
+
+    // The sidebar identifies the device off `info.model` — losing it here is
+    // what makes a known device render as the generic "no device" placeholder
+    // the moment it drops, instead of its own dimmed artwork.
+    expect(device.state.status).toBe('disconnected');
+    expect(device.state.info.model).toBe('Nothing Ear (a)');
+    // Battery is a live reading, not a setting — it must not survive
+    // alongside the identity fields above.
+    expect(device.state.battery.left).toBeNull();
+  });
+
+  it('keeps showing the identified model after a manual disconnect', async () => {
+    const device = new NothingDevice(eagerOpener());
+    await device.adoptPort(port);
+    expect(device.state.info.model).toBe('Nothing Ear (a)');
+
+    await device.disconnect();
+
+    expect(device.state.status).toBe('disconnected');
+    expect(device.state.info.model).toBe('Nothing Ear (a)');
+  });
+
+  it('makes no claim about a device that was never identified', async () => {
+    // `#lastKnownDurable()` is shared by `onDrop` and `disconnect()` — pinning
+    // it here against a device that never read anything is enough to cover
+    // both call sites without standing up a transport for each.
+    const device = new NothingDevice();
+    await device.disconnect();
+
+    expect(device.state.status).toBe('disconnected');
+    expect(device.state.info.model).toBeNull();
+  });
+});

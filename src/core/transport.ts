@@ -48,7 +48,15 @@ export const NOTHING_SPP_UUID = 'aeac4a03-dff5-498f-843a-34487cf133eb';
  */
 export const NOTHING_BLE_DATA_UUID = 'ca235943-1810-45e6-8326-fc8ca3bc45ce';
 
-export type ProtocolGeneration = 'gaia' | 'mdr-v1' | 'mdr-v2' | 'nothing-v1';
+/**
+ * HeyMelody's SPP service — shared across OPPO/realme/OnePlus earbuds
+ * (`com.heytap.headset`, one app rebadged per brand). Present on every
+ * catalog entry as `supportSpp: true` / this exact UUID. See
+ * `docs/superpowers/specs/2026-08-27-heymelody-driver-design.md` §3.1.
+ */
+export const HEYMELODY_SPP_UUID = '0000079a-d102-11e1-9b23-00025b00a5a5';
+
+export type ProtocolGeneration = 'gaia' | 'mdr-v1' | 'mdr-v2' | 'nothing-v1' | 'heymelody';
 
 export interface KnownService {
   uuid: string;
@@ -73,6 +81,7 @@ export const KNOWN_SERVICES: KnownService[] = [
   { uuid: SONY_MDR_V2_UUID, brand: 'sony', protocol: 'mdr-v2' },
   { uuid: SONY_MDR_V1_UUID, brand: 'sony', protocol: 'mdr-v1' },
   { uuid: NOTHING_SPP_UUID, brand: 'nothing', protocol: 'nothing-v1' },
+  { uuid: HEYMELODY_SPP_UUID, brand: 'heymelody', protocol: 'heymelody' },
 ];
 
 /**
