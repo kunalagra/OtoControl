@@ -30,7 +30,7 @@ const FULL_REPLIES = new Map<number, number[]>([
   [Cmd.Battery, [0x01, 0x01, 0xd4]], // count=1, left, packed 0xD4 -> level 84, charging
   [Cmd.QueryAncDirect, [2, 50]], // bare currentMode DTO (no envelope): mType=2, level=50
   [Cmd.QueryEqCurrent, [0x00, 0x01]], // status=0, presetId=1
-  [Cmd.QueryEqAll, [0]], // zero presets — simplest valid payload
+  [Cmd.QueryEqAll, [0x00, 0]], // status=0, zero presets — simplest valid payload
   [Cmd.RegisterNotify, []],
 ]);
 
@@ -52,25 +52,27 @@ describe('HeyMelodyDevice connect', () => {
     expect(device.state.capabilities).toEqual(new Set(['battery', 'anc', 'eq']));
   });
 
-  it('still identifies the device when QueryProductId reports a non-zero status', async () => {
-    // `status`'s value meaning was never confirmed against the APK — a
-    // non-zero value here must not blank out an otherwise-valid productId.
+  it('does not identify the device when QueryProductId reports a non-zero status', async () => {
+    // Cross-checked directly against 1812z/OppoPods's ProductIdParser.parse()
+    // current source, which gates on this exact byte for this exact command —
+    // a non-zero status means the productId bytes alongside it are not
+    // trustworthy.
     const replies = new Map(FULL_REPLIES);
     replies.set(Cmd.QueryProductId, [0x01, 0x10, 0xf0, 0x06]);
     const device = new HeyMelodyDevice(heyMelodyOpener(replies), { timeoutMs: 50 });
     await device.adoptPort(port);
 
-    expect(device.state.info.productId).toBe('06F010');
-    expect(device.state.info.model).toBe('OPPO Enco Air4s');
+    expect(device.state.info.productId).toBeNull();
+    expect(device.state.info.model).toBeNull();
   });
 
-  it('still applies eqCurrentPreset when QueryEqCurrent reports a non-zero status', async () => {
+  it('does not apply eqCurrentPreset when QueryEqCurrent reports a non-zero status', async () => {
     const replies = new Map(FULL_REPLIES);
     replies.set(Cmd.QueryEqCurrent, [0x01, 0x02]);
     const device = new HeyMelodyDevice(heyMelodyOpener(replies), { timeoutMs: 50 });
     await device.adoptPort(port);
 
-    expect(device.state.eqCurrentPreset).toBe(2);
+    expect(device.state.eqCurrentPreset).toBeNull();
   });
 
   it('tolerates every command going unanswered', async () => {
@@ -105,6 +107,7 @@ describe('HeyMelodyDevice connect', () => {
     const replies = new Map(FULL_REPLIES);
     replies.delete(Cmd.QueryEqCurrent);
     replies.set(Cmd.QueryEqAll, [
+      0, // status
       1, // one preset
       1, // isSelected
       0xfa, // minValue -6
@@ -123,6 +126,63 @@ describe('HeyMelodyDevice connect', () => {
     expect(device.state.eqCurrentPreset).toBeNull();
     expect(device.state.eqPresets).toHaveLength(1);
     expect(device.state.eqPresets[0]).toMatchObject({ eqId: 1, name: 'Pop', isSelected: true });
+  });
+});
+
+describe('HeyMelodyDevice subscribe handshake', () => {
+  it('registers exactly the ids QueryNotificationSupport reports, filtering debug channels', async () => {
+    let transport!: FakeTransport;
+    const replies = new Map(FULL_REPLIES);
+    // status=0, ids=[0x01, 0x02, 0xf5] — 0xf5 is a debug channel (>= 0xF0) and must be filtered out.
+    replies.set(Cmd.QueryNotificationSupport, [0x00, 0x03, 0x01, 0x02, 0xf5]);
+    const open: TransportOpener = async (_p, handlers) => {
+      transport = new FakeTransport(handlers);
+      const decoder = new SppFrameCodec().createDecoder();
+      transport.onWrite = (bytes) => {
+        const [frame] = decoder.push(bytes);
+        if (!frame) return;
+        const reply = replies.get(frame.cmd);
+        if (reply === undefined) return;
+        queueMicrotask(() => transport.receive(encodeSppFrame(replyFor(frame.cmd), frame.seq, reply)));
+      };
+      return transport;
+    };
+    const device = new HeyMelodyDevice(open, { timeoutMs: 50 });
+    await device.adoptPort(port);
+
+    const decoder = new SppFrameCodec().createDecoder();
+    const sentFrames = transport.written.flatMap((bytes) => decoder.push(bytes));
+    const registerFrame = sentFrames.find((frame) => frame.cmd === Cmd.RegisterNotify);
+    expect(registerFrame).toBeDefined();
+    expect(Array.from(registerFrame!.payload)).toEqual([2, 0x01, 0x02]);
+  });
+
+  it('falls back to a bare RegisterNotify when QueryNotificationSupport goes unanswered', async () => {
+    // QueryNotificationSupport is deliberately absent from these replies —
+    // losing the handshake must not stop the driver from still trying the
+    // old empty-payload subscribe as a last resort.
+    let transport!: FakeTransport;
+    const open: TransportOpener = async (_p, handlers) => {
+      transport = new FakeTransport(handlers);
+      const decoder = new SppFrameCodec().createDecoder();
+      transport.onWrite = (bytes) => {
+        const [frame] = decoder.push(bytes);
+        if (!frame) return;
+        const reply = FULL_REPLIES.get(frame.cmd);
+        if (reply === undefined) return;
+        queueMicrotask(() => transport.receive(encodeSppFrame(replyFor(frame.cmd), frame.seq, reply)));
+      };
+      return transport;
+    };
+    const device = new HeyMelodyDevice(open, { timeoutMs: 50 });
+    await device.adoptPort(port);
+
+    expect(device.state.status).toBe('connected');
+    const decoder = new SppFrameCodec().createDecoder();
+    const sentFrames = transport.written.flatMap((bytes) => decoder.push(bytes));
+    const registerFrame = sentFrames.find((frame) => frame.cmd === Cmd.RegisterNotify);
+    expect(registerFrame).toBeDefined();
+    expect(Array.from(registerFrame!.payload)).toEqual([]);
   });
 });
 
@@ -151,17 +211,45 @@ describe('HeyMelodyDevice live ANC updates', () => {
 });
 
 describe('HeyMelodyDevice writes', () => {
-  it('setAncMode applies optimistically and rolls back on failure', async () => {
+  it('setAncMode resolves the key via the catalog, applies optimistically, and rolls back on failure', async () => {
+    // '06F010' (OPPO Enco Air4s)'s real catalog noiseReductionMode resolves
+    // 'nc' to protocolIndex 0 — see ancModel.test.ts's legacy-device case.
     const replies = new Map(FULL_REPLIES);
     // SetAncMode is left unanswered, so the client's own timeout rejects it.
     const device = new HeyMelodyDevice(heyMelodyOpener(replies), { timeoutMs: 20 });
     await device.adoptPort(port);
-    const before = device.state.ancLevel;
+    const before = device.state.ancModeIndex;
 
-    await device.setAncMode(3);
+    await device.setAncMode('nc');
 
-    expect(device.state.ancLevel).toBe(before);
+    expect(device.state.ancModeIndex).toBe(before);
     expect(device.state.error).not.toBeNull();
+  });
+
+  it('setAncMode keeps the resolved index once acknowledged', async () => {
+    const replies = new Map(FULL_REPLIES);
+    replies.set(Cmd.SetAncMode, []);
+    const device = new HeyMelodyDevice(heyMelodyOpener(replies), { timeoutMs: 50 });
+    await device.adoptPort(port);
+
+    await device.setAncMode('transparency');
+
+    expect(device.state.ancModeIndex).toBe(2); // '06F010' resolves 'transparency' to protocolIndex 2.
+    expect(device.state.error).toBeNull();
+  });
+
+  it('setAncMode is a no-op for a mode this model has no catalog entry for', async () => {
+    const replies = new Map(FULL_REPLIES);
+    replies.set(Cmd.SetAncMode, []);
+    const device = new HeyMelodyDevice(heyMelodyOpener(replies), { timeoutMs: 50 });
+    await device.adoptPort(port);
+    const before = device.state.ancModeIndex;
+
+    // '06F010' has no 'adaptive' entry in its noiseReductionMode.
+    await device.setAncMode('adaptive');
+
+    expect(device.state.ancModeIndex).toBe(before);
+    expect(device.state.error).toBeNull();
   });
 
   it('setEqPreset applies optimistically and keeps the value once acknowledged', async () => {

@@ -18,7 +18,7 @@ describe('captureDurable / applyDurable', () => {
         catalog: { productId: '06F010', name: 'OPPO Enco Air4s', brand: 'oppo', type: 'T1' },
       },
       battery: [{ device: 'left', level: 80, charging: false }],
-      ancSupportedModes: [0, 1, 2],
+      ancModeIndex: 2,
       ancLevel: 50,
       eqCurrentPreset: 1,
       eqPresets: [{ isSelected: true, minValue: -6, maxValue: 6, eqId: 1, name: 'Pop', bands: [] }],
@@ -35,7 +35,7 @@ describe('captureDurable / applyDurable', () => {
     const patch = applyDurable(durable);
 
     expect(patch.info).toEqual(state.info);
-    expect(patch.ancSupportedModes).toEqual([0, 1, 2]);
+    expect(patch.ancModeIndex).toBe(2);
     expect(patch.ancLevel).toBe(50);
     expect(patch.eqCurrentPreset).toBe(1);
     expect(patch.eqPresets).toEqual(state.eqPresets);
@@ -47,18 +47,20 @@ describe('captureDurable / applyDurable', () => {
 });
 
 describe('applyAncEvent', () => {
-  it('updates supportedModes from a currentMode bitmask event', () => {
-    // outer=3, inner=1 (CurrentNoiseModeInfo), mType=1, mask=0b101 -> bits [0,2]
+  it('updates ancModeIndex from a currentMode bitmask event, taking the lowest set bit', () => {
+    // outer=3, inner=1 (CurrentNoiseModeInfo), mType=1, mask=0b101 -> bits [0,2].
+    // The lowest set bit is what's surfaced — "which one mode is active", not
+    // a list of every bit that happened to be set.
     const next = applyAncEvent(initialHeyMelodyState, Uint8Array.from([3, 1, 1, 0b101]));
-    expect(next.ancSupportedModes).toEqual([0, 2]);
+    expect(next.ancModeIndex).toBe(0);
     expect(next.ancLevel).toBeNull();
   });
 
-  it('updates ancLevel from a currentMode level event without clearing supportedModes', () => {
-    const withModes: HeyMelodyState = { ...initialHeyMelodyState, ancSupportedModes: [0, 1] };
-    const next = applyAncEvent(withModes, Uint8Array.from([3, 1, 2, 75]));
+  it('updates ancLevel from a currentMode level event without clearing ancModeIndex', () => {
+    const withMode: HeyMelodyState = { ...initialHeyMelodyState, ancModeIndex: 0 };
+    const next = applyAncEvent(withMode, Uint8Array.from([3, 1, 2, 75]));
     expect(next.ancLevel).toBe(75);
-    expect(next.ancSupportedModes).toEqual([0, 1]);
+    expect(next.ancModeIndex).toBe(0);
   });
 
   it('leaves state unchanged for an unrecognised notification', () => {

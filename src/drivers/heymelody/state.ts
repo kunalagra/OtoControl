@@ -33,7 +33,10 @@ export interface HeyMelodyState {
   error: string | null;
   info: HeyMelodyInfo;
   battery: BatteryCell[];
-  ancSupportedModes: number[] | null;
+  /** Index of the one currently-active ANC mode — not a list of every mode
+   * this device supports; see `CurrentNoiseModeInfo`'s doc comment in
+   * `commands.ts` for why. */
+  ancModeIndex: number | null;
   ancLevel: number | null;
   eqCurrentPreset: number | null;
   eqPresets: EqPreset[];
@@ -46,7 +49,7 @@ export const initialHeyMelodyState: HeyMelodyState = {
   error: null,
   info: { model: null, productId: null, catalog: null },
   battery: [],
-  ancSupportedModes: null,
+  ancModeIndex: null,
   ancLevel: null,
   eqCurrentPreset: null,
   eqPresets: [],
@@ -59,7 +62,10 @@ export const HEYMELODY_SNAPSHOT_VERSION = 1;
 
 export interface HeyMelodyDurableState {
   info: HeyMelodyInfo;
-  ancSupportedModes: number[] | null;
+  /** Index of the one currently-active ANC mode — not a list of every mode
+   * this device supports; see `CurrentNoiseModeInfo`'s doc comment in
+   * `commands.ts` for why. */
+  ancModeIndex: number | null;
   ancLevel: number | null;
   eqCurrentPreset: number | null;
   eqPresets: EqPreset[];
@@ -69,7 +75,7 @@ export interface HeyMelodyDurableState {
 
 export const captureDurable = (state: HeyMelodyState): HeyMelodyDurableState => ({
   info: state.info,
-  ancSupportedModes: state.ancSupportedModes,
+  ancModeIndex: state.ancModeIndex,
   ancLevel: state.ancLevel,
   eqCurrentPreset: state.eqCurrentPreset,
   eqPresets: state.eqPresets,
@@ -80,7 +86,7 @@ export const applyDurable = (payload: object): Partial<HeyMelodyState> => {
   const snapshot = payload as HeyMelodyDurableState;
   return {
     info: snapshot.info,
-    ancSupportedModes: snapshot.ancSupportedModes ?? null,
+    ancModeIndex: snapshot.ancModeIndex ?? null,
     ancLevel: snapshot.ancLevel ?? null,
     eqCurrentPreset: snapshot.eqCurrentPreset ?? null,
     eqPresets: snapshot.eqPresets ?? [],
@@ -102,7 +108,7 @@ export function applyAncEvent(state: HeyMelodyState, payload: Uint8Array): HeyMe
   if (!event || event.kind !== 'currentMode') return state;
   return {
     ...state,
-    ancSupportedModes: event.supportedModes ?? state.ancSupportedModes,
+    ancModeIndex: event.modeIndex ?? state.ancModeIndex,
     ancLevel: event.level ?? state.ancLevel,
   };
 }

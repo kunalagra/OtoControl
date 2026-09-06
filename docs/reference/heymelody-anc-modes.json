@@ -1,0 +1,1495 @@
+{
+  "devices": [
+    {
+      "productId": "067410",
+      "noiseReductionMode": [
+        {
+          "protocolIndex": 1,
+          "modeType": 5,
+          "childrenMode": [
+            {
+              "protocolIndex": 7,
+              "modeType": 7
+            },
+            {
+              "protocolIndex": 4,
+              "modeType": 4
+            },
+            {
+              "protocolIndex": 5,
+              "modeType": 8
+            },
+            {
+              "protocolIndex": 6,
+              "modeType": 3
+            }
+          ]
+        },
+        {
+          "protocolIndex": 0,
+          "modeType": 1,
+          "childrenMode": [
+            {
+              "protocolIndex": 3,
+              "modeType": 1
+            }
+          ]
+        },
+        {
+          "protocolIndex": 2,
+          "modeType": 2,
+          "childrenMode": [
+            {
+              "protocolIndex": 8,
+              "modeType": 2
+            },
+            {
+              "protocolIndex": 9,
+              "modeType": 6
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "productId": "063C10",
+      "noiseReductionMode": [
+        {
+          "protocolIndex": 1,
+          "modeType": 5,
+          "childrenMode": [
+            {
+              "protocolIndex": 7,
+              "modeType": 7
+            },
+            {
+              "protocolIndex": 4,
+              "modeType": 4
+            },
+            {
+              "protocolIndex": 5,
+              "modeType": 8
+            },
+            {
+              "protocolIndex": 6,
+              "modeType": 3
+            }
+          ]
+        },
+        {
+          "protocolIndex": 0,
+          "modeType": 1,
+          "childrenMode": [
+            {
+              "protocolIndex": 3,
+              "modeType": 1
+            }
+          ]
+        },
+        {
+          "protocolIndex": 2,
+          "modeType": 2,
+          "childrenMode": [
+            {
+              "protocolIndex": 8,
+              "modeType": 2
+            },
+            {
+              "protocolIndex": 9,
+              "modeType": 6
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "productId": "061410",
+      "noiseReductionMode": [
+        {
+          "protocolIndex": 3,
+          "modeType": 4
+        },
+        {
+          "protocolIndex": 2,
+          "modeType": 3
+        },
+        {
+          "protocolIndex": 0,
+          "modeType": 1
+        },
+        {
+          "protocolIndex": 1,
+          "modeType": 2
+        }
+      ]
+    },
+    {
+      "productId": "06BC10",
+      "noiseReductionMode": [
+        {
+          "protocolIndex": 1,
+          "modeType": 5,
+          "childrenMode": [
+            {
+              "protocolIndex": 4,
+              "modeType": 4
+            },
+            {
+              "protocolIndex": 5,
+              "modeType": 8
+            },
+            {
+              "protocolIndex": 6,
+              "modeType": 3
+            },
+            {
+              "protocolIndex": 7,
+              "modeType": 7
+            }
+          ]
+        },
+        {
+          "protocolIndex": 11,
+          "modeType": 10
+        },
+        {
+          "protocolIndex": 2,
+          "modeType": 2,
+          "childrenMode": [
+            {
+              "protocolIndex": 8,
+              "modeType": 2
+            }
+          ]
+        },
+        {
+          "protocolIndex": 0,
+          "modeType": 1,
+          "childrenMode": [
+            {
+              "protocolIndex": 3,
+              "modeType": 1
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "productId": "066810",
+      "noiseReductionMode": [
+        {
+          "protocolIndex": 1,
+          "modeType": 5,
+          "childrenMode": [
+            {
+              "protocolIndex": 7,
+              "modeType": 7
+            },
+            {
+              "protocolIndex": 4,
+              "modeType": 4
+            },
+            {
+              "protocolIndex": 5,
+              "modeType": 8
+            },
+            {
+              "protocolIndex": 6,
+              "modeType": 3
+            }
+          ]
+        },
+        {
+          "protocolIndex": 0,
+          "modeType": 1,
+          "childrenMode": [
+            {
+              "protocolIndex": 3,
+              "modeType": 1
+            }
+          ]
+        },
+        {
+          "protocolIndex": 2,
+          "modeType": 2,
+          "childrenMode": [
+            {
+              "protocolIndex": 8,
+              "modeType": 2
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "productId": "068C10",
+      "noiseReductionMode": [
+        {
+          "protocolIndex": 1,
+          "modeType": 5,
+          "childrenMode": [
+            {
+              "protocolIndex": 4,
+              "modeType": 4
+            },
+            {
+              "protocolIndex": 5,
+              "modeType": 8
+            },
+            {
+              "protocolIndex": 6,
+              "modeType": 3
+            },
+            {
+              "protocolIndex": 7,
+              "modeType": 7
+            }
+          ]
+        },
+        {
+          "protocolIndex": 11,
+          "modeType": 10
+        },
+        {
+          "protocolIndex": 2,
+          "modeType": 2,
+          "childrenMode": [
+            {
+              "protocolIndex": 8,
+              "modeType": 2
+            }
+          ]
+        },
+        {
+          "protocolIndex": 0,
+          "modeType": 1,
+          "childrenMode": [
+            {
+              "protocolIndex": 3,
+              "modeType": 1
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "productId": "06C010",
+      "noiseReductionMode": [
+        {
+          "protocolIndex": 1,
+          "modeType": 5,
+          "childrenMode": [
+            {
+              "protocolIndex": 4,
+              "modeType": 4
+            },
+            {
+              "protocolIndex": 5,
+              "modeType": 8
+            },
+            {
+              "protocolIndex": 6,
+              "modeType": 3
+            },
+            {
+              "protocolIndex": 7,
+              "modeType": 7
+            }
+          ]
+        },
+        {
+          "protocolIndex": 11,
+          "modeType": 10
+        },
+        {
+          "protocolIndex": 2,
+          "modeType": 2,
+          "childrenMode": [
+            {
+              "protocolIndex": 8,
+              "modeType": 2
+            }
+          ]
+        },
+        {
+          "protocolIndex": 0,
+          "modeType": 1,
+          "childrenMode": [
+            {
+              "protocolIndex": 3,
+              "modeType": 1
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "productId": "066010",
+      "noiseReductionMode": [
+        {
+          "protocolIndex": 1,
+          "modeType": 5,
+          "childrenMode": [
+            {
+              "protocolIndex": 7,
+              "modeType": 7
+            },
+            {
+              "protocolIndex": 4,
+              "modeType": 4
+            },
+            {
+              "protocolIndex": 5,
+              "modeType": 8
+            },
+            {
+              "protocolIndex": 6,
+              "modeType": 3
+            }
+          ]
+        },
+        {
+          "protocolIndex": 0,
+          "modeType": 1,
+          "childrenMode": [
+            {
+              "protocolIndex": 3,
+              "modeType": 1
+            }
+          ]
+        },
+        {
+          "protocolIndex": 2,
+          "modeType": 2,
+          "childrenMode": [
+            {
+              "protocolIndex": 8,
+              "modeType": 2
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "productId": "062010",
+      "noiseReductionMode": [
+        {
+          "protocolIndex": 0,
+          "modeType": 5
+        },
+        {
+          "protocolIndex": 1,
+          "modeType": 1
+        },
+        {
+          "protocolIndex": 2,
+          "modeType": 2
+        },
+        {
+          "protocolIndex": 3,
+          "modeType": 6
+        }
+      ]
+    },
+    {
+      "productId": "064010",
+      "noiseReductionMode": [
+        {
+          "protocolIndex": 0,
+          "modeType": 5
+        },
+        {
+          "protocolIndex": 1,
+          "modeType": 1
+        },
+        {
+          "protocolIndex": 2,
+          "modeType": 2
+        },
+        {
+          "protocolIndex": 3,
+          "modeType": 6
+        }
+      ]
+    },
+    {
+      "productId": "06C410",
+      "noiseReductionMode": [
+        {
+          "protocolIndex": 1,
+          "modeType": 5,
+          "childrenMode": [
+            {
+              "protocolIndex": 7,
+              "modeType": 7
+            },
+            {
+              "protocolIndex": 4,
+              "modeType": 4
+            },
+            {
+              "protocolIndex": 5,
+              "modeType": 8
+            },
+            {
+              "protocolIndex": 6,
+              "modeType": 3
+            }
+          ]
+        },
+        {
+          "protocolIndex": 0,
+          "modeType": 1,
+          "childrenMode": [
+            {
+              "protocolIndex": 3,
+              "modeType": 1
+            }
+          ]
+        },
+        {
+          "protocolIndex": 2,
+          "modeType": 2,
+          "childrenMode": [
+            {
+              "protocolIndex": 8,
+              "modeType": 2
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "productId": "06C810",
+      "noiseReductionMode": [
+        {
+          "protocolIndex": 1,
+          "modeType": 5,
+          "childrenMode": [
+            {
+              "protocolIndex": 7,
+              "modeType": 7
+            },
+            {
+              "protocolIndex": 4,
+              "modeType": 4
+            },
+            {
+              "protocolIndex": 6,
+              "modeType": 3
+            }
+          ]
+        },
+        {
+          "protocolIndex": 0,
+          "modeType": 1,
+          "childrenMode": [
+            {
+              "protocolIndex": 3,
+              "modeType": 1
+            }
+          ]
+        },
+        {
+          "protocolIndex": 2,
+          "modeType": 2,
+          "childrenMode": [
+            {
+              "protocolIndex": 8,
+              "modeType": 2
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "productId": "06E810",
+      "noiseReductionMode": [
+        {
+          "protocolIndex": 1,
+          "modeType": 5,
+          "childrenMode": [
+            {
+              "protocolIndex": 7,
+              "modeType": 7
+            },
+            {
+              "protocolIndex": 4,
+              "modeType": 4
+            },
+            {
+              "protocolIndex": 6,
+              "modeType": 3
+            }
+          ]
+        },
+        {
+          "protocolIndex": 0,
+          "modeType": 1,
+          "childrenMode": [
+            {
+              "protocolIndex": 3,
+              "modeType": 1
+            }
+          ]
+        },
+        {
+          "protocolIndex": 2,
+          "modeType": 2,
+          "childrenMode": [
+            {
+              "protocolIndex": 8,
+              "modeType": 2
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "productId": "06D810",
+      "noiseReductionMode": [
+        {
+          "protocolIndex": 1,
+          "modeType": 5,
+          "childrenMode": [
+            {
+              "protocolIndex": 7,
+              "modeType": 7
+            },
+            {
+              "protocolIndex": 4,
+              "modeType": 4
+            },
+            {
+              "protocolIndex": 5,
+              "modeType": 8
+            },
+            {
+              "protocolIndex": 6,
+              "modeType": 3
+            }
+          ]
+        },
+        {
+          "protocolIndex": 0,
+          "modeType": 1,
+          "childrenMode": [
+            {
+              "protocolIndex": 3,
+              "modeType": 1
+            }
+          ]
+        },
+        {
+          "protocolIndex": 2,
+          "modeType": 2,
+          "childrenMode": [
+            {
+              "protocolIndex": 8,
+              "modeType": 2
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "productId": "067C10",
+      "noiseReductionMode": [
+        {
+          "protocolIndex": 1,
+          "modeType": 5,
+          "childrenMode": [
+            {
+              "protocolIndex": 7,
+              "modeType": 7
+            },
+            {
+              "protocolIndex": 4,
+              "modeType": 4
+            },
+            {
+              "protocolIndex": 5,
+              "modeType": 8
+            },
+            {
+              "protocolIndex": 6,
+              "modeType": 3
+            }
+          ]
+        },
+        {
+          "protocolIndex": 0,
+          "modeType": 1,
+          "childrenMode": [
+            {
+              "protocolIndex": 3,
+              "modeType": 1
+            }
+          ]
+        },
+        {
+          "protocolIndex": 2,
+          "modeType": 2,
+          "childrenMode": [
+            {
+              "protocolIndex": 8,
+              "modeType": 2
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "productId": "06F010",
+      "noiseReductionMode": [
+        {
+          "protocolIndex": 0,
+          "modeType": 5
+        },
+        {
+          "protocolIndex": 1,
+          "modeType": 1
+        },
+        {
+          "protocolIndex": 2,
+          "modeType": 2
+        }
+      ]
+    },
+    {
+      "productId": "069010",
+      "noiseReductionMode": [
+        {
+          "protocolIndex": 0,
+          "modeType": 5
+        },
+        {
+          "protocolIndex": 1,
+          "modeType": 1
+        },
+        {
+          "protocolIndex": 2,
+          "modeType": 2
+        }
+      ]
+    },
+    {
+      "productId": "065C10",
+      "noiseReductionMode": [
+        {
+          "protocolIndex": 1,
+          "modeType": 5,
+          "childrenMode": [
+            {
+              "protocolIndex": 7,
+              "modeType": 7
+            },
+            {
+              "protocolIndex": 4,
+              "modeType": 4
+            },
+            {
+              "protocolIndex": 5,
+              "modeType": 8
+            },
+            {
+              "protocolIndex": 6,
+              "modeType": 3
+            }
+          ]
+        },
+        {
+          "protocolIndex": 0,
+          "modeType": 1,
+          "childrenMode": [
+            {
+              "protocolIndex": 3,
+              "modeType": 1
+            }
+          ]
+        },
+        {
+          "protocolIndex": 2,
+          "modeType": 2,
+          "childrenMode": [
+            {
+              "protocolIndex": 8,
+              "modeType": 2
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "productId": "063810",
+      "noiseReductionMode": [
+        {
+          "protocolIndex": 0,
+          "modeType": 5
+        },
+        {
+          "protocolIndex": 1,
+          "modeType": 1
+        },
+        {
+          "protocolIndex": 2,
+          "modeType": 2
+        },
+        {
+          "protocolIndex": 3,
+          "modeType": 6
+        }
+      ]
+    },
+    {
+      "productId": "069C10",
+      "noiseReductionMode": [
+        {
+          "protocolIndex": 1,
+          "modeType": 5,
+          "childrenMode": [
+            {
+              "protocolIndex": 7,
+              "modeType": 7
+            },
+            {
+              "protocolIndex": 4,
+              "modeType": 4
+            },
+            {
+              "protocolIndex": 5,
+              "modeType": 8
+            },
+            {
+              "protocolIndex": 6,
+              "modeType": 3
+            }
+          ]
+        },
+        {
+          "protocolIndex": 0,
+          "modeType": 1,
+          "childrenMode": [
+            {
+              "protocolIndex": 3,
+              "modeType": 1
+            }
+          ]
+        },
+        {
+          "protocolIndex": 2,
+          "modeType": 2,
+          "childrenMode": [
+            {
+              "protocolIndex": 8,
+              "modeType": 2
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "productId": "065010",
+      "noiseReductionMode": [
+        {
+          "protocolIndex": 0,
+          "modeType": 5
+        },
+        {
+          "protocolIndex": 1,
+          "modeType": 1
+        },
+        {
+          "protocolIndex": 2,
+          "modeType": 2
+        },
+        {
+          "protocolIndex": 3,
+          "modeType": 6
+        }
+      ]
+    },
+    {
+      "productId": "06A010",
+      "noiseReductionMode": [
+        {
+          "protocolIndex": 0,
+          "modeType": 5
+        },
+        {
+          "protocolIndex": 1,
+          "modeType": 1
+        },
+        {
+          "protocolIndex": 2,
+          "modeType": 2
+        }
+      ]
+    },
+    {
+      "productId": "050C10",
+      "noiseReductionMode": [
+        {
+          "protocolIndex": 0,
+          "modeType": 5
+        },
+        {
+          "protocolIndex": 1,
+          "modeType": 1
+        },
+        {
+          "protocolIndex": 2,
+          "modeType": 2
+        }
+      ]
+    },
+    {
+      "productId": "067414",
+      "noiseReductionMode": [
+        {
+          "protocolIndex": 1,
+          "modeType": 5,
+          "childrenMode": [
+            {
+              "protocolIndex": 7,
+              "modeType": 7
+            },
+            {
+              "protocolIndex": 4,
+              "modeType": 4
+            },
+            {
+              "protocolIndex": 6,
+              "modeType": 3
+            }
+          ]
+        },
+        {
+          "protocolIndex": 0,
+          "modeType": 1,
+          "childrenMode": [
+            {
+              "protocolIndex": 3,
+              "modeType": 1
+            }
+          ]
+        },
+        {
+          "protocolIndex": 2,
+          "modeType": 2,
+          "childrenMode": [
+            {
+              "protocolIndex": 8,
+              "modeType": 2
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "productId": "064014",
+      "noiseReductionMode": [
+        {
+          "protocolIndex": 1,
+          "modeType": 5,
+          "childrenMode": [
+            {
+              "protocolIndex": 7,
+              "modeType": 7
+            },
+            {
+              "protocolIndex": 4,
+              "modeType": 4
+            },
+            {
+              "protocolIndex": 5,
+              "modeType": 8
+            },
+            {
+              "protocolIndex": 6,
+              "modeType": 3
+            }
+          ]
+        },
+        {
+          "protocolIndex": 0,
+          "modeType": 1,
+          "childrenMode": [
+            {
+              "protocolIndex": 3,
+              "modeType": 1
+            }
+          ]
+        },
+        {
+          "protocolIndex": 2,
+          "modeType": 2,
+          "childrenMode": [
+            {
+              "protocolIndex": 8,
+              "modeType": 2
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "productId": "062014",
+      "noiseReductionMode": [
+        {
+          "protocolIndex": 1,
+          "modeType": 5,
+          "childrenMode": [
+            {
+              "protocolIndex": 7,
+              "modeType": 7
+            },
+            {
+              "protocolIndex": 4,
+              "modeType": 4
+            },
+            {
+              "protocolIndex": 5,
+              "modeType": 8
+            },
+            {
+              "protocolIndex": 6,
+              "modeType": 3
+            }
+          ]
+        },
+        {
+          "protocolIndex": 0,
+          "modeType": 1,
+          "childrenMode": [
+            {
+              "protocolIndex": 3,
+              "modeType": 1
+            }
+          ]
+        },
+        {
+          "protocolIndex": 2,
+          "modeType": 2,
+          "childrenMode": [
+            {
+              "protocolIndex": 8,
+              "modeType": 2
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "productId": "063414",
+      "noiseReductionMode": [
+        {
+          "protocolIndex": 1,
+          "modeType": 5,
+          "childrenMode": [
+            {
+              "protocolIndex": 7,
+              "modeType": 7
+            },
+            {
+              "protocolIndex": 4,
+              "modeType": 4
+            },
+            {
+              "protocolIndex": 5,
+              "modeType": 8
+            },
+            {
+              "protocolIndex": 6,
+              "modeType": 3
+            }
+          ]
+        },
+        {
+          "protocolIndex": 0,
+          "modeType": 1,
+          "childrenMode": [
+            {
+              "protocolIndex": 3,
+              "modeType": 1
+            }
+          ]
+        },
+        {
+          "protocolIndex": 2,
+          "modeType": 2,
+          "childrenMode": [
+            {
+              "protocolIndex": 8,
+              "modeType": 2
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "productId": "063014",
+      "noiseReductionMode": [
+        {
+          "protocolIndex": 1,
+          "modeType": 5,
+          "childrenMode": [
+            {
+              "protocolIndex": 7,
+              "modeType": 7
+            },
+            {
+              "protocolIndex": 4,
+              "modeType": 4
+            },
+            {
+              "protocolIndex": 5,
+              "modeType": 8
+            },
+            {
+              "protocolIndex": 6,
+              "modeType": 3
+            }
+          ]
+        },
+        {
+          "protocolIndex": 0,
+          "modeType": 1,
+          "childrenMode": [
+            {
+              "protocolIndex": 3,
+              "modeType": 1
+            }
+          ]
+        },
+        {
+          "protocolIndex": 2,
+          "modeType": 2,
+          "childrenMode": [
+            {
+              "protocolIndex": 8,
+              "modeType": 2
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "productId": "060C14",
+      "noiseReductionMode": [
+        {
+          "protocolIndex": 4,
+          "modeType": 7
+        },
+        {
+          "protocolIndex": 3,
+          "modeType": 4
+        },
+        {
+          "protocolIndex": 2,
+          "modeType": 3
+        },
+        {
+          "protocolIndex": 0,
+          "modeType": 1
+        },
+        {
+          "protocolIndex": 1,
+          "modeType": 2
+        }
+      ]
+    },
+    {
+      "productId": "065414",
+      "noiseReductionMode": [
+        {
+          "protocolIndex": 1,
+          "modeType": 5,
+          "childrenMode": [
+            {
+              "protocolIndex": 4,
+              "modeType": 4
+            },
+            {
+              "protocolIndex": 5,
+              "modeType": 8
+            },
+            {
+              "protocolIndex": 6,
+              "modeType": 3
+            },
+            {
+              "protocolIndex": 7,
+              "modeType": 7
+            }
+          ]
+        },
+        {
+          "protocolIndex": 11,
+          "modeType": 10
+        },
+        {
+          "protocolIndex": 2,
+          "modeType": 2,
+          "childrenMode": [
+            {
+              "protocolIndex": 8,
+              "modeType": 2
+            }
+          ]
+        },
+        {
+          "protocolIndex": 0,
+          "modeType": 1,
+          "childrenMode": [
+            {
+              "protocolIndex": 3,
+              "modeType": 1
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "productId": "063C14",
+      "noiseReductionMode": [
+        {
+          "protocolIndex": 1,
+          "modeType": 5,
+          "childrenMode": [
+            {
+              "protocolIndex": 7,
+              "modeType": 7
+            },
+            {
+              "protocolIndex": 4,
+              "modeType": 4
+            },
+            {
+              "protocolIndex": 5,
+              "modeType": 8
+            },
+            {
+              "protocolIndex": 6,
+              "modeType": 3
+            }
+          ]
+        },
+        {
+          "protocolIndex": 0,
+          "modeType": 1,
+          "childrenMode": [
+            {
+              "protocolIndex": 3,
+              "modeType": 1
+            }
+          ]
+        },
+        {
+          "protocolIndex": 2,
+          "modeType": 2,
+          "childrenMode": [
+            {
+              "protocolIndex": 8,
+              "modeType": 2
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "productId": "066414",
+      "noiseReductionMode": [
+        {
+          "protocolIndex": 1,
+          "modeType": 5,
+          "childrenMode": [
+            {
+              "protocolIndex": 7,
+              "modeType": 7
+            },
+            {
+              "protocolIndex": 4,
+              "modeType": 4
+            },
+            {
+              "protocolIndex": 5,
+              "modeType": 8
+            },
+            {
+              "protocolIndex": 6,
+              "modeType": 3
+            }
+          ]
+        },
+        {
+          "protocolIndex": 0,
+          "modeType": 1,
+          "childrenMode": [
+            {
+              "protocolIndex": 3,
+              "modeType": 1
+            }
+          ]
+        },
+        {
+          "protocolIndex": 2,
+          "modeType": 2,
+          "childrenMode": [
+            {
+              "protocolIndex": 8,
+              "modeType": 2
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "productId": "064C14",
+      "noiseReductionMode": [
+        {
+          "protocolIndex": 0,
+          "modeType": 5
+        },
+        {
+          "protocolIndex": 1,
+          "modeType": 1
+        },
+        {
+          "protocolIndex": 2,
+          "modeType": 2
+        }
+      ]
+    },
+    {
+      "productId": "061014",
+      "noiseReductionMode": [
+        {
+          "protocolIndex": 3,
+          "modeType": 4
+        },
+        {
+          "protocolIndex": 2,
+          "modeType": 3
+        },
+        {
+          "protocolIndex": 0,
+          "modeType": 1
+        },
+        {
+          "protocolIndex": 1,
+          "modeType": 2
+        }
+      ]
+    },
+    {
+      "productId": "062814",
+      "noiseReductionMode": [
+        {
+          "protocolIndex": 0,
+          "modeType": 5
+        },
+        {
+          "protocolIndex": 1,
+          "modeType": 1
+        },
+        {
+          "protocolIndex": 2,
+          "modeType": 2
+        }
+      ]
+    },
+    {
+      "productId": "066814",
+      "noiseReductionMode": [
+        {
+          "protocolIndex": 1,
+          "modeType": 5,
+          "childrenMode": [
+            {
+              "protocolIndex": 7,
+              "modeType": 7
+            },
+            {
+              "protocolIndex": 4,
+              "modeType": 4
+            },
+            {
+              "protocolIndex": 5,
+              "modeType": 8
+            },
+            {
+              "protocolIndex": 6,
+              "modeType": 3
+            }
+          ]
+        },
+        {
+          "protocolIndex": 0,
+          "modeType": 1,
+          "childrenMode": [
+            {
+              "protocolIndex": 3,
+              "modeType": 1
+            }
+          ]
+        },
+        {
+          "protocolIndex": 2,
+          "modeType": 2,
+          "childrenMode": [
+            {
+              "protocolIndex": 8,
+              "modeType": 2
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "productId": "067014",
+      "noiseReductionMode": [
+        {
+          "protocolIndex": 1,
+          "modeType": 5,
+          "childrenMode": [
+            {
+              "protocolIndex": 7,
+              "modeType": 7
+            },
+            {
+              "protocolIndex": 4,
+              "modeType": 4
+            },
+            {
+              "protocolIndex": 5,
+              "modeType": 8
+            },
+            {
+              "protocolIndex": 6,
+              "modeType": 3
+            }
+          ]
+        },
+        {
+          "protocolIndex": 0,
+          "modeType": 1,
+          "childrenMode": [
+            {
+              "protocolIndex": 3,
+              "modeType": 1
+            }
+          ]
+        },
+        {
+          "protocolIndex": 2,
+          "modeType": 2,
+          "childrenMode": [
+            {
+              "protocolIndex": 8,
+              "modeType": 2
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "productId": "064414",
+      "noiseReductionMode": [
+        {
+          "protocolIndex": 1,
+          "modeType": 5,
+          "childrenMode": [
+            {
+              "protocolIndex": 7,
+              "modeType": 7
+            },
+            {
+              "protocolIndex": 4,
+              "modeType": 4
+            },
+            {
+              "protocolIndex": 5,
+              "modeType": 8
+            },
+            {
+              "protocolIndex": 6,
+              "modeType": 3
+            }
+          ]
+        },
+        {
+          "protocolIndex": 0,
+          "modeType": 1,
+          "childrenMode": [
+            {
+              "protocolIndex": 3,
+              "modeType": 1
+            }
+          ]
+        },
+        {
+          "protocolIndex": 2,
+          "modeType": 2,
+          "childrenMode": [
+            {
+              "protocolIndex": 8,
+              "modeType": 2
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "productId": "065014",
+      "noiseReductionMode": [
+        {
+          "protocolIndex": 0,
+          "modeType": 5
+        },
+        {
+          "protocolIndex": 1,
+          "modeType": 1
+        },
+        {
+          "protocolIndex": 2,
+          "modeType": 2
+        }
+      ]
+    },
+    {
+      "productId": "062414",
+      "noiseReductionMode": [
+        {
+          "protocolIndex": 0,
+          "modeType": 5
+        },
+        {
+          "protocolIndex": 1,
+          "modeType": 1
+        },
+        {
+          "protocolIndex": 2,
+          "modeType": 2
+        }
+      ]
+    },
+    {
+      "productId": "050C14",
+      "noiseReductionMode": [
+        {
+          "protocolIndex": 0,
+          "modeType": 5
+        },
+        {
+          "protocolIndex": 1,
+          "modeType": 1
+        },
+        {
+          "protocolIndex": 2,
+          "modeType": 2
+        }
+      ]
+    }
+  ]
+}

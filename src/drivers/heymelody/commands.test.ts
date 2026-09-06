@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { Cmd, decodeBattery, decodeProductId, replyFor, decodeAncDirectQuery, decodeAncNotification, encodeSetAncMode, decodeEqAll, decodeEqCurrent, encodeSetEqPreset } from './commands';
+import { Cmd, decodeBattery, decodeNotificationSupport, decodeProductId, encodeRegisterNotify, replyFor, decodeAncDirectQuery, decodeAncNotification, encodeSetAncMode, decodeEqAll, decodeEqCurrent, encodeSetEqPreset } from './commands';
 
 describe('replyFor', () => {
   it('sets the reply bit', () => {
@@ -25,6 +25,38 @@ describe('decodeProductId', () => {
     expect(() => decodeProductId(Uint8Array.from([0x00, 0x10, 0xf0]))).toThrow();
     expect(() => decodeProductId(Uint8Array.from([0x00]))).toThrow();
     expect(() => decodeProductId(Uint8Array.from([]))).toThrow();
+  });
+});
+
+describe('decodeNotificationSupport', () => {
+  it('reads status and the id list', () => {
+    // status=0, count=3, ids 0x01, 0x02, 0x03
+    const reply = decodeNotificationSupport(Uint8Array.from([0x00, 0x03, 0x01, 0x02, 0x03]));
+    expect(reply).toEqual({ status: 0, ids: [0x01, 0x02, 0x03] });
+  });
+
+  it('handles a zero-id reply', () => {
+    expect(decodeNotificationSupport(Uint8Array.from([0x00, 0x00]))).toEqual({ status: 0, ids: [] });
+  });
+
+  it('throws on truncated payload (< 2 bytes)', () => {
+    expect(() => decodeNotificationSupport(Uint8Array.from([0x00]))).toThrow();
+    expect(() => decodeNotificationSupport(Uint8Array.from([]))).toThrow();
+  });
+});
+
+describe('encodeRegisterNotify', () => {
+  it('encodes a count-prefixed id list', () => {
+    expect(encodeRegisterNotify([0x01, 0x02, 0x03])).toEqual([3, 0x01, 0x02, 0x03]);
+  });
+
+  it('filters out debug/internal channels (id >= 0xF0)', () => {
+    // Matches 1812z/OppoPods's own connect-sequence filtering.
+    expect(encodeRegisterNotify([0x01, 0xf0, 0x03, 0xff])).toEqual([2, 0x01, 0x03]);
+  });
+
+  it('encodes an empty list as a zero count', () => {
+    expect(encodeRegisterNotify([])).toEqual([0]);
   });
 });
 
@@ -59,16 +91,17 @@ describe('decodeBattery', () => {
 });
 
 describe('decodeAncNotification', () => {
-  it('decodes CurrentNoiseModeInfo with a supported-modes bitmask (mType 1)', () => {
+  it('decodes CurrentNoiseModeInfo from a bitmask (mType 1), taking the lowest set bit', () => {
     // outer subtype=3 (noise-reduction event), inner type=1 (CurrentNoiseModeInfo),
-    // DTO bytes: mType=1, mask=0b00000101 -> bits 0 and 2 set.
+    // DTO bytes: mType=1, mask=0b00000101 -> bits 0 and 2 set; the lowest
+    // set bit (0) is the one currently-active mode, not a list of both.
     const event = decodeAncNotification(Uint8Array.from([3, 1, 1, 0b0000_0101]));
-    expect(event).toEqual({ kind: 'currentMode', supportedModes: [0, 2], level: null });
+    expect(event).toEqual({ kind: 'currentMode', modeIndex: 0, level: null });
   });
 
   it('decodes CurrentNoiseModeInfo with a single level (mType 2)', () => {
     const event = decodeAncNotification(Uint8Array.from([3, 1, 2, 50]));
-    expect(event).toEqual({ kind: 'currentMode', supportedModes: null, level: 50 });
+    expect(event).toEqual({ kind: 'currentMode', modeIndex: null, level: 50 });
   });
 
   it('decodes NoiseReductionInfo (inner type 2), value little-endian', () => {
@@ -77,14 +110,14 @@ describe('decodeAncNotification', () => {
     expect(event).toEqual({ kind: 'reduction', action: 1, type: 2, value: 10 });
   });
 
-  it('decodes IntelligentNoiseModeInfo with a bitmask (mType 1)', () => {
+  it('decodes IntelligentNoiseModeInfo from a bitmask (mType 1)', () => {
     const event = decodeAncNotification(Uint8Array.from([3, 4, 1, 0b0000_0010]));
-    expect(event).toEqual({ kind: 'intelligentMode', supportedModes: [1] });
+    expect(event).toEqual({ kind: 'intelligentMode', modeIndex: 1 });
   });
 
-  it('decodes IntelligentNoiseModeInfo with an unrecognised mType as no modes', () => {
+  it('decodes IntelligentNoiseModeInfo with an unrecognised mType as no mode', () => {
     const event = decodeAncNotification(Uint8Array.from([3, 4, 2]));
-    expect(event).toEqual({ kind: 'intelligentMode', supportedModes: null });
+    expect(event).toEqual({ kind: 'intelligentMode', modeIndex: null });
   });
 
   it('returns null for a non-noise-reduction outer subtype', () => {
@@ -131,26 +164,37 @@ describe('decodeAncNotification', () => {
 });
 
 describe('encodeSetAncMode', () => {
-  it('encodes the mode as a single byte', () => {
-    // Payload shape is not derived from the app or any reference (§3.4/§6 of
-    // the spec) — a single mode byte is this driver's own working assumption,
-    // the simplest shape consistent with the read-side DTOs, pending
-    // verification against real hardware.
-    expect(encodeSetAncMode(2)).toEqual([2]);
+  it('matches Leaf-lsgtky/OppoPods\'s own worked examples byte-for-byte', () => {
+    // CapabilityProfileFactory.ancPayload()'s own doc comment: protocolIndex
+    // 1 -> "01 01 02", 2 -> "01 01 04", 11 -> "01 01 00 08" — noted there as
+    // tested against real Enco X3/Free4 hardware.
+    expect(encodeSetAncMode(1)).toEqual([0x01, 0x01, 0x02]);
+    expect(encodeSetAncMode(2)).toEqual([0x01, 0x01, 0x04]);
+    expect(encodeSetAncMode(11)).toEqual([0x01, 0x01, 0x00, 0x08]);
+  });
+
+  it('sets bit 0 for protocolIndex 0', () => {
+    expect(encodeSetAncMode(0)).toEqual([0x01, 0x01, 0x01]);
+  });
+
+  it('extends the bitmap by a byte for every 8 indices', () => {
+    expect(encodeSetAncMode(7)).toEqual([0x01, 0x01, 0x80]);
+    expect(encodeSetAncMode(8)).toEqual([0x01, 0x01, 0x00, 0x01]);
+    expect(encodeSetAncMode(16)).toEqual([0x01, 0x01, 0x00, 0x00, 0x01]);
   });
 });
 
 describe('decodeAncDirectQuery', () => {
-  it('decodes a bare currentMode DTO with a supported-modes bitmask (mType 1), no envelope', () => {
+  it('decodes a bare currentMode DTO from a bitmask (mType 1), no envelope, lowest set bit', () => {
     // Unlike decodeAncNotification, there is no [outerSubtype, innerType]
     // prefix here — 0x010C's reply is the DTO itself.
     const event = decodeAncDirectQuery(Uint8Array.from([1, 0b0000_0101]));
-    expect(event).toEqual({ kind: 'currentMode', supportedModes: [0, 2], level: null });
+    expect(event).toEqual({ kind: 'currentMode', modeIndex: 0, level: null });
   });
 
   it('decodes a bare currentMode DTO with a single level (mType 2)', () => {
     const event = decodeAncDirectQuery(Uint8Array.from([2, 50]));
-    expect(event).toEqual({ kind: 'currentMode', supportedModes: null, level: 50 });
+    expect(event).toEqual({ kind: 'currentMode', modeIndex: null, level: 50 });
   });
 
   it('returns null for an empty payload', () => {
@@ -184,12 +228,13 @@ describe('decodeEqCurrent', () => {
 
 describe('decodeEqAll', () => {
   it('decodes one preset with a two-band curve', () => {
-    // count=1, then one preset:
+    // status=0, count=1, then one preset:
     //   isSelected=1, minValue=-6 (0xFA signed), maxValue=6, eqId=1,
     //   nameLength=3, name="Pop" (0x50,0x6F,0x70), frequencyNum=2,
     //   band1: frequency=100 (LE 0x64,0x00), dbValue=3
     //   band2: frequency=1000 (LE 0xE8,0x03), dbValue=-2 (0xFE signed)
     const payload = Uint8Array.from([
+      0,
       1,
       1, 0xfa, 0x06, 1,
       3, 0x50, 0x6f, 0x70,
@@ -213,17 +258,31 @@ describe('decodeEqAll', () => {
   });
 
   it('decodes zero presets', () => {
-    expect(decodeEqAll(Uint8Array.from([0]))).toEqual([]);
+    expect(decodeEqAll(Uint8Array.from([0, 0]))).toEqual([]);
   });
 
-  it('throws on empty payload (count byte missing)', () => {
+  it('throws on a non-zero status', () => {
+    // Cross-checked directly against 1812z/OppoPods's EqDetailsParser.parseAll()
+    // current source: `data[9] != 0 -> return null`, `data[9]` being this
+    // driver's own `payload[0]` — a leading status byte precedes count,
+    // matching every other status-gated reply in this protocol.
+    expect(() => decodeEqAll(Uint8Array.from([1, 0]))).toThrow();
+  });
+
+  it('throws on empty payload (status+count bytes missing)', () => {
     expect(() => decodeEqAll(Uint8Array.from([]))).toThrow();
   });
 
+  it('throws on a payload with only a status byte (count byte missing)', () => {
+    expect(() => decodeEqAll(Uint8Array.from([0]))).toThrow();
+  });
+
   it('throws when frequencyNum byte is missing (name bytes consume to end)', () => {
-    // count=1, fixed header present (5 bytes), nameLength=2 with 2 name bytes
-    // That uses all 8 bytes (1 count + 5 header + 2 name), leaving no room for frequencyNum
+    // status=0, count=1, fixed header present (5 bytes), nameLength=2 with
+    // 2 name bytes. That uses all 9 bytes (status+count+5-byte header+2-byte
+    // name), leaving no room for frequencyNum.
     expect(() => decodeEqAll(Uint8Array.from([
+      0,                      // status
       1,                      // count
       1, 0xfa, 0x06, 1,      // fixed header (5 bytes)
       2, 0x50, 0x6f,          // nameLength=2, name="Po" (2 bytes) — fills the rest
@@ -231,13 +290,14 @@ describe('decodeEqAll', () => {
   });
 
   it('throws when the fixed 5-byte preset header is truncated', () => {
-    // count=1, but only 2 bytes follow (need 5)
-    expect(() => decodeEqAll(Uint8Array.from([1, 1, 0xfa]))).toThrow();
+    // status=0, count=1, but only 2 bytes follow (need 5)
+    expect(() => decodeEqAll(Uint8Array.from([0, 1, 1, 0xfa]))).toThrow();
   });
 
   it('throws when the preset name is truncated', () => {
-    // count=1, fixed header present, nameLength=3 but only 2 bytes follow
+    // status=0, count=1, fixed header present, nameLength=3 but only 2 bytes follow
     expect(() => decodeEqAll(Uint8Array.from([
+      0,
       1,
       1, 0xfa, 0x06, 1,
       3, 0x50, 0x6f,  // only 2 bytes of the 3-byte name
@@ -245,8 +305,9 @@ describe('decodeEqAll', () => {
   });
 
   it('throws when a band entry is truncated', () => {
-    // count=1, preset with 1 band, but band data only has 2 bytes instead of 3
+    // status=0, count=1, preset with 1 band, but band data only has 2 bytes instead of 3
     expect(() => decodeEqAll(Uint8Array.from([
+      0,
       1,
       1, 0xfa, 0x06, 1,
       3, 0x50, 0x6f, 0x70,

@@ -17,6 +17,7 @@ export const Cmd = {
   QueryEqAll: 0x0122,
   SetAncMode: 0x0404,
   SetEqPreset: 0x0406,
+  QueryNotificationSupport: 0x0200,
   RegisterNotify: 0x0205,
   ActiveReport: 0x0204,
 } as const;
@@ -39,6 +40,44 @@ export function decodeProductId(payload: Uint8Array): ProductIdReply {
   const status = payload[0];
   const value = payload[1] | (payload[2] << 8) | (payload[3] << 16);
   return { status, productId: value.toString(16).toUpperCase().padStart(6, '0') };
+}
+
+// --- notification subscribe handshake ----------------------------------------
+
+export interface NotificationSupportReply {
+  status: number;
+  ids: number[];
+}
+
+/**
+ * `0x0200` -> `0x8200` reply: `[status(1)][count(1)][id1, id2, …]` — the
+ * notification ids this device can push. Cross-checked directly against
+ * 1812z/OppoPods's actual runtime connect sequence (`RfcommController.kt`),
+ * not just its packet-definitions file: it queries this before ever
+ * registering for anything, then subscribes to whatever comes back (minus
+ * debug channels, see `encodeRegisterNotify`). Not independently confirmed
+ * against the APK itself.
+ */
+export function decodeNotificationSupport(payload: Uint8Array): NotificationSupportReply {
+  if (payload.length < 2) {
+    throw new Error(`notification-support payload too short: expected at least 2 bytes, got ${payload.length}`);
+  }
+  const status = payload[0];
+  const count = payload[1];
+  const ids = Array.from(payload.slice(2, 2 + count));
+  return { status, ids };
+}
+
+/**
+ * `0x0205` request payload: `[count(1)][id1, id2, …]` — subscribe to exactly
+ * these notification ids. Replaces this driver's earlier empty-payload
+ * request, which 1812z/OppoPods's source suggests never actually subscribes
+ * to anything on real hardware. Ids `>= 0xF0` are debug/internal channels,
+ * filtered out the same way 1812z's own connect sequence does.
+ */
+export function encodeRegisterNotify(ids: number[]): number[] {
+  const wanted = ids.filter((id) => id < 0xf0);
+  return [wanted.length, ...wanted];
 }
 
 // --- battery -----------------------------------------------------------------
@@ -82,9 +121,22 @@ export function decodeBattery(payload: Uint8Array): BatteryCell[] {
 /** Outer `0x0204` subtype for a noise-reduction event, from `commands/g.java`. */
 const NOISE_REDUCTION_SUBTYPE = 3;
 
+/**
+ * `modeIndex` is the index of the single lowest set bit — **which one mode is
+ * currently active, not a list of every mode this device supports.**
+ * Corrected from an earlier `supportedModes: number[]` reading: the APK's own
+ * `CurrentNoiseModeInfo` DTO exposes exactly one consumer-facing accessor,
+ * `getCurrentNoiseReductionModeIndex()`, which loops the decoded bits and
+ * returns the *first* true one — there is no accessor anywhere that exposes
+ * the bits as a set of independently-true options. The real "which modes does
+ * this model support" answer lives in the cloud/bundled whitelist config
+ * (`WhitelistConfigDTO.NoiseReductionMode`), a completely separate mechanism
+ * from this DTO — the two concepts never overlap in the APK's own design.
+ * `null` when no bit is set.
+ */
 export interface CurrentNoiseModeInfo {
   kind: 'currentMode';
-  supportedModes: number[] | null;
+  modeIndex: number | null;
   level: number | null;
 }
 
@@ -95,9 +147,14 @@ export interface NoiseReductionInfo {
   value: number;
 }
 
+/** Same one-hot correction as `CurrentNoiseModeInfo.modeIndex` above, and for
+ * the same reason: 1812z/OppoPods's `SmartAncLevelParser` (independently,
+ * for this exact DTO — "smart mode" is this project's `commands/g.java`
+ * inner-type 4) decodes this identical bitmask down to a single "currently
+ * smart-applied level", never a list. */
 export interface IntelligentNoiseModeInfo {
   kind: 'intelligentMode';
-  supportedModes: number[] | null;
+  modeIndex: number | null;
 }
 
 export type AncEvent = CurrentNoiseModeInfo | NoiseReductionInfo | IntelligentNoiseModeInfo;
@@ -111,6 +168,12 @@ function decodeBitmask(bytes: Uint8Array): number[] {
     }
   }
   return bits;
+}
+
+/** The lowest set bit's index, or null if none is set — "which one", not "which ones". */
+function firstSetBit(bytes: Uint8Array): number | null {
+  const bits = decodeBitmask(bytes);
+  return bits.length > 0 ? bits[0] : null;
 }
 
 /** Little-endian decode of 1-4 bytes into a number. */
@@ -134,14 +197,14 @@ function decodeCurrentNoiseModeDto(dto: Uint8Array): CurrentNoiseModeInfo | null
   if (mType === 1) {
     // mType=1: bitmask follows, requires at least 1 byte of mask
     if (dto.length < 2) return null;
-    return { kind: 'currentMode', supportedModes: decodeBitmask(dto.slice(1)), level: null };
+    return { kind: 'currentMode', modeIndex: firstSetBit(dto.slice(1)), level: null };
   }
   if (mType === 2) {
     // mType=2: single level byte follows
     if (dto.length < 2) return null;
-    return { kind: 'currentMode', supportedModes: null, level: dto[1] };
+    return { kind: 'currentMode', modeIndex: null, level: dto[1] };
   }
-  return { kind: 'currentMode', supportedModes: null, level: null };
+  return { kind: 'currentMode', modeIndex: null, level: null };
 }
 
 /**
@@ -177,9 +240,9 @@ export function decodeAncNotification(payload: Uint8Array): AncEvent | null {
     if (mType === 1) {
       // mType=1: bitmask follows, requires at least 1 byte of mask
       if (dto.length < 2) return null;
-      return { kind: 'intelligentMode', supportedModes: decodeBitmask(dto.slice(1)) };
+      return { kind: 'intelligentMode', modeIndex: firstSetBit(dto.slice(1)) };
     }
-    return { kind: 'intelligentMode', supportedModes: null };
+    return { kind: 'intelligentMode', modeIndex: null };
   }
 
   return null;
@@ -202,12 +265,24 @@ export function decodeAncDirectQuery(payload: Uint8Array): CurrentNoiseModeInfo 
 }
 
 /**
- * Set-ANC-mode (`0x0404`) request payload. Not derived from the app or any
- * reference — the simplest shape consistent with the read-side DTOs above.
- * See spec §3.4/§6: first thing to verify against real hardware.
+ * Set-ANC-mode (`0x0404`) request payload: `[0x01, 0x01, <bitmap>]`, with
+ * exactly one bit set at `protocolIndex` (extending the bitmap to more bytes
+ * once the index needs them) — **not** a raw mode index passed straight
+ * through, which is what this driver originally shipped with no basis at
+ * all. Which bit means which named mode differs per model; resolving a name
+ * to its `protocolIndex` is `ancModel.ts`'s job (`buildAncCapabilities`),
+ * this function only builds the bytes for an already-resolved index.
+ *
+ * Byte-exact against Leaf-lsgtky/OppoPods's own
+ * `CapabilityProfileFactory.ancPayload()` worked examples — protocolIndex 1
+ * -> `01 01 02`, 2 -> `01 01 04`, 11 -> `01 01 00 08` — explicitly noted
+ * there as tested against real Enco X3/Free4 hardware, not a guess.
  */
-export function encodeSetAncMode(mode: number): number[] {
-  return [mode];
+export function encodeSetAncMode(protocolIndex: number): number[] {
+  const byteCount = Math.floor(protocolIndex / 8) + 1;
+  const bitmap = new Array<number>(byteCount).fill(0);
+  bitmap[Math.floor(protocolIndex / 8)] = 1 << (protocolIndex % 8);
+  return [0x01, 0x01, ...bitmap];
 }
 
 // --- EQ ------------------------------------------------------------------
@@ -252,18 +327,31 @@ export function decodeEqCurrent(payload: Uint8Array): EqCurrentReply {
 }
 
 /**
- * `0x0122` response — `CommandUtil.b()` / "parseAllEqData". Every preset
- * carries a full per-band curve, not just an index. See spec §3.4 for why
- * `0x0122` rather than `0x010F` serves this richer format.
+ * `0x0122` response — `CommandUtil.b()` / "parseAllEqData":
+ * `[status(1)][count(1)][entries...]`. **Corrected from an earlier reading
+ * that took `payload[0]` directly as `count`** — cross-checked directly
+ * against 1812z/OppoPods's `EqDetailsParser.parseAll()` current source
+ * (`data[9] != 0 -> return null; count = data[10]`, where `data` is the
+ * *whole* wire frame and offset 9 is where this driver's `payload` begins —
+ * i.e. its own `payload[0]` is a status gate, `payload[1]` is count), which
+ * this driver's original protocol notes had claimed (incorrectly, on this one
+ * point) was already cross-validated field-for-field with no discrepancy.
+ * Every preset carries a full per-band curve, not just an index. See spec
+ * §3.4 for why `0x0122` rather than `0x010F` serves this richer format.
  */
 export function decodeEqAll(payload: Uint8Array): EqPreset[] {
-  if (payload.length < 1) {
-    throw new Error(`EQ all-presets payload too short: expected at least 1 byte for count, got ${payload.length}`);
+  if (payload.length < 2) {
+    throw new Error(`EQ all-presets payload too short: expected at least 2 bytes for status+count, got ${payload.length}`);
   }
 
-  const count = payload[0];
+  const status = payload[0];
+  if (status !== 0) {
+    throw new Error(`QueryEqAll returned non-zero status ${status}`);
+  }
+
+  const count = payload[1];
   const presets: EqPreset[] = [];
-  let offset = 1;
+  let offset = 2;
 
   for (let i = 0; i < count; i += 1) {
     // Check that the fixed 5-byte preset header can be read
