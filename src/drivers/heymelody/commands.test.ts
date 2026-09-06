@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { Cmd, decodeBattery, decodeProductId, replyFor, decodeAncNotification, encodeSetAncMode, decodeEqAll, decodeEqCurrent, encodeSetEqPreset } from './commands';
+import { Cmd, decodeBattery, decodeProductId, replyFor, decodeAncDirectQuery, decodeAncNotification, encodeSetAncMode, decodeEqAll, decodeEqCurrent, encodeSetEqPreset } from './commands';
 
 describe('replyFor', () => {
   it('sets the reply bit', () => {
@@ -140,11 +140,40 @@ describe('encodeSetAncMode', () => {
   });
 });
 
+describe('decodeAncDirectQuery', () => {
+  it('decodes a bare currentMode DTO with a supported-modes bitmask (mType 1), no envelope', () => {
+    // Unlike decodeAncNotification, there is no [outerSubtype, innerType]
+    // prefix here — 0x010C's reply is the DTO itself.
+    const event = decodeAncDirectQuery(Uint8Array.from([1, 0b0000_0101]));
+    expect(event).toEqual({ kind: 'currentMode', supportedModes: [0, 2], level: null });
+  });
+
+  it('decodes a bare currentMode DTO with a single level (mType 2)', () => {
+    const event = decodeAncDirectQuery(Uint8Array.from([2, 50]));
+    expect(event).toEqual({ kind: 'currentMode', supportedModes: null, level: 50 });
+  });
+
+  it('returns null for an empty payload', () => {
+    expect(decodeAncDirectQuery(Uint8Array.from([]))).toBeNull();
+  });
+
+  it('returns null for mType=1 with a truncated bitmask', () => {
+    expect(decodeAncDirectQuery(Uint8Array.from([1]))).toBeNull();
+  });
+
+  it('returns null for mType=2 with a missing level byte', () => {
+    expect(decodeAncDirectQuery(Uint8Array.from([2]))).toBeNull();
+  });
+});
+
 // --- EQ ------------------------------------------------------------------
 
 describe('decodeEqCurrent', () => {
-  it('reads the active preset index as a little-endian u16', () => {
-    expect(decodeEqCurrent(Uint8Array.from([0x02, 0x00]))).toBe(2);
+  it('reads status and preset index as two separate bytes, not a combined u16', () => {
+    // Protocol notes §6: 0x810F carries `[status, presetId]` — two 1-byte
+    // fields. [0x00, 0x02] must decode to presetId 2, not the LE-u16 value
+    // 0x0200 (512) an earlier reading of "2-byte response" produced.
+    expect(decodeEqCurrent(Uint8Array.from([0x00, 0x02]))).toEqual({ status: 0, presetId: 2 });
   });
 
   it('throws on truncated payload (< 2 bytes)', () => {

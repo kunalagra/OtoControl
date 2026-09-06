@@ -28,8 +28,8 @@ function heyMelodyOpener(replies: Map<number, number[]>): TransportOpener {
 const FULL_REPLIES = new Map<number, number[]>([
   [Cmd.QueryProductId, [0x00, 0x10, 0xf0, 0x06]], // -> productId "06F010", OPPO Enco Air4s
   [Cmd.Battery, [0x01, 0x01, 0xd4]], // count=1, left, packed 0xD4 -> level 84, charging
-  [Cmd.QueryAncDirect, [3, 1, 2, 50]], // outer=3, inner=1 (currentMode), mType=2, level=50
-  [Cmd.QueryEqCurrent, [0x01, 0x00]],
+  [Cmd.QueryAncDirect, [2, 50]], // bare currentMode DTO (no envelope): mType=2, level=50
+  [Cmd.QueryEqCurrent, [0x00, 0x01]], // status=0, presetId=1
   [Cmd.QueryEqAll, [0]], // zero presets — simplest valid payload
   [Cmd.RegisterNotify, []],
 ]);
@@ -52,6 +52,27 @@ describe('HeyMelodyDevice connect', () => {
     expect(device.state.capabilities).toEqual(new Set(['battery', 'anc', 'eq']));
   });
 
+  it('still identifies the device when QueryProductId reports a non-zero status', async () => {
+    // `status`'s value meaning was never confirmed against the APK — a
+    // non-zero value here must not blank out an otherwise-valid productId.
+    const replies = new Map(FULL_REPLIES);
+    replies.set(Cmd.QueryProductId, [0x01, 0x10, 0xf0, 0x06]);
+    const device = new HeyMelodyDevice(heyMelodyOpener(replies), { timeoutMs: 50 });
+    await device.adoptPort(port);
+
+    expect(device.state.info.productId).toBe('06F010');
+    expect(device.state.info.model).toBe('OPPO Enco Air4s');
+  });
+
+  it('still applies eqCurrentPreset when QueryEqCurrent reports a non-zero status', async () => {
+    const replies = new Map(FULL_REPLIES);
+    replies.set(Cmd.QueryEqCurrent, [0x01, 0x02]);
+    const device = new HeyMelodyDevice(heyMelodyOpener(replies), { timeoutMs: 50 });
+    await device.adoptPort(port);
+
+    expect(device.state.eqCurrentPreset).toBe(2);
+  });
+
   it('tolerates every command going unanswered', async () => {
     const device = new HeyMelodyDevice(heyMelodyOpener(new Map()), { timeoutMs: 20 });
     await device.adoptPort(port);
@@ -62,12 +83,13 @@ describe('HeyMelodyDevice connect', () => {
     expect(device.state.capabilities.size).toBe(0);
   });
 
-  it('does not mark ANC as a capability when the direct-query response is not a currentMode DTO', async () => {
+  it('does not mark ANC as a capability when the direct-query response fails to decode', async () => {
     // Exercises the documented risk (spec §6): 0x010C's response shape is
-    // unconfirmed. A `reduction`-shaped reply must not be silently accepted
-    // as ANC support.
+    // unconfirmed. A payload the bare CurrentNoiseModeInfo DTO can't parse
+    // (here: an mType=2 claim with the level byte missing) must not be
+    // silently accepted as ANC support.
     const replies = new Map(FULL_REPLIES);
-    replies.set(Cmd.QueryAncDirect, [3, 2, 1, 2, 0x0a, 0x00]); // a 'reduction' event, not 'currentMode'
+    replies.set(Cmd.QueryAncDirect, [2]);
     const device = new HeyMelodyDevice(heyMelodyOpener(replies), { timeoutMs: 50 });
     await device.adoptPort(port);
 

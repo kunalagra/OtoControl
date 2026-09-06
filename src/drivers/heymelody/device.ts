@@ -11,7 +11,7 @@
 
 import {
   Cmd,
-  decodeAncNotification,
+  decodeAncDirectQuery,
   decodeBattery,
   decodeEqAll,
   decodeEqCurrent,
@@ -199,11 +199,14 @@ export class HeyMelodyDevice implements Persistable {
   async #refreshAll(client: HeyMelodyClient): Promise<void> {
     try {
       const { status, productId } = decodeProductId(await client.request(Cmd.QueryProductId));
-      // A non-zero status means the productId bytes alongside it are not
-      // trustworthy — resolving them against the catalog anyway would risk a
-      // confident, wrong model. Throwing here routes it through the existing
-      // catch below, leaving `info` unset for this refresh cycle instead.
-      if (status !== 0) throw new Error(`QueryProductId returned non-zero status ${status}`);
+      // `status`'s value meaning was never confirmed against the APK (the
+      // protocol notes label the field but never define it) — a prior
+      // version of this code discarded the whole identification whenever
+      // status was non-zero, on the unverified guess that non-zero meant
+      // "untrustworthy". That guess, if wrong, would silently blank out
+      // model/catalog on every real device — logged instead of acted on
+      // until a real device's status values are actually observed.
+      if (status !== 0) console.debug(`[heymelody] QueryProductId status ${status}`);
       const catalog = catalogEntryFor(productId);
       // `info.model` is the catalog-resolved display name, not the raw
       // productId — `core/manager.ts`'s constructor loop reads
@@ -236,13 +239,16 @@ export class HeyMelodyDevice implements Persistable {
     });
 
     await probe('anc', async () => {
-      const event = decodeAncNotification(
+      // Note: 0x010C's reply is un-enveloped — it is not the 0x0204
+      // notification's `[outerSubtype, innerType, ...]` shape, so this uses
+      // the dedicated `decodeAncDirectQuery`, not `decodeAncNotification`.
+      const event = decodeAncDirectQuery(
         await client.request(Cmd.QueryAncDirect, [], { timeoutMs: PROBE_TIMEOUT_MS }),
       );
-      // A response that does not decode as `currentMode` is treated as "ANC
+      // A response that fails to decode at all is treated as "ANC
       // unsupported/unrecognised" rather than guessed at — 0x010C's exact
       // reply shape was never independently confirmed (spec §6).
-      if (!event || event.kind !== 'currentMode') throw new Error('unrecognised ANC response shape');
+      if (!event) throw new Error('unrecognised ANC response shape');
       this.#patch({
         ancSupportedModes: event.supportedModes ?? this.#store.state.ancSupportedModes,
         ancLevel: event.level ?? this.#store.state.ancLevel,
@@ -256,11 +262,14 @@ export class HeyMelodyDevice implements Persistable {
       // when `0x010F` (QueryEqCurrent) throws first.
       let answered = false;
       try {
-        this.#patch({
-          eqCurrentPreset: decodeEqCurrent(
-            await client.request(Cmd.QueryEqCurrent, [], { timeoutMs: PROBE_TIMEOUT_MS }),
-          ),
-        });
+        const { status, presetId } = decodeEqCurrent(
+          await client.request(Cmd.QueryEqCurrent, [], { timeoutMs: PROBE_TIMEOUT_MS }),
+        );
+        // Same caveat as QueryProductId: `status`'s value meaning is
+        // unconfirmed, so it is logged rather than used to discard a
+        // presetId we otherwise have no reason to distrust.
+        if (status !== 0) console.debug(`[heymelody] QueryEqCurrent status ${status}`);
+        this.#patch({ eqCurrentPreset: presetId });
         answered = true;
       } catch (error) {
         console.debug('[heymelody] QueryEqCurrent failed', error);

@@ -121,6 +121,30 @@ function decodeLEValue(bytes: Uint8Array): number {
 }
 
 /**
+ * `CurrentNoiseModeInfo`'s own body, shared by both places it appears:
+ * the `0x0204` notification (behind an outer envelope, see below) and
+ * `0x010C`'s direct-query reply (bare — see `decodeAncDirectQuery`).
+ * `[mType(1), ...]`: mType=1 -> LSB-first bitmask of supported modes;
+ * mType=2 -> a single level byte; anything else -> nothing decodable.
+ * Returns null for a truncated payload that doesn't contain the required bytes.
+ */
+function decodeCurrentNoiseModeDto(dto: Uint8Array): CurrentNoiseModeInfo | null {
+  if (dto.length < 1) return null;
+  const mType = dto[0];
+  if (mType === 1) {
+    // mType=1: bitmask follows, requires at least 1 byte of mask
+    if (dto.length < 2) return null;
+    return { kind: 'currentMode', supportedModes: decodeBitmask(dto.slice(1)), level: null };
+  }
+  if (mType === 2) {
+    // mType=2: single level byte follows
+    if (dto.length < 2) return null;
+    return { kind: 'currentMode', supportedModes: null, level: dto[1] };
+  }
+  return { kind: 'currentMode', supportedModes: null, level: null };
+}
+
+/**
  * `0x0204` unsolicited notification, noise-reduction subtype: `[outerSubtype,
  * innerType, ...dtoBytes]`. `innerType` (`commands/g.java`'s dispatch byte,
  * called `b12` in the notes) selects one of three DTOs — see spec §3.6.
@@ -135,22 +159,7 @@ export function decodeAncNotification(payload: Uint8Array): AncEvent | null {
   const innerType = payload[1];
   const dto = payload.slice(2);
 
-  if (innerType === 1) {
-    // CurrentNoiseModeInfo: requires at least mType byte
-    if (dto.length < 1) return null;
-    const mType = dto[0];
-    if (mType === 1) {
-      // mType=1: bitmask follows, requires at least 1 byte of mask
-      if (dto.length < 2) return null;
-      return { kind: 'currentMode', supportedModes: decodeBitmask(dto.slice(1)), level: null };
-    }
-    if (mType === 2) {
-      // mType=2: single level byte follows
-      if (dto.length < 2) return null;
-      return { kind: 'currentMode', supportedModes: null, level: dto[1] };
-    }
-    return { kind: 'currentMode', supportedModes: null, level: null };
-  }
+  if (innerType === 1) return decodeCurrentNoiseModeDto(dto);
 
   if (innerType === 2) {
     // NoiseReductionInfo: requires action(1) + type(1) + value(2+ LE bytes)
@@ -174,6 +183,22 @@ export function decodeAncNotification(payload: Uint8Array): AncEvent | null {
   }
 
   return null;
+}
+
+/**
+ * `0x010C` direct-query reply. **Not the same shape as `decodeAncNotification`
+ * above** — that function's leading `[outerSubtype, innerType]` envelope only
+ * exists because `0x0204` is a single unsolicited-notification command shared
+ * across many different event kinds and needs a discriminator; a direct query
+ * for ANC status has no such ambiguity (the command itself already says what
+ * this is), matching how every other directly-queried command in this
+ * protocol replies un-enveloped (battery, productId, EQ). Treated as the bare
+ * `CurrentNoiseModeInfo` DTO. This exact shape was never independently
+ * confirmed against the APK (only the notification dispatcher was fully
+ * traced, spec §6/§8.7) — verify against real hardware.
+ */
+export function decodeAncDirectQuery(payload: Uint8Array): CurrentNoiseModeInfo | null {
+  return decodeCurrentNoiseModeDto(payload);
 }
 
 /**
@@ -206,12 +231,24 @@ const signedByte = (byte: number): number => (byte > 127 ? byte - 256 : byte);
 
 const textDecoder = new TextDecoder('utf-8');
 
-/** `0x010F` response: just the active preset index, u16 LE, no status byte. */
-export function decodeEqCurrent(payload: Uint8Array): number {
+export interface EqCurrentReply {
+  status: number;
+  presetId: number;
+}
+
+/**
+ * `0x010F` response: `[status(1)][presetId(1)]` — two separate one-byte
+ * fields, not a combined u16 (corrected from an earlier misreading of the
+ * protocol notes' "2-byte response" as a little-endian pair; the notes
+ * explicitly spell out `[status, presetId]`, matching every other
+ * directly-queried command in this protocol carrying its own status byte —
+ * see `decodeProductId`).
+ */
+export function decodeEqCurrent(payload: Uint8Array): EqCurrentReply {
   if (payload.length < 2) {
     throw new Error(`EQ current-preset payload too short: expected at least 2 bytes, got ${payload.length}`);
   }
-  return payload[0] | (payload[1] << 8);
+  return { status: payload[0], presetId: payload[1] };
 }
 
 /**
