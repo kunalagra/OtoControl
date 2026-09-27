@@ -17,7 +17,7 @@
     "@remixicon/react": "^4.9.0",
     "@tailwindcss/vite": "^4.3.3",
     "class-variance-authority": "^0.7.1",
-    "cn": "^0.2.5",
+    "cn": "^0.4.0",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
     "shadcn": "^4.16.2",

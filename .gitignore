@@ -30,3 +30,8 @@ dist-ssr
 
 # Ad-hoc format-patch dumps — never belong in the repo
 *.patch
+
+# Local secrets (script API keys, personal GitHub token) — never commit
+.env
+.env.*
+!.env.example

@@ -96,6 +96,7 @@ export const SONY_CATALOG_IMAGES: Record<string, Record<string, string>> = {
     '00': "https://hpc-image.data-gateway.seeds.services/1b181b22-8aa1-4d50-8c6f-bf0127942cc6.png",
     '01': "https://hpc-image.data-gateway.seeds.services/1b181b22-8aa1-4d50-8c6f-bf0127942cc6.png",
     '02': "https://hpc-image.data-gateway.seeds.services/106c7bc7-26d2-4e5e-a36e-1db8338e107a.png",
+    '05': "https://hpc-image.data-gateway.seeds.services/8cc9428b-8ee9-4be1-be39-0426fe724d4e.png",
     '09': "https://hpc-image.data-gateway.seeds.services/ce718659-b93c-40c0-ae6c-506df7903013.png",
     '0c': "https://hpc-image.data-gateway.seeds.services/acc6b3f8-567f-4697-9bd2-aa3efa3b77b1.png",
   },
@@ -116,11 +117,20 @@ export const SONY_CATALOG_IMAGES: Record<string, Record<string, string>> = {
   'ult tower 10': {
     '00': "https://hpc-image.data-gateway.seeds.services/7ad63f4a-d409-4f78-840a-75269104ccd8.png",
   },
+  'ult tower 5': {
+    '00': "https://hpc-image.data-gateway.seeds.services/b0407eeb-f587-49dd-a116-ee7623739a68.png",
+  },
+  'ult tower 7': {
+    '00': "https://hpc-image.data-gateway.seeds.services/0b0b69e9-c26d-498b-8c8b-6e5287c141e0.png",
+  },
   'ult tower 9': {
     '00': "https://hpc-image.data-gateway.seeds.services/25e610b9-67da-4ba4-9531-4bf09ec66d32.png",
   },
   'ult tower 9ac': {
     '00': "https://hpc-image.data-gateway.seeds.services/031e7e51-0f55-4473-8725-9dbcada133de.png",
+  },
+  'ult tower max': {
+    '00': "https://hpc-image.data-gateway.seeds.services/9c88b4d3-638c-408e-9f81-582ae2186b3c.png",
   },
   'ult wear': {
     '00': "https://hpc-image.data-gateway.seeds.services/a2c9308f-44db-4f22-96b2-d85f1df8821a.png",
@@ -229,6 +239,12 @@ export const SONY_CATALOG_IMAGES: Record<string, Record<string, string>> = {
     '03': "https://hpc-image.data-gateway.seeds.services/05fd2e73-d4ae-4329-850d-2ba2a5b1666f.png",
     '05': "https://hpc-image.data-gateway.seeds.services/47712ab8-1dff-4cd7-a193-c7f978cb74c3.png",
   },
+  'wh-1000xm4c': {
+    '00': "https://hpc-image.data-gateway.seeds.services/954d6903-6b7f-4b36-95a3-f51397dca46e.png",
+    '01': "https://hpc-image.data-gateway.seeds.services/954d6903-6b7f-4b36-95a3-f51397dca46e.png",
+    '03': "https://hpc-image.data-gateway.seeds.services/dbcebac2-0682-496d-bb8a-f78834c0e102.png",
+    '0e': "https://hpc-image.data-gateway.seeds.services/699246b5-c2e9-4379-9491-a470a2483bab.png",
+  },
   'wh-1000xm5': {
     '00': "https://hpc-image.data-gateway.seeds.services/4e2e1840-5028-461c-bacf-26e8b2bfc2a7.png",
     '01': "https://hpc-image.data-gateway.seeds.services/4e2e1840-5028-461c-bacf-26e8b2bfc2a7.png",
@@ -254,6 +270,15 @@ export const SONY_CATALOG_IMAGES: Record<string, Record<string, string>> = {
     '07': "https://hpc-image.data-gateway.seeds.services/b6068258-acff-4e36-a5c3-47176752e58c.png",
     '0b': "https://hpc-image.data-gateway.seeds.services/84e1a8a6-0174-4ab7-84fa-496175d5f9e5.png",
   },
+  'wh-ch530 series': {
+    '00': "https://hpc-image.data-gateway.seeds.services/fe29c151-29f4-49b7-a35a-c95d305f1ac6.png",
+    '01': "https://hpc-image.data-gateway.seeds.services/fe29c151-29f4-49b7-a35a-c95d305f1ac6.png",
+    '02': "https://hpc-image.data-gateway.seeds.services/ad4bf089-666c-45ef-98f8-749822cfe715.png",
+    '04': "https://hpc-image.data-gateway.seeds.services/dd7f208e-147d-415d-982e-70afd6a95329.png",
+    '05': "https://hpc-image.data-gateway.seeds.services/8264f680-c4c7-4a1f-a665-fcc40e8b9722.png",
+    '06': "https://hpc-image.data-gateway.seeds.services/73996b7f-0bea-4256-9203-ebf5d1161f20.png",
+    '08': "https://hpc-image.data-gateway.seeds.services/ecc04cab-0285-4022-9272-2564e8eb0b42.png",
+  },
   'wh-ch700n': {
     '00': "https://hpc-image.data-gateway.seeds.services/c892e193-4aad-430c-b3ba-5c5e70de6cca.png",
     '01': "https://hpc-image.data-gateway.seeds.services/c892e193-4aad-430c-b3ba-5c5e70de6cca.png",
@@ -266,6 +291,14 @@ export const SONY_CATALOG_IMAGES: Record<string, Record<string, string>> = {
     '02': "https://hpc-image.data-gateway.seeds.services/a7b7dd05-0db7-49cd-bac2-66e3b4aef73a.png",
     '05': "https://hpc-image.data-gateway.seeds.services/5bd19958-cede-43f8-a0ea-27a9527dfd6c.png",
     '06': "https://hpc-image.data-gateway.seeds.services/7d72b6d5-6f48-481b-89c8-7d9f0f7a09d4.png",
+  },
+  'wh-ch730n series': {
+    '00': "https://hpc-image.data-gateway.seeds.services/2b9a45dc-f5b3-4a59-9ff9-04ccc5740568.png",
+    '01': "https://hpc-image.data-gateway.seeds.services/2b9a45dc-f5b3-4a59-9ff9-04ccc5740568.png",
+    '02': "https://hpc-image.data-gateway.seeds.services/6fc8a1f3-e78e-4268-bbb6-92950c37e0bd.png",
+    '05': "https://hpc-image.data-gateway.seeds.services/4ee73137-33e2-4f0c-ad03-619cc344cf38.png",
+    '06': "https://hpc-image.data-gateway.seeds.services/c89674c8-d74f-4a65-ac48-4cffd93984f8.png",
+    '0b': "https://hpc-image.data-gateway.seeds.services/4077c1c6-5275-4294-9aed-43e000b76a1d.png",
   },
   'wh-h800': {
     '00': "https://hpc-image.data-gateway.seeds.services/18670fd6-66a5-4ae5-a108-a67755517731.png",
