@@ -2,7 +2,12 @@
  * HeyMelody SPP/RFCOMM framing.
  *
  *   0xAA | length (1-2 byte varint, MSB continuation bit) | body
- *   body = reserved(2, unidentified) | cmd(2, LE) | seq(1) | payLen(2, LE) | commandPayload(payLen)
+ *   body = ctrl(1) | reserved(1) | [frame counter, multi-frame only] | packet
+ *   packet = cmd(2, LE) | seq(1) | payLen(2, LE) | commandPayload(payLen)
+ *
+ * `ctrl` bits 0-1 are the frame sequence number: 0 single, 1 first, 2 middle,
+ * 3 last; a multi-frame run's parts concatenate into one packet
+ * (realme `OPPOv1Wrapper.java:65-98`).
  *
  * The outer shell (0xAA + varint length) is derived directly from the app's
  * own decompiled read loop. The body layout is corroborated by three
@@ -16,9 +21,10 @@
  */
 
 const SYNC = 0xaa;
-/** The 2 reserved/unidentified bytes that sit between the length field and `cmd`. */
-const RESERVED = [0x00, 0x00];
-const BODY_HEADER_LENGTH = 7; // reserved(2) + cmd(2) + seq(1) + payLen(2)
+/** `ctrl` (single frame, FSN 0) and the reserved byte that follows it. */
+const SINGLE_FRAME_PREFIX = [0x00, 0x00];
+const PACKET_HEADER_LENGTH = 5; // cmd(2) + seq(1) + payLen(2)
+const MAX_BODY_LENGTH = 2000;
 
 export interface HeyMelodyFrame {
   cmd: number;
@@ -37,7 +43,7 @@ function encodeLength(bodyLength: number): number[] {
 export function encodeSppFrame(cmd: number, seq: number, payload: ArrayLike<number> = []): Uint8Array {
   const payloadArray = Array.from(payload);
   const body = [
-    ...RESERVED,
+    ...SINGLE_FRAME_PREFIX,
     cmd & 0xff,
     (cmd >> 8) & 0xff,
     seq & 0xff,
@@ -49,21 +55,31 @@ export function encodeSppFrame(cmd: number, seq: number, payload: ArrayLike<numb
   return Uint8Array.from([SYNC, ...length, ...body]);
 }
 
-/** Increments the sequence byte, wrapping 0x01-0xFE — see spec §3.2 for why this range and not 0x00-0xFF. */
+/** Full-range per-client counter, wrapping 0xFF to 0x00 (HeyTap `PacketFactory`, `p072f7/b.java:26-45`). */
 export function nextSeq(current: number): number {
-  const next = current + 1;
-  return next > 0xfe ? 0x01 : next;
+  return (current + 1) & 0xff;
+}
+
+function concat(a: Uint8Array, b: Uint8Array): Uint8Array {
+  const out = new Uint8Array(a.length + b.length);
+  out.set(a, 0);
+  out.set(b, a.length);
+  return out;
+}
+
+function parsePacket(packet: Uint8Array): HeyMelodyFrame | null {
+  if (packet.length < PACKET_HEADER_LENGTH) return null;
+  const view = new DataView(packet.buffer, packet.byteOffset, packet.byteLength);
+  const payload = packet.slice(PACKET_HEADER_LENGTH);
+  return { cmd: view.getUint16(0, true), seq: packet[2], payload, lengthOk: view.getUint16(3, true) === payload.length };
 }
 
 export class SppFrameDecoder {
-  #buffer = new Uint8Array(0);
+  #buffer: Uint8Array = new Uint8Array(0);
+  #partial: Uint8Array | null = null;
 
   push(chunk: Uint8Array): HeyMelodyFrame[] {
-    const merged = new Uint8Array(this.#buffer.length + chunk.length);
-    merged.set(this.#buffer, 0);
-    merged.set(chunk, this.#buffer.length);
-    this.#buffer = merged;
-
+    this.#buffer = concat(this.#buffer, chunk);
     const frames: HeyMelodyFrame[] = [];
 
     for (;;) {
@@ -84,7 +100,6 @@ export class SppFrameDecoder {
         ? (firstLenByte & 0x7f) | ((this.#buffer[2] & 0x7f) << 7)
         : firstLenByte & 0x7f;
 
-      const MAX_BODY_LENGTH = 512; // spec §3.2's documented SPP max frame size
       if (bodyLength > MAX_BODY_LENGTH) {
         // Implausible — this 0xAA was data, not a real sync byte. Drop it and resync at the next one.
         this.#buffer = this.#buffer.slice(1);
@@ -97,22 +112,39 @@ export class SppFrameDecoder {
       const body = this.#buffer.slice(headerLength, total);
       this.#buffer = this.#buffer.slice(total);
 
-      if (body.length < BODY_HEADER_LENGTH) continue; // too short to carry cmd/seq/payLen at all — drop
-
-      const view = new DataView(body.buffer, body.byteOffset, body.byteLength);
-      const cmd = view.getUint16(2, true);
-      const seq = body[4];
-      const payLen = view.getUint16(5, true);
-      const payload = body.slice(BODY_HEADER_LENGTH);
-
-      frames.push({ cmd, seq, payload, lengthOk: payLen === payload.length });
+      const packet = this.#assemble(body);
+      const frame = packet ? parsePacket(packet) : null;
+      if (frame) frames.push(frame);
     }
 
     return frames;
   }
 
+  /** The complete packet once a frame (or the last part of a run) completes it. */
+  #assemble(body: Uint8Array): Uint8Array | null {
+    if (body.length < 2) return null;
+    const fsn = body[0] & 0x03;
+    if (fsn === 0) {
+      this.#partial = null;
+      return body.slice(2);
+    }
+    if (body.length < 3) return null;
+    const part = body.slice(3); // ctrl, reserved, frame counter
+    if (fsn === 1) {
+      this.#partial = part;
+      return null;
+    }
+    if (!this.#partial) return null;
+    this.#partial = concat(this.#partial, part);
+    if (fsn === 2) return null;
+    const packet = this.#partial;
+    this.#partial = null;
+    return packet;
+  }
+
   reset(): void {
     this.#buffer = new Uint8Array(0);
+    this.#partial = null;
   }
 }
 

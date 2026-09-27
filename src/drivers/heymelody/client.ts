@@ -5,7 +5,7 @@
  */
 
 import type { Transport } from '@/core/transport';
-import { replyFor } from './commands';
+import { replyFor } from './protocol/cmd';
 import { SppFrameCodec, nextSeq } from './sppFrame';
 import type { FrameCodec, HeyMelodyFrame } from './sppFrame';
 

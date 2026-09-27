@@ -83,7 +83,7 @@ describe('SppFrameCodec decoder', () => {
 
   it('skips a stray 0xAA with an implausible length and recovers at the next real frame', () => {
     // A 0xAA byte that was actually payload data, followed by garbage that
-    // decodes as a length > 512 (spec §3.2's documented SPP max frame size).
+    // decodes as a length > 2000 (the vendor's max frame size, OPPOv1Wrapper.java:29-31).
     // Without a cap the decoder would wait forever for bytes that never
     // arrive, silently absorbing every real frame that follows.
     const real = encodeSppFrame(0x0106, 0x02, [0x01, 0x02]);
@@ -125,11 +125,64 @@ describe('SppFrameCodec decoder', () => {
   });
 });
 
+/** A link frame around a raw body, for bodies under 128 bytes. */
+const link = (body: number[]): Uint8Array => Uint8Array.from([0xaa, body.length, ...body]);
+/** The inner packet: cmd(2 LE) seq payLen(2 LE) payload. */
+const packet = (cmd: number, seq: number, payload: number[]): number[] => [
+  cmd & 0xff,
+  (cmd >> 8) & 0xff,
+  seq,
+  payload.length & 0xff,
+  (payload.length >> 8) & 0xff,
+  ...payload,
+];
+
+describe('SppFrameDecoder multi-frame runs (OPPOv1Wrapper.java:65-98)', () => {
+  it('reassembles a first/middle/last run into one packet', () => {
+    const whole = packet(0x8122, 0x07, [0x00, 0x01, 0x02, 0x03, 0x04, 0x05]);
+    const decoder = new SppFrameCodec().createDecoder();
+    expect(decoder.push(link([0x01, 0x00, 0x00, ...whole.slice(0, 4)]))).toEqual([]);
+    expect(decoder.push(link([0x02, 0x00, 0x01, ...whole.slice(4, 8)]))).toEqual([]);
+    const frames = decoder.push(link([0x03, 0x00, 0x02, ...whole.slice(8)]));
+    expect(frames).toHaveLength(1);
+    expect(frames[0]).toMatchObject({ cmd: 0x8122, seq: 0x07, lengthOk: true });
+    expect(Array.from(frames[0].payload)).toEqual([0x00, 0x01, 0x02, 0x03, 0x04, 0x05]);
+  });
+
+  it('reassembles a two-part run (first then last)', () => {
+    const whole = packet(0x8106, 0x01, [0x00, 0x01, 0x01, 0x54]);
+    const decoder = new SppFrameCodec().createDecoder();
+    decoder.push(link([0x01, 0x00, 0x00, ...whole.slice(0, 5)]));
+    const frames = decoder.push(link([0x03, 0x00, 0x01, ...whole.slice(5)]));
+    expect(frames).toHaveLength(1);
+    expect(Array.from(frames[0].payload)).toEqual([0x00, 0x01, 0x01, 0x54]);
+  });
+
+  it('discards a broken multi-frame run and keeps decoding', () => {
+    const decoder = new SppFrameCodec().createDecoder();
+    expect(decoder.push(link([0x01, 0x00, 0x00, 0x22, 0x81, 0x01, 0x09, 0x00]))).toEqual([]);
+    // A single frame interrupts the run: the partial is dropped, the single decodes.
+    const single = decoder.push(link([0x00, 0x00, ...packet(0x8106, 0x02, [0x00, 0x00])]));
+    expect(single).toHaveLength(1);
+    expect(single[0].cmd).toBe(0x8106);
+    // A stray last-part with no run in progress is ignored, not read as a packet.
+    expect(decoder.push(link([0x03, 0x00, 0x05, 0x06, 0x81, 0x09, 0x00, 0x00]))).toEqual([]);
+  });
+
+  it('accepts frames up to the vendor 2000-byte cap', () => {
+    const payload = Array.from({ length: 1500 }, (_, i) => i & 0xff);
+    const frame = encodeSppFrame(0x8122, 0x03, payload);
+    const frames = new SppFrameCodec().createDecoder().push(frame);
+    expect(frames).toHaveLength(1);
+    expect(frames[0].payload).toHaveLength(1500);
+  });
+});
+
 describe('nextSeq', () => {
-  it('increments and wraps from 0xFE back to 0x01', () => {
-    expect(nextSeq(0x01)).toBe(0x02);
-    expect(nextSeq(0xfd)).toBe(0xfe);
-    expect(nextSeq(0xfe)).toBe(0x01);
+  it('increments over the full byte range and wraps 0xFF to 0x00 (p072f7/b.java:26-45)', () => {
+    expect(nextSeq(0x00)).toBe(0x01);
+    expect(nextSeq(0xfe)).toBe(0xff);
+    expect(nextSeq(0xff)).toBe(0x00);
   });
 });
 

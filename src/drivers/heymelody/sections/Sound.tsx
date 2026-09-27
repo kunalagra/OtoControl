@@ -1,6 +1,9 @@
+import { useState } from 'react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Slider } from '@/components/ui/slider'
 import { cn } from '@/lib/utils'
 import type { HeyMelodyDevice, HeyMelodyState } from '../device'
+import type { EqPreset } from '../protocol/eq'
 
 interface Props {
   device: HeyMelodyDevice
@@ -12,7 +15,7 @@ export function HeyMelodySound({ device, state }: Props) {
 
   // Only assert absence once something has actually been probed — before that,
   // fall through to the "Connect to load..." / "did not answer" messaging below.
-  if (state.capabilities.size > 0 && !state.capabilities.has('eq')) {
+  if (state.capabilities.size > 0 && !state.capabilities.has('eq') && !state.capabilities.has('eqCustom')) {
     return (
       <Card data-size="sm">
         <CardContent>
@@ -33,6 +36,7 @@ export function HeyMelodySound({ device, state }: Props) {
   // (QueryEqAll). Comparing them assumes both share one namespace — an
   // untested assumption, not confirmed by the spec.
   const selectedEqId = state.eqCurrentPreset ?? state.eqPresets.find((p) => p.isSelected)?.eqId ?? null
+  const editable = state.capabilities.has('eqCustom')
 
   return (
     <Card data-size="sm">
@@ -49,27 +53,82 @@ export function HeyMelodySound({ device, state }: Props) {
         ) : (
           <div className="flex flex-col gap-1.5">
             {state.eqPresets.map((preset) => (
-              <button
-                key={preset.eqId}
-                type="button"
-                disabled={disabled}
-                aria-pressed={selectedEqId === preset.eqId}
-                onClick={() => void device.setEqPreset(preset.eqId)}
-                className={cn(
-                  'rounded-lg border px-3 py-2 text-left text-sm transition-colors',
-                  'focus-visible:ring-ring outline-none focus-visible:ring-2',
-                  'disabled:cursor-default disabled:opacity-50',
-                  selectedEqId === preset.eqId
-                    ? 'border-primary bg-primary/10 font-medium'
-                    : 'border-border hover:border-muted-foreground/40',
+              <div key={preset.eqId} className="flex flex-col gap-2">
+                <button
+                  type="button"
+                  disabled={disabled}
+                  aria-pressed={selectedEqId === preset.eqId}
+                  onClick={() => void device.setEqPreset(preset.eqId)}
+                  className={cn(
+                    'rounded-lg border px-3 py-2 text-left text-sm transition-colors',
+                    'focus-visible:ring-ring outline-none focus-visible:ring-2',
+                    'disabled:cursor-default disabled:opacity-50',
+                    selectedEqId === preset.eqId
+                      ? 'border-primary bg-primary/10 font-medium'
+                      : 'border-border hover:border-muted-foreground/40',
+                  )}
+                >
+                  {preset.name}
+                </button>
+                {editable && preset.bands.length > 0 && (
+                  <CurveEditor
+                    preset={preset}
+                    disabled={disabled}
+                    onCommit={(gains) => void device.setEqCurve(preset.eqId, gains)}
+                  />
                 )}
-              >
-                {preset.name}
-              </button>
+              </div>
             ))}
           </div>
         )}
       </CardContent>
     </Card>
+  )
+}
+
+function bandLabel(frequency: number): string {
+  return frequency >= 1000 ? `${Number((frequency / 1000).toFixed(1))} kHz` : `${frequency} Hz`
+}
+
+/** One slider per band; drags stay local and the curve is written once, on release. */
+function CurveEditor({
+  preset,
+  disabled,
+  onCommit,
+}: {
+  preset: EqPreset
+  disabled: boolean
+  onCommit: (gains: number[]) => void
+}) {
+  const [draft, setDraft] = useState<number[] | null>(null)
+  const gains = draft ?? preset.bands.map((band) => band.dbValue)
+  return (
+    <div className="flex flex-col gap-2 pl-2">
+      {preset.bands.map((band, i) => (
+        <div key={band.frequency} className="flex items-center gap-3">
+          <span className="text-muted-foreground w-14 shrink-0 text-xs tabular-nums">{bandLabel(band.frequency)}</span>
+          <Slider
+            value={[gains[i]]}
+            min={preset.minValue}
+            max={preset.maxValue}
+            step={1}
+            disabled={disabled}
+            aria-label={`${bandLabel(band.frequency)} gain`}
+            onValueChange={(next) => {
+              const value = Array.isArray(next) ? next[0] : next
+              setDraft(gains.map((gain, j) => (j === i ? value : gain)))
+            }}
+            onValueCommitted={(committed) => {
+              // Use the committed value, not `draft`: keyboard input fires change
+              // and commit in one event, before `draft` has re-rendered.
+              const value = Array.isArray(committed) ? committed[0] : committed
+              onCommit(gains.map((gain, j) => (j === i ? value : gain)))
+              setDraft(null)
+            }}
+          />
+          <span className="w-8 shrink-0 text-right text-xs tabular-nums">{gains[i] > 0 ? `+${gains[i]}` : gains[i]}</span>
+        </div>
+      ))}
+    </div>
   )
 }

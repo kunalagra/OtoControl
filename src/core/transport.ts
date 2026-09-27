@@ -56,12 +56,21 @@ export const NOTHING_BLE_DATA_UUID = 'ca235943-1810-45e6-8326-fc8ca3bc45ce';
  */
 export const HEYMELODY_SPP_UUID = '0000079a-d102-11e1-9b23-00025b00a5a5';
 
+/**
+ * The standard Serial Port Profile service. realme's catalog marks most TL
+ * models `TYPE_DEFAULT`, which connects here rather than on the HeyMelody UUID.
+ * Generic: any SPP device offers it, so the driver's identity handshake decides.
+ */
+export const STANDARD_SPP_UUID = '00001101-0000-1000-8000-00805f9b34fb';
+
 export type ProtocolGeneration = 'gaia' | 'mdr-v1' | 'mdr-v2' | 'nothing-v1' | 'heymelody';
 
 export interface KnownService {
   uuid: string;
   brand: Brand;
   protocol: ProtocolGeneration;
+  /** Offered by devices of any brand; ranked after every brand-specific service. */
+  generic?: boolean;
 }
 
 /**
@@ -82,6 +91,7 @@ export const KNOWN_SERVICES: KnownService[] = [
   { uuid: SONY_MDR_V1_UUID, brand: 'sony', protocol: 'mdr-v1' },
   { uuid: NOTHING_SPP_UUID, brand: 'nothing', protocol: 'nothing-v1' },
   { uuid: HEYMELODY_SPP_UUID, brand: 'heymelody', protocol: 'heymelody' },
+  { uuid: STANDARD_SPP_UUID, brand: 'heymelody', protocol: 'heymelody', generic: true },
 ];
 
 /**
@@ -241,7 +251,7 @@ export async function listGrantedPorts(): Promise<GrantedPort[]> {
     const service = serviceForPort(port);
     if (service) granted.push({ port, service });
   }
-  return granted;
+  return granted.sort((a, b) => Number(a.service.generic ?? false) - Number(b.service.generic ?? false));
 }
 
 /**

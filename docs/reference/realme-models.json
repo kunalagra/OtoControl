@@ -1,0 +1,324 @@
+{
+  "source": "realme Link 5.5.514 bundled headsetRusConfig (base/assets/headsetRusConfig), VENDOR_TL models with a modelId",
+  "models": [
+    {
+      "modelId": "061012",
+      "model": "realme Buds Air 3S",
+      "noiseItems": []
+    },
+    {
+      "modelId": "062012",
+      "model": "realme Buds Air 5",
+      "noiseItems": [
+        "ITEM_NOISE_REDUCTION",
+        "ITEM_NOISE_CLOSE",
+        "ITEM_NOISE_TRANSPARENT",
+        "ITEM_SMART_REDUCTION",
+        "ITEM_DEEP_REDUCTION",
+        "ITEM_MEDIUM_REDUCTION",
+        "ITEM_LIGHT_REDUCTION"
+      ]
+    },
+    {
+      "modelId": "061C12",
+      "model": "realme Buds Air 5 Pro",
+      "noiseItems": [
+        "ITEM_NOISE_REDUCTION",
+        "ITEM_NOISE_CLOSE",
+        "ITEM_NOISE_TRANSPARENT",
+        "ITEM_SMART_REDUCTION",
+        "ITEM_DEEP_REDUCTION",
+        "ITEM_MEDIUM_REDUCTION",
+        "ITEM_LIGHT_REDUCTION"
+      ]
+    },
+    {
+      "modelId": "063412",
+      "model": "realme Buds Air6",
+      "noiseItems": [
+        "ITEM_NOISE_REDUCTION",
+        "ITEM_NOISE_CLOSE",
+        "ITEM_NOISE_TRANSPARENT",
+        "ITEM_SMART_REDUCTION",
+        "ITEM_DEEP_REDUCTION",
+        "ITEM_MEDIUM_REDUCTION",
+        "ITEM_LIGHT_REDUCTION"
+      ]
+    },
+    {
+      "modelId": "063012",
+      "model": "realme Buds Air6 Pro",
+      "noiseItems": [
+        "ITEM_NOISE_REDUCTION",
+        "ITEM_NOISE_CLOSE",
+        "ITEM_NOISE_TRANSPARENT",
+        "ITEM_SMART_REDUCTION",
+        "ITEM_DEEP_REDUCTION",
+        "ITEM_MEDIUM_REDUCTION",
+        "ITEM_LIGHT_REDUCTION"
+      ]
+    },
+    {
+      "modelId": "064812",
+      "model": "realme Buds Air7",
+      "noiseItems": [
+        "ITEM_NOISE_REDUCTION",
+        "ITEM_NOISE_CLOSE",
+        "ITEM_NOISE_TRANSPARENT",
+        "ITEM_SMART_REDUCTION",
+        "ITEM_DEEP_REDUCTION",
+        "ITEM_MEDIUM_REDUCTION",
+        "ITEM_LIGHT_REDUCTION"
+      ]
+    },
+    {
+      "modelId": "064C12",
+      "model": "realme Buds Air7 Pro",
+      "noiseItems": [
+        "ITEM_NOISE_REDUCTION",
+        "ITEM_NOISE_CLOSE",
+        "ITEM_NOISE_TRANSPARENT",
+        "ITEM_SMART_REDUCTION",
+        "ITEM_DEEP_REDUCTION",
+        "ITEM_MEDIUM_REDUCTION",
+        "ITEM_LIGHT_REDUCTION"
+      ]
+    },
+    {
+      "modelId": "066812",
+      "model": "realme Buds Air8",
+      "noiseItems": [
+        "ITEM_NOISE_REDUCTION",
+        "ITEM_NOISE_CLOSE",
+        "ITEM_NOISE_TRANSPARENT",
+        "ITEM_SMART_REDUCTION",
+        "ITEM_DEEP_REDUCTION",
+        "ITEM_MEDIUM_REDUCTION",
+        "ITEM_LIGHT_REDUCTION"
+      ]
+    },
+    {
+      "modelId": "066C12",
+      "model": "realme Buds Air8 Pro",
+      "noiseItems": [
+        "ITEM_NOISE_REDUCTION",
+        "ITEM_NOISE_CLOSE",
+        "ITEM_NOISE_TRANSPARENT",
+        "ITEM_SMART_REDUCTION",
+        "ITEM_DEEP_REDUCTION",
+        "ITEM_MEDIUM_REDUCTION",
+        "ITEM_LIGHT_REDUCTION"
+      ]
+    },
+    {
+      "modelId": "065C12",
+      "model": "realme Buds Clip",
+      "noiseItems": []
+    },
+    {
+      "modelId": "064012",
+      "model": "realme Buds N1",
+      "noiseItems": [
+        "ITEM_NOISE_REDUCTION",
+        "ITEM_NOISE_CLOSE",
+        "ITEM_NOISE_TRANSPARENT",
+        "ITEM_DEEP_REDUCTION",
+        "ITEM_MEDIUM_REDUCTION",
+        "ITEM_LIGHT_REDUCTION"
+      ]
+    },
+    {
+      "modelId": "063812",
+      "model": "realme Buds N1 Pro",
+      "noiseItems": [
+        "ITEM_NOISE_REDUCTION",
+        "ITEM_NOISE_CLOSE",
+        "ITEM_NOISE_TRANSPARENT",
+        "ITEM_SMART_REDUCTION",
+        "ITEM_DEEP_REDUCTION",
+        "ITEM_MEDIUM_REDUCTION",
+        "ITEM_LIGHT_REDUCTION"
+      ]
+    },
+    {
+      "modelId": "064412",
+      "model": "realme Buds T01",
+      "noiseItems": []
+    },
+    {
+      "modelId": "065052",
+      "model": "realme Buds T02",
+      "noiseItems": []
+    },
+    {
+      "modelId": "062812",
+      "model": "realme Buds T110",
+      "noiseItems": []
+    },
+    {
+      "modelId": "065452",
+      "model": "realme Buds T200",
+      "noiseItems": [
+        "ITEM_NOISE_REDUCTION",
+        "ITEM_NOISE_CLOSE",
+        "ITEM_NOISE_TRANSPARENT"
+      ]
+    },
+    {
+      "modelId": "065052",
+      "model": "realme Buds T200 Lite",
+      "noiseItems": []
+    },
+    {
+      "modelId": "065852",
+      "model": "realme Buds T200x",
+      "noiseItems": [
+        "ITEM_NOISE_REDUCTION",
+        "ITEM_NOISE_CLOSE",
+        "ITEM_NOISE_TRANSPARENT"
+      ]
+    },
+    {
+      "modelId": "062412",
+      "model": "realme Buds T300",
+      "noiseItems": [
+        "ITEM_NOISE_REDUCTION",
+        "ITEM_NOISE_CLOSE",
+        "ITEM_NOISE_TRANSPARENT"
+      ]
+    },
+    {
+      "modelId": "066452",
+      "model": "realme Buds T300 Pro",
+      "noiseItems": [
+        "ITEM_NOISE_REDUCTION",
+        "ITEM_NOISE_CLOSE",
+        "ITEM_NOISE_TRANSPARENT",
+        "ITEM_SMART_REDUCTION",
+        "ITEM_DEEP_REDUCTION",
+        "ITEM_MEDIUM_REDUCTION",
+        "ITEM_LIGHT_REDUCTION"
+      ]
+    },
+    {
+      "modelId": "063C12",
+      "model": "realme Buds T310",
+      "noiseItems": [
+        "ITEM_NOISE_REDUCTION",
+        "ITEM_NOISE_CLOSE",
+        "ITEM_NOISE_TRANSPARENT",
+        "ITEM_DEEP_REDUCTION",
+        "ITEM_MEDIUM_REDUCTION",
+        "ITEM_LIGHT_REDUCTION"
+      ]
+    },
+    {
+      "modelId": "066452",
+      "model": "realme Buds T500 Pro",
+      "noiseItems": [
+        "ITEM_NOISE_REDUCTION",
+        "ITEM_NOISE_CLOSE",
+        "ITEM_NOISE_TRANSPARENT",
+        "ITEM_SMART_REDUCTION",
+        "ITEM_DEEP_REDUCTION",
+        "ITEM_MEDIUM_REDUCTION",
+        "ITEM_LIGHT_REDUCTION"
+      ]
+    },
+    {
+      "modelId": "067452",
+      "model": "realme Buds T500 Pro HP Ed",
+      "noiseItems": [
+        "ITEM_NOISE_REDUCTION",
+        "ITEM_NOISE_CLOSE",
+        "ITEM_NOISE_TRANSPARENT",
+        "ITEM_SMART_REDUCTION",
+        "ITEM_DEEP_REDUCTION",
+        "ITEM_MEDIUM_REDUCTION",
+        "ITEM_LIGHT_REDUCTION"
+      ]
+    },
+    {
+      "modelId": "050812",
+      "model": "realme Buds Wireless 3",
+      "noiseItems": [
+        "ITEM_NOISE_REDUCTION",
+        "ITEM_NOISE_CLOSE",
+        "ITEM_NOISE_TRANSPARENT"
+      ]
+    },
+    {
+      "modelId": "050C12",
+      "model": "realme Buds Wireless 3 Neo",
+      "noiseItems": []
+    },
+    {
+      "modelId": "051412",
+      "model": "realme Buds Wireless 5 ANC",
+      "noiseItems": [
+        "ITEM_NOISE_REDUCTION",
+        "ITEM_NOISE_CLOSE",
+        "ITEM_NOISE_TRANSPARENT",
+        "ITEM_SMART_REDUCTION",
+        "ITEM_DEEP_REDUCTION",
+        "ITEM_MEDIUM_REDUCTION",
+        "ITEM_LIGHT_REDUCTION"
+      ]
+    },
+    {
+      "modelId": "051812",
+      "model": "realme Buds Wireless 6 Neo",
+      "noiseItems": []
+    },
+    {
+      "modelId": "066012",
+      "model": "realme TechLife Buds",
+      "noiseItems": []
+    },
+    {
+      "modelId": "067C52",
+      "model": "realme TechLife Buds T200 Lite",
+      "noiseItems": []
+    },
+    {
+      "modelId": "067052",
+      "model": "realme TechLife Buds T500",
+      "noiseItems": [
+        "ITEM_NOISE_REDUCTION",
+        "ITEM_NOISE_CLOSE",
+        "ITEM_NOISE_TRANSPARENT"
+      ]
+    },
+    {
+      "modelId": "067852",
+      "model": "realme TechLife Buds T500 Pro",
+      "noiseItems": [
+        "ITEM_NOISE_REDUCTION",
+        "ITEM_NOISE_CLOSE",
+        "ITEM_NOISE_TRANSPARENT",
+        "ITEM_SMART_REDUCTION",
+        "ITEM_DEEP_REDUCTION",
+        "ITEM_MEDIUM_REDUCTION",
+        "ITEM_LIGHT_REDUCTION"
+      ]
+    },
+    {
+      "modelId": "051C52",
+      "model": "realme TechLife Buds Z3",
+      "noiseItems": []
+    },
+    {
+      "modelId": "052052",
+      "model": "realme TechLife Buds Z3 ANC",
+      "noiseItems": [
+        "ITEM_NOISE_REDUCTION",
+        "ITEM_NOISE_CLOSE",
+        "ITEM_NOISE_TRANSPARENT",
+        "ITEM_SMART_REDUCTION",
+        "ITEM_DEEP_REDUCTION",
+        "ITEM_MEDIUM_REDUCTION",
+        "ITEM_LIGHT_REDUCTION"
+      ]
+    }
+  ]
+}

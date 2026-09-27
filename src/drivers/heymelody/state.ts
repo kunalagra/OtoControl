@@ -9,11 +9,15 @@
  */
 
 import type { ConnectionStatus } from '@/core/connection';
-import { decodeAncNotification } from './commands';
-import type { BatteryCell, EqPreset } from './commands';
+import { decodeAncNotification } from './protocol/anc';
+import type { BatteryCell } from './protocol/battery';
+import type { WearCell } from './protocol/wear';
+import type { EqPreset } from './protocol/eq';
+import type { HeyMelodyFeature } from './protocol/capability';
+import type { VersionEntry } from './protocol/identity';
 import type { HeyMelodyCatalogEntry } from './catalog.generated';
 
-export type HeyMelodyCapability = 'battery' | 'anc' | 'eq';
+export type HeyMelodyCapability = HeyMelodyFeature;
 
 export interface HeyMelodyInfo {
   /**
@@ -26,6 +30,10 @@ export interface HeyMelodyInfo {
   model: string | null;
   productId: string | null;
   catalog: HeyMelodyCatalogEntry | null;
+  /** `0x010B`'s colour bucket, which selects the per-colour product render. */
+  colourId: number | null;
+  /** `0x0105` firmware version per device. */
+  version: VersionEntry[];
 }
 
 export interface HeyMelodyState {
@@ -33,6 +41,10 @@ export interface HeyMelodyState {
   error: string | null;
   info: HeyMelodyInfo;
   battery: BatteryCell[];
+  /** Live-only, like battery: never persisted. */
+  wear: WearCell[];
+  /** Find-my-earbuds is ringing. Live-only: resets on disconnect. */
+  finding: boolean;
   /** Index of the one currently-active ANC mode — not a list of every mode
    * this device supports; see `CurrentNoiseModeInfo`'s doc comment in
    * `commands.ts` for why. */
@@ -47,8 +59,10 @@ export interface HeyMelodyState {
 export const initialHeyMelodyState: HeyMelodyState = {
   status: 'disconnected',
   error: null,
-  info: { model: null, productId: null, catalog: null },
+  info: { model: null, productId: null, catalog: null, colourId: null, version: [] },
   battery: [],
+  wear: [],
+  finding: false,
   ancModeIndex: null,
   ancLevel: null,
   eqCurrentPreset: null,
@@ -85,7 +99,8 @@ export const captureDurable = (state: HeyMelodyState): HeyMelodyDurableState => 
 export const applyDurable = (payload: object): Partial<HeyMelodyState> => {
   const snapshot = payload as HeyMelodyDurableState;
   return {
-    info: snapshot.info,
+    // Snapshots saved before colourId/version existed lack them.
+    info: { ...snapshot.info, colourId: snapshot.info?.colourId ?? null, version: snapshot.info?.version ?? [] },
     ancModeIndex: snapshot.ancModeIndex ?? null,
     ancLevel: snapshot.ancLevel ?? null,
     eqCurrentPreset: snapshot.eqCurrentPreset ?? null,

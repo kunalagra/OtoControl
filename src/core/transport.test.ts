@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import {
   AIROHA_SERVICE_UUID,
@@ -10,7 +10,9 @@ import {
   SerialTransport,
   SONY_MDR_V1_UUID,
   SONY_MDR_V2_UUID,
+  STANDARD_SPP_UUID,
   isUnreachable,
+  listGrantedPorts,
   serviceForPort,
   servicesFor,
 } from './transport';
@@ -50,7 +52,26 @@ describe('serviceForPort', () => {
   });
 
   it('rejects an unrelated service', () => {
-    expect(serviceForPort(portWith('00001101-0000-1000-8000-00805f9b34fb'))).toBeNull();
+    // A2DP source: a real Bluetooth service no driver speaks.
+    expect(serviceForPort(portWith('0000110a-0000-1000-8000-00805f9b34fb'))).toBeNull();
+  });
+
+  it('routes the standard SPP service to the HeyMelody driver as a generic service', () => {
+    expect(serviceForPort(portWith(STANDARD_SPP_UUID))).toMatchObject({ brand: 'heymelody', generic: true });
+  });
+});
+
+describe('listGrantedPorts', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('lists generic services after brand-specific ones', async () => {
+    vi.stubGlobal('navigator', {
+      serial: { getPorts: async () => [portWith(STANDARD_SPP_UUID), portWith(HEYMELODY_SPP_UUID)] },
+    });
+    const granted = await listGrantedPorts();
+    expect(granted.map((entry) => entry.service.uuid)).toEqual([HEYMELODY_SPP_UUID, STANDARD_SPP_UUID]);
   });
 });
 
@@ -79,7 +100,7 @@ describe('KNOWN_SERVICES', () => {
 
 describe('servicesFor', () => {
   it('resolves heymelody services', () => {
-    expect(servicesFor('heymelody')).toEqual([HEYMELODY_SPP_UUID]);
+    expect(servicesFor('heymelody')).toEqual([HEYMELODY_SPP_UUID, STANDARD_SPP_UUID]);
   });
 });
 

@@ -1,14 +1,19 @@
 import type { DeviceArtwork } from '@/core/artwork';
+import { HEYMELODY_CATALOG_IMAGES, HEYMELODY_COLOUR_IMAGES } from './heymelodyCatalog.generated';
 
 /**
- * No per-model artwork exists for this driver yet — 137 devices across 3
- * brands, and the app's own product images are cloud-served rather than
- * bundled (spec §2 non-goals). Empty `hero`/`heroInactive` deliberately route
- * `DeviceImage` into its existing "Product art unavailable" placeholder
- * (`ui/device/DeviceImage.tsx`'s `src === ''` branch) rather than pointing at
- * an asset that does not exist. Replace once real per-model renders are
- * sourced.
+ * The vendor catalog render for this productId — the one for the unit's own
+ * colour (`0x010B`) when the catalog has per-colour renders, else the model's
+ * default. No greyed variant exists, so the disconnected state reuses the hero
+ * and relies on the component's desaturation. A model the catalog has no
+ * render for gets the placeholder frame — showing another model's picture
+ * would be the only alternative.
  */
-export function heymelodyArtwork(): DeviceArtwork {
-  return { hero: '', heroInactive: '', aspect: 1 };
+export function heymelodyArtwork(productId: string | null, colourId?: number | null): DeviceArtwork {
+  const id = productId?.toUpperCase();
+  const remote = id
+    ? ((colourId != null ? HEYMELODY_COLOUR_IMAGES[id]?.[String(colourId)] : undefined) ?? HEYMELODY_CATALOG_IMAGES[id])
+    : undefined;
+  if (!remote) return { hero: '', heroInactive: '', aspect: 1 };
+  return { hero: remote, heroInactive: remote, aspect: 1 };
 }

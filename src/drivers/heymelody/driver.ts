@@ -10,7 +10,7 @@ import { servicesFor } from '@/core/transport';
 import { heymelodyArtwork } from './assets';
 import { HeyMelodyDevice } from './device';
 import type { HeyMelodyState } from './device';
-import { BATTERY_LABEL } from './commands';
+import { BATTERY_LABEL } from './protocol/battery';
 import { HeyMelodyNoise } from './sections/Noise';
 import { HeyMelodySound } from './sections/Sound';
 import { HeyMelodySystem } from './sections/System';
@@ -39,7 +39,7 @@ export const HEYMELODY_DRIVER = {
     const known = state.capabilities.size > 0;
     return HEYMELODY_SECTIONS.filter((section) => {
       if (section.id === 'noise') return !known || state.capabilities.has('anc');
-      if (section.id === 'sound') return !known || state.capabilities.has('eq');
+      if (section.id === 'sound') return !known || state.capabilities.has('eq') || state.capabilities.has('eqCustom');
       return true;
     });
   },
@@ -51,7 +51,7 @@ export const HEYMELODY_DRIVER = {
       .map((cell) => `${BATTERY_LABEL[cell.device]} ${cell.level}%${cell.charging ? ' ⚡' : ''}`)
       .join(' · ');
   },
-  // No wear-detection command modeled this phase — true-when-unknown per the interface's own contract.
-  worn: (_state: HeyMelodyState) => true,
-  artwork: (_state: HeyMelodyState) => heymelodyArtwork(),
+  // True when wear is unknown, per the interface's own contract.
+  worn: (state: HeyMelodyState) => state.wear.length === 0 || state.wear.some((cell) => cell.inEar),
+  artwork: (state: HeyMelodyState) => heymelodyArtwork(state.info.productId, state.info.colourId),
 } as const satisfies DeviceDriver<HeyMelodyDevice, HeyMelodyState>;

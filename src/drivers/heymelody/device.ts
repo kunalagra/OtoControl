@@ -1,26 +1,22 @@
 /**
  * Orchestration: owns the transport, the client and the observable state.
  *
- * Capability detection is opportunistic (spec §3.5) — `refresh()` tries
- * battery, ANC and EQ independently and tolerates each failing, building
- * `capabilities` from whichever actually answered. Mirrors
- * `drivers/nothing/device.ts`'s probing, not Sony's live bitmap negotiation,
- * since neither `0x0100`'s bit mapping nor `0x010D`'s reply shape was ever
- * captured for this protocol.
+ * Connect reads the always-allowed identity commands (capability bitmap
+ * `0x0100`, productId, colour), then polls only what the bitmap reports —
+ * as both vendor apps do. Firmware that sends no bitmap falls back to
+ * probing battery, ANC and EQ.
  */
 
-import {
-  Cmd,
-  decodeAncDirectQuery,
-  decodeBattery,
-  decodeEqAll,
-  decodeEqCurrent,
-  decodeNotificationSupport,
-  decodeProductId,
-  encodeRegisterNotify,
-  encodeSetAncMode,
-  encodeSetEqPreset,
-} from './commands';
+import { Cmd } from './protocol/cmd';
+import { decodeColourId, decodeProductId, decodeVersion } from './protocol/identity';
+import { decodeBattery, decodeBatteryList } from './protocol/battery';
+import { decodeWear, decodeWearList } from './protocol/wear';
+import { decodeAncDirectQuery, encodeSetAncMode } from './protocol/anc';
+import { decodeEqAll, decodeEqCurrent, decodeEqList, decodeSetEqCurveAck, encodeSetEqCurve, encodeSetEqPreset } from './protocol/eq';
+import type { EqPreset } from './protocol/eq';
+import { PushEvent, decodeNotificationSupport, encodeRegisterNotify } from './protocol/notify';
+import { decodeCapabilities, featuresFromCommands } from './protocol/capability';
+import { statusBody } from './protocol/status';
 import type { HeyMelodyFrame } from './sppFrame';
 import { HeyMelodyClient } from './client';
 import { catalogEntryFor } from './catalog';
@@ -56,17 +52,20 @@ type Listener = (state: HeyMelodyState) => void;
 /**
  * How long an opportunistic capability probe (battery/ANC/EQ, plus
  * `RegisterNotify`) waits before giving up. These are all "might not exist"
- * reads (spec §3.5) run serially in `#refreshAll`, so at the client's default
- * `DEFAULT_TIMEOUT_MS` a silent device makes connect take ~7.5s. Matches
- * `drivers/nothing/device.ts`'s `PROBE_TIMEOUT_MS` — same rationale, same
- * value. `QueryProductId` is the one exception: every real device answers
- * it, so it keeps the client's default timeout.
+ * reads (spec §3.5) run serially in `#refreshAll`, so this bounds how long a
+ * device lacking a feature stalls connect. Same value as
+ * `drivers/nothing/device.ts`'s `PROBE_TIMEOUT_MS`, and injectable the same
+ * way. `QueryProductId` keeps the client's default timeout.
  */
 const PROBE_TIMEOUT_MS = 400;
+
+const NOT_HEYMELODY_ERROR = 'This does not look like a HeyMelody or realme device.';
 
 export interface HeyMelodyDeviceOptions {
   /** Injected so tests do not pay `DEFAULT_TIMEOUT_MS` per unanswered command. */
   timeoutMs?: number;
+  /** Injected so tests do not pay `PROBE_TIMEOUT_MS` per unanswered probe. */
+  probeTimeoutMs?: number;
 }
 
 const stateStoreHooks: StateStoreHooks<HeyMelodyState> = {
@@ -80,10 +79,14 @@ export class HeyMelodyDevice implements Persistable {
   readonly #store: StateStore<HeyMelodyState>;
   readonly #session: DeviceSession<HeyMelodyClient>;
   readonly #timeoutMs?: number;
+  readonly #probeTimeoutMs: number;
   #refreshing = false;
+  /** Last curve the device confirmed per eqId — what a failed curve write rolls back to. */
+  readonly #confirmedEq = new Map<number, EqPreset>();
 
   constructor(openTransport: TransportOpener = openSerialTransport, options: HeyMelodyDeviceOptions = {}) {
     this.#timeoutMs = options.timeoutMs;
+    this.#probeTimeoutMs = options.probeTimeoutMs ?? PROBE_TIMEOUT_MS;
     this.#store = new StateStore(
       { ...initialHeyMelodyState, status: isWebSerialSupported() ? 'disconnected' : 'unsupported' },
       stateStoreHooks,
@@ -182,16 +185,16 @@ export class HeyMelodyDevice implements Persistable {
     if (!client) return;
     try {
       const { status, ids } = decodeNotificationSupport(
-        await client.request(Cmd.QueryNotificationSupport, [], { timeoutMs: PROBE_TIMEOUT_MS }),
+        await client.request(Cmd.QueryNotificationSupport, [], { timeoutMs: this.#probeTimeoutMs }),
       );
       if (status !== 0) throw new Error(`QueryNotificationSupport returned non-zero status ${status}`);
-      await client.request(Cmd.RegisterNotify, encodeRegisterNotify(ids), { timeoutMs: PROBE_TIMEOUT_MS });
+      await client.request(Cmd.RegisterNotify, encodeRegisterNotify(ids), { timeoutMs: this.#probeTimeoutMs });
       return;
     } catch (error) {
       console.debug('[heymelody] QueryNotificationSupport handshake failed, falling back to a bare RegisterNotify', error);
     }
     try {
-      await client.request(Cmd.RegisterNotify, [], { timeoutMs: PROBE_TIMEOUT_MS });
+      await client.request(Cmd.RegisterNotify, [], { timeoutMs: this.#probeTimeoutMs });
     } catch (error) {
       console.warn('[heymelody] RegisterNotify failed', error);
     }
@@ -199,8 +202,29 @@ export class HeyMelodyDevice implements Persistable {
 
   #onNotification(frame: HeyMelodyFrame): void {
     if (frame.cmd === Cmd.ActiveReport) {
-      this.#replace(applyAncEvent(this.#store.state, frame.payload));
+      const event = frame.payload[0];
+      const list = frame.payload.subarray(1);
+      try {
+        if (event === PushEvent.Battery) this.#patch({ battery: decodeBatteryList(list) });
+        else if (event === PushEvent.Wear) this.#patch({ wear: decodeWearList(list) });
+        else this.#replace(applyAncEvent(this.#store.state, frame.payload));
+      } catch (error) {
+        console.debug('[heymelody] unreadable push', event, error);
+      }
+    } else if (frame.cmd === Cmd.PushEqCurrent && frame.payload.length > 0) {
+      this.#patch({ eqCurrentPreset: frame.payload[0] });
+    } else if (frame.cmd === Cmd.PushEqCurves) {
+      try {
+        this.#setConfirmedEq(decodeEqList(frame.payload));
+      } catch (error) {
+        console.debug('[heymelody] unreadable EQ push', error);
+      }
     }
+  }
+
+  #setConfirmedEq(presets: EqPreset[]): void {
+    for (const preset of presets) this.#confirmedEq.set(preset.eqId, preset);
+    this.#patch({ eqPresets: presets });
   }
 
   // --- refresh -----------------------------------------------------------
@@ -217,107 +241,147 @@ export class HeyMelodyDevice implements Persistable {
   }
 
   async #refreshAll(client: HeyMelodyClient): Promise<void> {
+    const identified = await this.#readProductId(client);
+    const commands = await this.#readCommands(client);
+    // The link dropped mid-connect: onDrop already reset state and set the real reason.
+    if (this.#session.client !== client) return;
+    if (!identified && !commands) {
+      // Every HeyMelody/realme TL device answers one of these. Anything else — often a
+      // generic SPP port — is released rather than held, so auto-connect can move on.
+      await this.disconnect();
+      this.#patch({ error: NOT_HEYMELODY_ERROR });
+      return;
+    }
+    await this.#readColour(client);
+    const capabilities = commands ? await this.#pollReported(client, commands) : await this.#probeAll(client);
+    if (this.#session.client !== client) return;
+    this.#patch({ capabilities });
+  }
+
+  async #readProductId(client: HeyMelodyClient): Promise<boolean> {
     try {
       const { status, productId } = decodeProductId(await client.request(Cmd.QueryProductId));
-      // A non-zero status means the productId bytes alongside it are not
-      // trustworthy. This was briefly relaxed to a log-only check on the
-      // grounds that the APK notes never define what `status` means — but
-      // 1812z/OppoPods's `ProductIdParser.parse()` independently gates on
-      // this exact byte for this exact command (`data[9] != 0 -> return
-      // null`, its `data[9]` being this driver's `payload[0]`), and the APK
-      // itself has a generic "status: 0=success" helper used the same way
-      // elsewhere (`commands/c.java`'s `j()`) — two independent sources now
-      // agree, so this reverts to discarding on non-zero status.
       if (status !== 0) throw new Error(`QueryProductId returned non-zero status ${status}`);
       const catalog = catalogEntryFor(productId);
-      // `info.model` is the catalog-resolved display name, not the raw
-      // productId — `core/manager.ts`'s constructor loop reads
-      // `state.info.model` generically off every driver (`rememberDeviceName`,
-      // `Adoptable.subscribe`'s own type), so it must exist and be
-      // human-readable here exactly like it does for every other driver.
-      this.#patch({ info: { model: catalog?.name ?? null, productId, catalog } });
+      this.#patch({ info: { ...this.#store.state.info, model: catalog?.name ?? null, productId, catalog } });
+      return true;
     } catch (error) {
       console.warn('[heymelody] QueryProductId failed', error);
+      return false;
     }
+  }
 
-    const capabilities = new Set<HeyMelodyCapability>();
+  /** The commands the firmware implements, or null when it sends no bitmap (then features are probed). */
+  async #readCommands(client: HeyMelodyClient): Promise<Set<number> | null> {
+    try {
+      return decodeCapabilities(await client.request(Cmd.QueryCapability));
+    } catch (error) {
+      console.debug('[heymelody] no capability bitmap, falling back to probing', error);
+      return null;
+    }
+  }
 
-    const probe = async (capability: HeyMelodyCapability, run: () => Promise<void>) => {
+  async #readColour(client: HeyMelodyClient): Promise<void> {
+    try {
+      const colourId = decodeColourId(await client.request(Cmd.QueryColourId, [], { timeoutMs: this.#probeTimeoutMs }));
+      this.#patch({ info: { ...this.#store.state.info, colourId } });
+    } catch (error) {
+      console.debug('[heymelody] QueryColourId failed', error);
+    }
+  }
+
+  /** Polls each feature the bitmap reports; one whose query fails is treated as absent. */
+  async #pollReported(client: HeyMelodyClient, commands: Set<number>): Promise<Set<HeyMelodyCapability>> {
+    const reported = featuresFromCommands(commands);
+    const found = new Set<HeyMelodyCapability>();
+    const read = async (feature: HeyMelodyCapability, run: () => Promise<void>) => {
+      if (!reported.has(feature)) return;
       try {
         await run();
-        capabilities.add(capability);
+        found.add(feature);
       } catch (error) {
-        // Expected, not exceptional: a probe not answering means this device
-        // simply lacks the feature, the same reasoning
-        // `drivers/nothing/device.ts`'s probe loop uses `console.debug` for.
-        console.debug(`[heymelody] ${capability} unavailable`, error);
+        console.debug(`[heymelody] reported ${feature} did not read`, error);
       }
     };
+    await read('version', () => this.#readVersion(client));
+    await read('battery', () => this.#readBattery(client));
+    await read('wear', () => this.#readWear(client));
+    await read('anc', () => this.#readAnc(client));
+    await read('eq', () => this.#readEq(client, commands));
+    for (const passthrough of ['find', 'eqCustom'] as const) if (reported.has(passthrough)) found.add(passthrough);
+    return found;
+  }
 
-    await probe('battery', async () => {
-      this.#patch({
-        battery: decodeBattery(await client.request(Cmd.Battery, [], { timeoutMs: PROBE_TIMEOUT_MS })),
-      });
-    });
+  /** Firmware without a bitmap: try the features that are safe to probe. */
+  async #probeAll(client: HeyMelodyClient): Promise<Set<HeyMelodyCapability>> {
+    const found = new Set<HeyMelodyCapability>();
+    const probe = async (feature: HeyMelodyCapability, run: () => Promise<void>) => {
+      try {
+        await run();
+        found.add(feature);
+      } catch (error) {
+        console.debug(`[heymelody] ${feature} unavailable`, error);
+      }
+    };
+    await probe('battery', () => this.#readBattery(client));
+    await probe('anc', () => this.#readAnc(client));
+    await probe('eq', () => this.#readEq(client, null));
+    return found;
+  }
 
-    await probe('anc', async () => {
-      // Note: 0x010C's reply is un-enveloped — it is not the 0x0204
-      // notification's `[outerSubtype, innerType, ...]` shape, so this uses
-      // the dedicated `decodeAncDirectQuery`, not `decodeAncNotification`.
-      // Request payload `[0x01, 0x01]`, not empty — confirmed directly from
-      // 1812z/OppoPods's current source (`buildPacket(cmd =
-      // Cmd.QUERY_ANC_MODE, payload = byteArrayOf(0x01, 0x01))`); an empty
-      // request here may simply go unanswered on real hardware.
-      const event = decodeAncDirectQuery(
-        await client.request(Cmd.QueryAncDirect, [0x01, 0x01], { timeoutMs: PROBE_TIMEOUT_MS }),
-      );
-      // A response that fails to decode at all is treated as "ANC
-      // unsupported/unrecognised" rather than guessed at — 0x010C's exact
-      // reply shape was never independently confirmed (spec §6).
-      if (!event) throw new Error('unrecognised ANC response shape');
+  async #readVersion(client: HeyMelodyClient): Promise<void> {
+    const version = decodeVersion(await client.request(Cmd.QueryVersion, [], { timeoutMs: this.#probeTimeoutMs }));
+    this.#patch({ info: { ...this.#store.state.info, version } });
+  }
+
+  async #readBattery(client: HeyMelodyClient): Promise<void> {
+    this.#patch({ battery: decodeBattery(await client.request(Cmd.Battery, [], { timeoutMs: this.#probeTimeoutMs })) });
+  }
+
+  async #readWear(client: HeyMelodyClient): Promise<void> {
+    this.#patch({ wear: decodeWear(await client.request(Cmd.QueryWear, [], { timeoutMs: this.#probeTimeoutMs })) });
+  }
+
+  async #readAnc(client: HeyMelodyClient): Promise<void> {
+    // `[0x01, 0x01]` is one of the three request forms realme Link's
+    // `PollCommandManager.x()` sends (`{}`, `{1,1}`, `{2,1}`, chosen per model).
+    const event = decodeAncDirectQuery(
+      await client.request(Cmd.QueryAncDirect, [0x01, 0x01], { timeoutMs: this.#probeTimeoutMs }),
+    );
+    if (!event) throw new Error('unrecognised ANC response shape');
+    if (event.kind === 'currentMode') {
       this.#patch({
         ancModeIndex: event.modeIndex ?? this.#store.state.ancModeIndex,
         ancLevel: event.level ?? this.#store.state.ancLevel,
       });
-    });
+    }
+  }
 
-    await probe('eq', async () => {
-      // The two EQ reads are independent per spec §3.5 — `0x0122` (QueryEqAll)
-      // is what actually supplies everything the Sound section renders, so it
-      // must still be attempted (and still able to mark `'eq'` capable) even
-      // when `0x010F` (QueryEqCurrent) throws first.
-      let answered = false;
+  /** The two EQ reads are independent: either answering marks EQ present. `commands` null = unknown, try both. */
+  async #readEq(client: HeyMelodyClient, commands: Set<number> | null): Promise<void> {
+    let answered = false;
+    if (commands === null || commands.has(Cmd.QueryEqCurrent)) {
       try {
         const { status, presetId } = decodeEqCurrent(
-          await client.request(Cmd.QueryEqCurrent, [], { timeoutMs: PROBE_TIMEOUT_MS }),
+          await client.request(Cmd.QueryEqCurrent, [], { timeoutMs: this.#probeTimeoutMs }),
         );
-        // Same reasoning as QueryProductId (see its comment): reverted to
-        // discarding on non-zero status now that two independent sources
-        // agree that convention holds in this protocol.
         if (status !== 0) throw new Error(`QueryEqCurrent returned non-zero status ${status}`);
         this.#patch({ eqCurrentPreset: presetId });
         answered = true;
       } catch (error) {
         console.debug('[heymelody] QueryEqCurrent failed', error);
       }
+    }
+    if (commands === null || commands.has(Cmd.QueryEqAll)) {
       try {
-        // Request payload `[0x01, 0x05]`, not empty — confirmed directly
-        // from 1812z/OppoPods's current source
-        // (`buildPacket(Cmd.QUERY_EQ_ALL, payload = byteArrayOf(0x01,
-        // 0x05))`).
-        this.#patch({
-          eqPresets: decodeEqAll(
-            await client.request(Cmd.QueryEqAll, [0x01, 0x05], { timeoutMs: PROBE_TIMEOUT_MS }),
-          ),
-        });
+        // Empty payload, as both vendor apps send it (realme `PollCommandManager.d()`, HeyTap `i.java:182`).
+        this.#setConfirmedEq(decodeEqAll(await client.request(Cmd.QueryEqAll, [], { timeoutMs: this.#probeTimeoutMs })));
         answered = true;
       } catch (error) {
         console.debug('[heymelody] QueryEqAll failed', error);
       }
-      if (!answered) throw new Error('neither EQ read answered');
-    });
-
-    this.#patch({ capabilities });
+    }
+    if (!answered) throw new Error('neither EQ read answered');
   }
 
   // --- writes ----------------------------------------------------------------
@@ -340,6 +404,38 @@ export class HeyMelodyDevice implements Persistable {
       await client.request(Cmd.SetAncMode, encodeSetAncMode(protocolIndex));
     } catch (error) {
       this.#patch({ ancModeIndex: previous, error: describeError(error) });
+    }
+  }
+
+  /** `0x0400 [1]` starts ringing, `[0]` stops; ack `0x8400 [status]` (realme `SetCommandManager:499-511`). */
+  async setFinding(on: boolean): Promise<void> {
+    const client = this.#session.client;
+    if (!client) return;
+    const previous = this.#store.state.finding;
+    this.#patch({ finding: on });
+    try {
+      statusBody(await client.request(Cmd.FindEarbuds, [on ? 0x01 : 0x00]), 'find earbuds');
+    } catch (error) {
+      this.#patch({ finding: previous, error: describeError(error) });
+    }
+  }
+
+  /** Writes a custom EQ's band gains (`0x0418` modify), clamped to its range; rolls back to the last confirmed curve on failure. */
+  async setEqCurve(eqId: number, gains: number[]): Promise<void> {
+    const client = this.#session.client;
+    if (!client) return;
+    const preset = this.#store.state.eqPresets.find((candidate) => candidate.eqId === eqId);
+    if (!preset) return;
+    const clamped = gains.map((gain) => Math.max(preset.minValue, Math.min(preset.maxValue, Math.round(gain))));
+    const next: EqPreset = { ...preset, bands: preset.bands.map((band, i) => ({ ...band, dbValue: clamped[i] })) };
+    const swap = (replacement: EqPreset) =>
+      this.#store.state.eqPresets.map((candidate) => (candidate.eqId === eqId ? replacement : candidate));
+    this.#patch({ eqPresets: swap(next) });
+    try {
+      decodeSetEqCurveAck(await client.request(Cmd.SetEqCurve, encodeSetEqCurve(preset, clamped)));
+      this.#confirmedEq.set(eqId, next);
+    } catch (error) {
+      this.#patch({ eqPresets: swap(this.#confirmedEq.get(eqId) ?? preset), error: describeError(error) });
     }
   }
 

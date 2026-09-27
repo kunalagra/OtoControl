@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { buildAncCapabilities } from './ancModel';
 import type { RawAncModeEntry } from './ancModel';
+import { catalogEntryFor } from './catalog';
 
 describe('buildAncCapabilities', () => {
   it('returns the empty model for undefined or empty input', () => {
@@ -127,5 +128,15 @@ describe('buildAncCapabilities', () => {
     const caps = buildAncCapabilities([{ protocolIndex: 0, modeType: 99 }]);
     expect(caps.keyToIndex).toEqual({ mode99: 0 });
     expect(caps.options).toEqual([{ key: 'mode99', protocolIndex: 0, children: [] }]);
+  });
+});
+
+describe('realme noise names (realme ItemFactory.java:747-765, 791-810)', () => {
+  it('names the realme Buds Air6 Pro modes from realme Link items, value 8 = Light', () => {
+    const caps = buildAncCapabilities(catalogEntryFor('063012')?.noiseReductionMode);
+    expect(caps.options.map((option) => option.key)).toEqual(['nc', 'transparency', 'off']);
+    expect(caps.indexToKey[3]).toBe('light');
+    expect(caps.keyToIndex.transparency).toBe(2);
+    expect(caps.keyToIndex.off).toBe(1);
   });
 });

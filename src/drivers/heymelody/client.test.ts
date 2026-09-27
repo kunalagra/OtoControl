@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { HeyMelodyClient, HeyMelodyUnsupportedError } from './client';
-import { Cmd, replyFor } from './commands';
+import { Cmd, replyFor } from './protocol/cmd';
 import { encodeSppFrame } from './sppFrame';
 import type { Transport } from '@/core/transport';
 

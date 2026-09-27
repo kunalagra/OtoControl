@@ -16,6 +16,8 @@ describe('captureDurable / applyDurable', () => {
         model: 'OPPO Enco Air4s',
         productId: '06F010',
         catalog: { productId: '06F010', name: 'OPPO Enco Air4s', brand: 'oppo', type: 'T1' },
+        colourId: 2,
+        version: [{ device: 'left', type: 0, version: '1.0.5' }],
       },
       battery: [{ device: 'left', level: 80, charging: false }],
       ancModeIndex: 2,
@@ -43,6 +45,19 @@ describe('captureDurable / applyDurable', () => {
     // Live-only fields are not part of the durable slice at all.
     expect(patch).not.toHaveProperty('battery');
     expect(patch).not.toHaveProperty('status');
+  });
+
+  it('restores a snapshot saved before colourId existed with colourId null', () => {
+    const legacy = {
+      info: { model: 'OPPO Enco Air4s', productId: '06F010', catalog: null },
+      ancModeIndex: null,
+      ancLevel: null,
+      eqCurrentPreset: null,
+      eqPresets: [],
+      capabilities: [],
+    };
+    expect(applyDurable(legacy).info?.colourId).toBeNull();
+    expect(applyDurable(legacy).info?.version).toEqual([]);
   });
 });
 
