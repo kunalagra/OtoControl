@@ -462,6 +462,27 @@ describe('SonyDevice connections', () => {
     });
   });
 
+  it('keeps the paired list on screen while a refresh re-reads it', async () => {
+    // An empty list is how the shell tells "this model has no list" (WF-C500),
+    // so a refresh that blanks the list while it re-reads it hides the Devices
+    // tab and bounces whoever was on it to Home for one round trip.
+    const { opener } = openerWithSupport([0x30, 0x31], {
+      '0x36:0x00': pairingListBody(),
+      '0x36:0x01': [0x37, 0x01, 0x00],
+    });
+    const device = new SonyDevice(opener);
+    await device.adoptPort(port);
+    expect(device.state.connections?.devices.length).toBe(2);
+
+    const seen: number[] = [];
+    const stop = device.subscribe((state) => seen.push(state.connections?.devices.length ?? -1));
+    await device.refresh();
+    stop();
+
+    expect(seen.length).toBeGreaterThan(0);
+    expect(seen.every((length) => length === 2)).toBe(true);
+  });
+
   it('does not ask without the pairing capability', async () => {
     const { opener, sent } = openerWithSupport([0x61], {});
     const device = new SonyDevice(opener);

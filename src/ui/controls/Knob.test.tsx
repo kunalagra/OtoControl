@@ -151,6 +151,22 @@ describe('Knob commit', () => {
     expect(readout()).toBe('50')
   })
 
+  it('lets the draft go when a drag snaps back onto the detent it started at', () => {
+    // The drag moved the draft to 53, the release snaps it back to 50, and 50
+    // is where it began. Nothing changed on the headphones, but the draft did —
+    // and a draft nobody releases masks every later reading for good.
+    const { knob, readout } = dial(50, { detent: 50 })
+    const svg = knob()
+
+    fireEvent.pointerDown(svg, at(0))
+    fireEvent.pointerMove(svg, at(9))
+    expect(readout()).toBe(String(valueAt(9)))
+
+    fireEvent.pointerUp(svg, at(9))
+
+    expect(readout()).toBe('50')
+  })
+
   it('commits one write per key press, as the pointer path does', () => {
     const { knob, readout, onCommit } = dial(50)
     const svg = knob()

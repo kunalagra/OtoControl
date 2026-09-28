@@ -725,13 +725,20 @@ export class SonyDevice implements Persistable {
     // read needs the device's connection type; the routing fix rides the
     // source-switch capability.
     this.#pairingType = pairingTypeFor(this.#store.state.capabilities);
+    //
+    // No placeholder list goes into state before the read answers. An empty
+    // list is what the shell reads as "this model has none" (WF-C500), so
+    // blanking it for the round trip hid the Devices tab on every Refresh, and
+    // kept it hidden when the read failed. A fresh connection starts from
+    // `null` anyway (the disconnect reset drops `connections`), so a list that
+    // is still here is this session's, and it stays until a new one replaces it.
     if (this.#pairingType !== null) {
-      this.#patch({ connections: { devices: [], playbackMac: null, playbackFixed: null } });
+      const empty = { devices: [], playbackMac: null, playbackFixed: null };
       await read('paired devices', async () => {
         const payload = await client.request(PAIRING_GET, this.#pairingType!, { table: 2 });
         const { devices, playbackMac } = decodePairedDevices(payload, this.#pairingType!);
         this.#patch({
-          connections: { ...this.#store.state.connections!, devices, playbackMac },
+          connections: { ...(this.#store.state.connections ?? empty), devices, playbackMac },
         });
       });
       if (has(0x31)) {
@@ -739,7 +746,7 @@ export class SonyDevice implements Persistable {
           const payload = await client.request(PAIRING_GET, 0x01, { table: 2 });
           this.#patch({
             connections: {
-              ...this.#store.state.connections!,
+              ...(this.#store.state.connections ?? empty),
               playbackFixed: decodePlaybackFixed(payload),
             },
           });

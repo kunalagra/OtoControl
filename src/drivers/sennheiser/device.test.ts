@@ -461,4 +461,71 @@ describe('MomentumDevice.setEqBand', () => {
 
     expect(device.state.eq.gains).toEqual([0, 0, 0, 7, 0]);
   });
+
+  it('keeps an earlier write to the same band when the newer one fails', async () => {
+    // The headphones took the first write and refused the second, so they sit
+    // at the first gain. A success that is no longer the newest word on its band
+    // still happened, and the rollback has to land on it — not on the gain from
+    // before both.
+    const harness = gaiaHarness(withFlatEq((_payload, call) => (call === 2 ? undefined : [])));
+    const device = new MomentumDevice(harness.open);
+    await device.adoptPort(port);
+
+    const first = device.setEqBand(2, 3);
+    const second = device.setEqBand(2, -4);
+    await Promise.all([first, second]);
+
+    expect(device.state.eq.gains[2]).toBe(3);
+  });
+});
+
+/** Every `setEqBand` the device was sent, as `[band, raw gain byte]`. */
+const bandWrites = (harness: ReturnType<typeof gaiaHarness>): Array<[number, number]> =>
+  harness
+    .sent()
+    .filter((frame) => frame.command === 0x1001)
+    .map((frame) => [frame.payload[0], frame.payload[1]]);
+
+describe('MomentumDevice.setEqGains', () => {
+  it('does not overwrite a band the user moved while the preset was being written', async () => {
+    const harness = gaiaHarness(withFlatEq([]));
+    const device = new MomentumDevice(harness.open);
+    await device.adoptPort(port);
+
+    const preset = device.setEqGains([1, 1, 1, 1, 1]);
+    const moved = device.setEqBand(4, -5);
+    await Promise.all([preset, moved]);
+
+    expect(device.state.eq.gains[4]).toBe(-5);
+    // The user's write is the last word on band 4 at the headphones too.
+    const band4 = bandWrites(harness).filter(([band]) => band === 4);
+    expect(band4).toHaveLength(1);
+  });
+
+  it('confirms a preset even when a band write landed during it', async () => {
+    // Calls: preset band 0 (1), the user's band 4 (2), preset bands 1–3 (3–5),
+    // then a failing write to band 0 (6). That failure must restore the
+    // preset's gain, which the headphones took, not the curve from before it.
+    const harness = gaiaHarness(withFlatEq((_payload, call) => (call === 6 ? undefined : [])));
+    const device = new MomentumDevice(harness.open);
+    await device.adoptPort(port);
+
+    await Promise.all([device.setEqGains([1, 1, 1, 1, 1]), device.setEqBand(4, -5)]);
+    await device.setEqBand(0, 9);
+
+    expect(device.state.eq.gains).toEqual([1, 1, 1, 1, -5]);
+  });
+
+  it('rolls back the bands a failed preset never wrote, and only those', async () => {
+    // Calls: preset band 0 (1), the user's band 4 (2), preset band 1 (3),
+    // preset band 2 fails (4). Bands 0–1 took the preset, band 4 took the
+    // user's gain, bands 2–3 never changed on the headphones.
+    const harness = gaiaHarness(withFlatEq((_payload, call) => (call === 4 ? undefined : [])));
+    const device = new MomentumDevice(harness.open);
+    await device.adoptPort(port);
+
+    await Promise.all([device.setEqGains([1, 1, 1, 1, 1]), device.setEqBand(4, -5)]);
+
+    expect(device.state.eq.gains).toEqual([1, 1, 0, 0, -5]);
+  });
 });

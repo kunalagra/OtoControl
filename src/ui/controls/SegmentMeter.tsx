@@ -218,7 +218,8 @@ export function SegmentLevel({
         }}
         onKeyDown={(event) => {
           if (disabled || !MOVING_KEYS.has(event.key)) return
-          startRef.current = shown()
+          // First keydown only: auto-repeat must not re-anchor (see `Fader`).
+          if (startRef.current === null) startRef.current = shown()
         }}
         onKeyUp={(event) => {
           if (disabled || !MOVING_KEYS.has(event.key)) return

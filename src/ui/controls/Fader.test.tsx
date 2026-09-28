@@ -129,6 +129,32 @@ describe('Fader', () => {
     expect(readout()).toBe('-2.0')
   })
 
+  it('drops a drag that the fader was disabled in the middle of', () => {
+    // The headphones dropped mid-drag: the pointerup never reaches a disabled
+    // input. On reconnect the fader must show what was read back, not the
+    // abandoned draft, and the next interaction must start from scratch.
+    const onCommit = vi.fn()
+    const props = { onCommit, range: RANGE, label: '100 Hz gain in decibels', caption: '100' }
+    const view = render(<Fader value={0} {...props} />)
+    const input = view.getByLabelText('100 Hz gain in decibels') as HTMLInputElement
+    const readout = () =>
+      view.container.querySelector('[data-slot="fader-readout"]')?.textContent ?? ''
+
+    fireEvent.pointerDown(input)
+    fireEvent.change(input, { target: { value: '5' } })
+    view.rerender(<Fader value={0} disabled {...props} />)
+    view.rerender(<Fader value={-2} {...props} />)
+
+    expect(readout()).toBe('-2.0')
+    expect(onCommit).not.toHaveBeenCalled()
+
+    // A fresh key press is judged against the value it started at, -2.
+    fireEvent.keyDown(input, { key: 'ArrowUp' })
+    fireEvent.change(input, { target: { value: '-1.5' } })
+    fireEvent.keyUp(input, { key: 'ArrowUp' })
+    expect(onCommit).toHaveBeenCalledExactlyOnceWith(-1.5)
+  })
+
   it('commits once per arrow key, not once per event', () => {
     const { input, onCommit } = fader(0)
 
@@ -144,6 +170,25 @@ describe('Fader', () => {
     fireEvent.keyUp(input, { key: 'ArrowUp' })
     expect(onCommit).toHaveBeenCalledTimes(2)
     expect(onCommit).toHaveBeenLastCalledWith(1)
+  })
+
+  it('commits the end of the range when a key is held until it stops moving', () => {
+    // Auto-repeat delivers a keydown per repeat and one keyup at the end. The
+    // repeats that can no longer move the value must not re-anchor the start,
+    // or the keyup sees "no change" and the fader snaps back to where it was.
+    const top = String(RANGE.max)
+    const nearTop = String(RANGE.max - 0.5)
+    const { input, onCommit } = fader(RANGE.max - 1)
+
+    fireEvent.keyDown(input, { key: 'ArrowUp' })
+    fireEvent.change(input, { target: { value: nearTop } })
+    fireEvent.keyDown(input, { key: 'ArrowUp', repeat: true })
+    fireEvent.change(input, { target: { value: top } })
+    // Pinned at the top: the repeat arrives, the value cannot move.
+    fireEvent.keyDown(input, { key: 'ArrowUp', repeat: true })
+    fireEvent.keyUp(input, { key: 'ArrowUp' })
+
+    expect(onCommit).toHaveBeenCalledExactlyOnceWith(RANGE.max)
   })
 
   it('does not write at all when a key press leaves the value where it was', () => {

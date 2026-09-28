@@ -87,6 +87,23 @@ export function Fader({
   const startRef = useRef<number | null>(null)
 
   const unknown = value === undefined
+
+  // A fader that goes disabled or unknown mid-drag — the headphones dropped —
+  // never sees the pointerup that would end the interaction, so it is ended
+  // here, during render as React recommends for state derived from props. The
+  // draft is dropped rather than committed: there is no device to commit it
+  // to, and on reconnect the fader shows what was read back. `begin` re-anchors
+  // whenever nothing is held, so the stale start value cannot leak either.
+  const locked = disabled || unknown
+  const [wasLocked, setWasLocked] = useState(locked)
+  if (locked !== wasLocked) {
+    setWasLocked(locked)
+    if (locked) {
+      setDraft(null)
+      setHeld(false)
+    }
+  }
+
   const current = draft ?? value ?? 0
   const active = !disabled && !unknown && (held || focused)
 
@@ -106,7 +123,11 @@ export function Fader({
   }
 
   const begin = (): void => {
-    startRef.current = shown()
+    // Only the first event of an interaction anchors it. A held key sends a
+    // keydown per auto-repeat, and re-anchoring on each one means a repeat that
+    // can no longer move the value (pinned at the end of the range) makes the
+    // keyup see "no change" — no commit, and the fader snaps back.
+    if (startRef.current === null || !held) startRef.current = shown()
     setHeld(true)
   }
 

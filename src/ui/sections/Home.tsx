@@ -9,6 +9,8 @@ import { BATTERY_SEGMENTS, SegmentMeter } from '../controls/SegmentMeter'
 import { DeviceImage } from '../device/DeviceImage'
 import { summarise } from '../device/summary'
 import type { BatteryCellSummary, DeviceSummary } from '../device/summary'
+import { placeTiles, TILE_PRIORITY } from './homeTiles'
+import type { TileId } from './homeTiles'
 import { componentFor, sectionsForDevice } from './registry'
 
 /**
@@ -74,9 +76,7 @@ export function Home({ active, onNavigate }: HomeProps) {
   const Noise = declared.some((section) => section.id === 'noise')
     ? componentFor(active, 'noise')
     : undefined
-  // Declared, not implemented: the tile exists for a driver that has a `devices`
-  // section to send you to, whether or not it will have rows to draw.
-  const hasDevices = declared.some((section) => section.id === 'devices')
+  const has = (id: string) => declared.some((section) => section.id === id)
   // `connected/total` is the figure a person can act on — "3" alone says
   // nothing about whether the headphones are holding two links or one.
   const links =
@@ -95,33 +95,81 @@ export function Home({ active, onNavigate }: HomeProps) {
   // says it is — so every tile but the hero wears the dim itself.
   const dim = connected ? undefined : 'pointer-events-none opacity-50'
 
+  // Every tile this device can fill, in priority order. A tile exists only when
+  // the driver declares the section behind it — an EQ tile that opens a Sound
+  // section the driver does not have is a button that does nothing — and the
+  // battery and system tiles always exist.
+  const present = TILE_PRIORITY.filter((id) => {
+    if (id === 'noise') return Noise !== undefined
+    if (id === 'eq') return has('sound')
+    if (id === 'devices') return has('devices')
+    return true
+  })
+  const columns = placeTiles(present)
+
+  const tile = (id: TileId, fills: boolean) => {
+    const order = PHONE_ORDER[present.indexOf(id)]
+    const size = fills ? FILL.yes : FILL.no
+    switch (id) {
+      case 'battery':
+        // Never grows: the strip is compact at every width.
+        return <BatteryTile key={id} className={cn(FILL.no, order, dim)} summary={summary} connected={connected} />
+      case 'noise':
+        return Noise ? (
+          <div
+            key={id}
+            data-slot="home-noise"
+            className={cn(fills ? cn(FILL.yes, FILL_THROUGH) : FILL.no, order, dim)}
+          >
+            <Noise device={active.device} state={active.state} active={active} onNavigate={onNavigate} />
+          </div>
+        ) : null
+      case 'eq':
+        return <EqPreviewTile key={id} className={cn(size, order, dim)} eq={eq} onOpen={() => onNavigate('sound')} />
+      case 'devices':
+        return (
+          <DevicesTile
+            key={id}
+            className={cn(size, order, dim)}
+            connections={connections}
+            onOpen={() => onNavigate('devices')}
+          />
+        )
+      case 'system':
+        return (
+          <SystemTile
+            key={id}
+            className={cn(size, order, dim)}
+            facts={[
+              { label: 'Model', value: summary.hasDevice ? summary.model : null },
+              { label: 'Firmware', value: summary.firmware },
+              { label: 'Codec', value: summary.codec },
+              { label: 'Links', value: links },
+            ]}
+            onOpen={() => onNavigate('system')}
+          />
+        )
+    }
+  }
+
+  const column = (ids: TileId[]) => ids.map((id, index) => tile(id, index === ids.length - 1))
+
   return (
     <div
       data-slot="home"
       className={cn(
-        // Phone: one column, in the spec's order at the phone gap.
+        // Phone: one column, in priority order at the phone gap.
         'flex flex-col gap-2',
         // Desktop: a bento that fills what the shell hands it. `md:flex-1` is a
         // flex *item* size — the body above is a flex column with a definite
         // height — so the grid takes the leftover viewport rather than a
-        // viewport height of its own, which is what would put the last tile under
-        // the fold on a short window.
+        // viewport height of its own.
         //
-        // **One row per width, and the columns below it are stacks.** §4.2's
-        // three columns are three independent vertical stacks, which is what the
-        // mockup draws (desktop.html:71-116 — three `flex-direction: column`
-        // divs, each with its own auto item and its own filler). A single grid
-        // with `auto 1fr` rows cannot express that: row 1 is as tall as the
-        // tallest thing in it — the noise section, 474px measured at 1280×800 —
-        // so an auto-height battery strip in that row sat at the top of 474px
-        // with the EQ tile 400px below it in row 2. The gap belonged to the
-        // grid, not to the tile, and no `self-start` on the strip could close it.
-        //
-        // `md:grid-rows-[auto_1fr]` is the two-column arrangement §4.2 states in
-        // one sentence: hero across the top, then battery+EQ left and
-        // noise+devices right. `bento:grid-rows-1` is the three-column one, where
-        // the hero is a column rather than a band. `bento:` still sorts after
-        // `md:` in the built stylesheet, so the second rule is the one that wins.
+        // One row per width, and the columns below it are stacks: a grid row is
+        // as tall as the tallest thing in it, so tiles sharing rows across
+        // columns leave gaps. From 768 to 1100px the hero runs across the top
+        // and the two stacks sit under it; from `bento:` the hero is the first
+        // of three columns. `bento:` sorts after `md:` in the built stylesheet.
         'md:grid md:flex-1 md:grid-cols-2 md:auto-rows-fr md:gap-3',
         'md:grid-rows-[auto_1fr] bento:grid-rows-1',
         'bento:grid-cols-[1.35fr_1fr_1fr]',
@@ -131,62 +179,25 @@ export function Home({ active, onNavigate }: HomeProps) {
         className={SLOT.hero}
         summary={summary}
         status={active.state.status}
-        brand={active.driver.label}
+        brand={brandOf(active.driver.label)}
         wear={wear}
-        links={links}
       />
 
-      {/* Spec §4.2 column 2: the compact battery strip, then the EQ preview
-          filling the rest. `contents` on a phone, so the tiles are one column
-          there — the wrapper must not become a box of its own, or the phone's
-          reading order would be whatever the columns happen to be. */}
+      {/* `contents` on a phone, so the tiles are one column there and read in
+          priority order through `PHONE_ORDER`; a flex column from `md`. */}
       <div data-slot="home-col-middle" className={cn(COLUMN, SLOT.middle)}>
-        <BatteryTile
-          className={cn(FILL.no, ORDER.battery, dim)}
-          summary={summary}
-          connected={connected}
-        />
-
-        <EqPreviewTile
-          className={cn(FILL.yes, ORDER.eq, dim)}
-          eq={eq}
-          onOpen={() => onNavigate('sound')}
-        />
+        {column(columns.middle)}
       </div>
-
-      {/* Spec §4.2 column 3: the noise section at its own height, then the
-          connections tile filling the rest — and either one *filling* when it is
-          the only one in the column, which is §4.2's "when there is no devices
-          tile, the noise section fills the column" and its reverse. */}
       <div data-slot="home-col-right" className={cn(COLUMN, SLOT.right)}>
-        {Noise && (
-          <div
-            data-slot="home-noise"
-            className={cn(
-              hasDevices ? FILL.no : cn(FILL.yes, FILL_THROUGH),
-              ORDER.noise,
-              dim,
-            )}
-          >
-            <Noise
-              device={active.device}
-              state={active.state}
-              active={active}
-              onNavigate={onNavigate}
-            />
-          </div>
-        )}
-
-        {hasDevices && (
-          <DevicesTile
-            className={cn(FILL.yes, ORDER.devices, dim)}
-            connections={connections}
-            onOpen={() => onNavigate('devices')}
-          />
-        )}
+        {column(columns.right)}
       </div>
     </div>
   )
+}
+
+/** "Sony (MDR)" → "Sony": the caption is the brand, not the protocol. */
+function brandOf(label: string): string {
+  return label.replace(/\s*\(.*\)\s*$/, '')
 }
 
 /**
@@ -280,25 +291,18 @@ const FILL_THROUGH =
   'md:flex md:flex-col md:[&>*]:flex-1 md:[&>*>*:last-child]:flex-1'
 
 /**
- * The phone's reading order, since the document order is the columns' — which is
- * not §4.1's.
- *
- * Document order on a phone is battery → EQ → noise → devices (column 2 then
- * column 3), and §4.1 asks for battery → noise → EQ → devices: the equaliser
- * below the noise control. `order` is the cheapest way to say so, and
- * `md:order-none` from `md` up restores each column's own order, where the
- * document order is already right.
- *
- * The numbers are 1-based and ascending on purpose: within either column the
- * phone order and the column order agree, so this cannot be read as a shuffle
- * that happens to work.
+ * The phone's reading order, by priority index. The column wrappers are
+ * `display: contents` on a phone, so document order would be column order;
+ * `order` puts the tiles back in priority order, and `md:order-none` hands each
+ * stack its own document order again. The hero is `order-1`.
  */
-const ORDER = {
-  battery: 'order-2 md:order-none',
-  noise: 'order-3 md:order-none',
-  eq: 'order-4 md:order-none',
-  devices: 'order-5 md:order-none',
-} as const
+const PHONE_ORDER = [
+  'order-2 md:order-none',
+  'order-3 md:order-none',
+  'order-4 md:order-none',
+  'order-5 md:order-none',
+  'order-6 md:order-none',
+] as const
 
 /** The Caption role (DESIGN-GUIDE §4), which every tile's label uses. */
 const CAPTION = 'text-muted-foreground text-[10px] font-medium tracking-[.14em] uppercase'
@@ -306,46 +310,31 @@ const CAPTION = 'text-muted-foreground text-[10px] font-medium tracking-[.14em] 
 interface HeroTileProps {
   summary: DeviceSummary
   status: ConnectionStatus
-  /** The driver's own name for itself, e.g. "Sony (MDR)". */
+  /** The brand, e.g. "Sony". */
   brand: string
   /**
    * Where the headphones are, or null. Resolved by `Home` from the driver's own
    * wear readout, never from its `detail` — see `DeviceDriver.wearCaption`.
    */
   wear: string | null
-  /** `connected/total`, or null for a driver that reports no paired devices. */
-  links: string | null
   className?: string
 }
 
 /**
- * The showpiece: the product, its brand, and up to three facts.
- *
- * Dotted, because this is a tile the texture is for (DESIGN-GUIDE §1.4) — one of
- * two here, the other being the EQ preview. The third in the design system, the
- * fader desk, is on the Sound page rather than on this screen.
+ * The showpiece: the product and its brand. Dotted, because this is a tile the
+ * texture is for (DESIGN-GUIDE §1.4). The facts that used to sit along its foot
+ * are on the system tile, so the render can take the whole of it.
  */
-export function HeroTile({ summary, status, brand, wear, links, className }: HeroTileProps) {
-  // A chip with nothing in it is a caption over a gap, so each one is dropped
-  // rather than filled with a dash — three is the ceiling the spec sets, and a
-  // fourth fact belongs on a page that can hold it.
-  const facts = [
-    { label: 'Codec', value: summary.codec },
-    { label: 'Firmware', value: summary.firmware },
-    { label: 'Links', value: links },
-  ].filter((fact): fact is { label: string; value: string } => fact.value !== null)
-
+export function HeroTile({ summary, status, brand, wear, className }: HeroTileProps) {
   return (
-    // `order-1` is the same statement as `order-2`…`order-5` on the other tiles:
-    // the hero is first in §4.1's phone order, and the wrappers put it in the
-    // document before them anyway. Named so the column reads top to bottom.
+    // `order-1`: the hero is first in the phone's reading order.
     <Card variant="hero" data-slot="home-hero" className={cn('min-h-0 order-1', className)}>
       <div className="flex items-start justify-between gap-3">
         <span className={CAPTION}>{brand}</span>
         {wear && <span className={CAPTION}>{wear}</span>}
       </div>
 
-      <div className="flex min-h-0 flex-1 items-center justify-center">
+      <div className="flex min-h-[200px] flex-1 items-center justify-center md:min-h-0">
         <DeviceImage
           status={status}
           model={summary.hasDevice ? summary.model : null}
@@ -353,32 +342,16 @@ export function HeroTile({ summary, status, brand, wear, links, className }: Her
           artwork={summary.artwork}
           // The hero is a product shot, not a control: the ANC glow and the
           // incoming-sound rings are driven by one driver's noise state, and a
-          // shared tile has no business reading it. The live control is the noise
-          // slot below, which is the driver's own component.
+          // shared tile has no business reading it.
           noiseLevel={null}
           ancEnabled={null}
           worn={summary.worn}
           budCharging={summary.budCharging}
-          // Spec §4.3: up to 320x260, contain, and in colour — the one place
-          // besides the signal red that colour belongs (DESIGN-GUIDE, "look").
-          className="max-h-[260px] max-w-[320px]"
+          // In colour, and as large as the tile allows: the full width, held to
+          // the tile's height, with `object-contain` keeping the shape.
+          className="max-h-full"
         />
       </div>
-
-      {facts.length > 0 && (
-        <div className="grid grid-cols-3 gap-2">
-          {facts.map((fact) => (
-            <div
-              key={fact.label}
-              data-slot="hero-chip"
-              className="bg-background min-w-0 rounded-2xl p-2.5"
-            >
-              <div className={CAPTION}>{fact.label}</div>
-              <div className="truncate text-[18px] font-extrabold tabular-nums">{fact.value}</div>
-            </div>
-          ))}
-        </div>
-      )}
     </Card>
   )
 }
@@ -547,8 +520,13 @@ interface EqPreviewTileProps {
  */
 export function EqPreviewTile({ eq, onOpen, className }: EqPreviewTileProps) {
   const curve = eq !== null && eq.gains.length > 0 ? eq : null
-  // The largest boost, which on a signed range is also the tallest bar.
-  const peak = curve === null ? -1 : curve.gains.reduce((best, gain, index) => (gain > curve.gains[best] ? index : best), 0)
+  // The largest boost, which on a signed range is also the tallest bar — and
+  // none at all when nothing is boosted: a flat or all-cut curve has no value
+  // worth the signal colour.
+  const peak =
+    curve === null
+      ? -1
+      : curve.gains.reduce((best, gain, index) => (gain > 0 && (best < 0 || gain > curve.gains[best]) ? index : best), -1)
 
   return (
     <Card variant="hero" data-slot="home-eq" className={cn('min-h-0 p-0', className)}>
@@ -673,6 +651,56 @@ export function DevicesTile({ connections, onOpen, className }: DevicesTileProps
               </li>
             ))}
           </ul>
+        )}
+      </button>
+    </Card>
+  )
+}
+
+interface SystemTileProps {
+  facts: Array<{ label: string; value: string | null }>
+  onOpen(): void
+  className?: string
+}
+
+/**
+ * What the device is: model, firmware, codec and links, and a way into System.
+ * A fact the device has not reported is left out rather than shown as a dash,
+ * and a tile with none left is the caption and a link.
+ */
+export function SystemTile({ facts, onOpen, className }: SystemTileProps) {
+  const rows = facts.filter((fact): fact is { label: string; value: string } => fact.value !== null)
+
+  return (
+    <Card data-slot="home-system" className={cn('min-h-0 p-0', className)}>
+      <button
+        type="button"
+        onClick={onOpen}
+        className={cn(
+          'flex min-h-0 flex-1 cursor-pointer flex-col gap-2 p-[14px] text-left md:p-[18px]',
+          'focus-visible:ring-ring focus-visible:ring-2 focus-visible:ring-inset outline-none',
+        )}
+      >
+        <div className="flex items-baseline justify-between gap-3">
+          <span className={CAPTION}>System</span>
+          <span className="text-muted-foreground text-[11px]">Open ↗</span>
+        </div>
+
+        {rows.length === 0 ? (
+          <span className="text-[13px]">System settings ↗</span>
+        ) : (
+          <dl className="flex flex-col">
+            {rows.map((fact) => (
+              <div
+                key={fact.label}
+                data-slot="system-row"
+                className="flex items-baseline justify-between gap-3 border-b py-2 last:border-b-0"
+              >
+                <dt className="text-muted-foreground text-[13px]">{fact.label}</dt>
+                <dd className="min-w-0 truncate text-[13px] font-bold tabular-nums">{fact.value}</dd>
+              </div>
+            ))}
+          </dl>
         )}
       </button>
     </Card>

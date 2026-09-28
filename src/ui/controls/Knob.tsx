@@ -124,6 +124,24 @@ export function Knob({
     [onChange, settle, value],
   )
 
+  /**
+   * Ends a pointer gesture. A gesture that landed somewhere new commits there.
+   * One that moved the caller's draft but landed back where it started — a
+   * release snapping onto the detent it began at, say — still has to hand
+   * that draft back, or the caller keeps showing a value nothing confirmed.
+   * Committing the start value is how it does: a no-op for the headphones,
+   * and the one signal a drafting caller already listens for.
+   */
+  const finish = (from: number, next: number, snap: boolean): void => {
+    const settled = release(from, next, snap)
+    if (settled !== null) {
+      onCommit?.(settled)
+    } else if (value !== from) {
+      onChange(from)
+      onCommit?.(from)
+    }
+  }
+
   const thumb = polar(valueToAngle(value, range), RADIUS)
   const detentPoint =
     detent === undefined ? null : polar(valueToAngle(detent, range), RADIUS)
@@ -166,10 +184,10 @@ export function Knob({
             setDragging(false)
             const from = startRef.current
             startRef.current = null
-            const next = valueAt(event)
-            if (from === null || next === null) return
-            const settled = release(from, next, true)
-            if (settled !== null) onCommit?.(settled)
+            if (from === null) return
+            // An unmeasured dial falls back to where the drag had got to, the
+            // same value a cancelled gesture commits.
+            finish(from, valueAt(event) ?? value, true)
           }}
           onPointerCancel={() => {
             setDragging(false)
@@ -181,8 +199,7 @@ export function Knob({
             // headphones in agreement — and, more to the point, releases the
             // caller's draft instead of leaving it pinned at a value nothing
             // will ever confirm.
-            const settled = release(from, value, false)
-            if (settled !== null) onCommit?.(settled)
+            finish(from, value, false)
           }}
           onKeyDown={(event) => {
             if (disabled) return

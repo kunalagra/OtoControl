@@ -28,6 +28,7 @@ import type { ConnectionSummary, EqPreview } from '@/core/driver'
 import type { ActiveDevice } from '@/core/manager'
 import type { DeviceSummary } from '@/ui/device/summary'
 import { BatteryTile, Home } from './Home'
+import { placeTiles } from './homeTiles'
 
 afterEach(cleanup)
 
@@ -71,12 +72,12 @@ const connectedState: FakeState = {
   charging: false,
 }
 
-const active = (options: FakeOptions = {}, state: Partial<FakeState> = {}): ActiveDevice => {
+const active = (options: FakeOptions = {}, state: Partial<FakeState> = {}, label = 'Test Audio'): ActiveDevice => {
   const merged = { ...connectedState, ...state }
   const ids = options.sections ?? ['noise', 'sound', 'devices', 'system']
   const driver: Record<string, unknown> = {
     id: 'test',
-    label: 'Test Audio',
+    label,
     sections: () => ids.map((id) => ({ id, label: id })),
     // Always holds `noise`, whatever the section list says: that is the shape of
     // a driver whose capability gate is in `sections()`, and the two must not be
@@ -93,9 +94,9 @@ const active = (options: FakeOptions = {}, state: Partial<FakeState> = {}): Acti
   return { id: 'test', driver, device: {}, state: merged } as unknown as ActiveDevice
 }
 
-const renderHome = (options: FakeOptions = {}, state: Partial<FakeState> = {}) => {
+const renderHome = (options: FakeOptions = {}, state: Partial<FakeState> = {}, label?: string) => {
   const onNavigate = vi.fn()
-  const view = render(<Home active={active(options, state)} onNavigate={onNavigate} />)
+  const view = render(<Home active={active(options, state, label)} onNavigate={onNavigate} />)
   return { ...view, onNavigate, node: view.container.firstElementChild as HTMLElement }
 }
 
@@ -169,6 +170,26 @@ describe('Home — the EQ preview tile', () => {
     expect(bars.filter((bar) => bar.dataset.peak !== undefined)).toHaveLength(1)
     expect(bars[2].dataset.peak).toBe('true')
     expect(bars[2].className).toContain('bg-signal')
+  })
+
+  it('marks no peak on a curve with nothing boosted', () => {
+    // Red is "the value you are changing" (DESIGN-GUIDE §1.1). On a flat or
+    // all-cut curve nothing is boosted, so nothing wears it — not band 0 by
+    // default, and not the smallest cut.
+    for (const gains of [[0, 0, 0, 0, 0], [-1, -3, -2, -4, -5]]) {
+      const { node } = renderHome({ eqPreview: () => ({ ...preview, gains }) })
+      const bars = all(slot(node, 'home-eq')!, 'eq-bar')
+      expect(bars.filter((bar) => bar.dataset.peak !== undefined)).toHaveLength(0)
+      expect(bars.some((bar) => bar.className.includes('bg-signal'))).toBe(false)
+      cleanup()
+    }
+  })
+
+  it('is absent for a driver with no Sound section to open', () => {
+    // A tile that navigates to a section the driver does not declare is a
+    // button that does nothing: the shell resolves the unknown id back to Home.
+    const { node } = renderHome({ sections: ['noise', 'system'], eqPreview: () => preview })
+    expect(slot(node, 'home-eq')).toBeNull()
   })
 
   it('calls a hand-edited curve Custom rather than naming a preset that is not playing', () => {
@@ -252,27 +273,6 @@ describe('Home — the devices tile', () => {
 })
 
 describe('Home — the hero tile', () => {
-  it('shows at most three facts, and only the ones the device reported', () => {
-    const { node } = renderHome(
-      { codec: 'AAC', connections: () => [{ name: 'A', connected: true, isThisDevice: false }, { name: 'B', connected: false, isThisDevice: false }] },
-      { info: { model: 'Test Buds', firmware: '2.12.4', serial: null, codec: 1 } },
-    )
-    const hero = slot(node, 'home-hero')!
-    const chips = all(hero, 'hero-chip')
-    expect(chips).toHaveLength(3)
-    expect(text(chips[0])).toContain('Codec')
-    expect(text(chips[0])).toContain('AAC')
-    expect(text(chips[1])).toContain('Firmware')
-    expect(text(chips[2])).toContain('Links')
-    // `connected/total`, which is the number a person can act on.
-    expect(text(chips[2])).toContain('1/2')
-  })
-
-  it('drops a fact rather than showing an empty chip', () => {
-    const { node } = renderHome({}, { info: { model: 'Test Buds', firmware: null, serial: null, codec: null } })
-    expect(all(slot(node, 'home-hero')!, 'hero-chip')).toHaveLength(0)
-  })
-
   it('names the brand, and the wear state the driver reports for it', () => {
     const { node } = renderHome({ wearCaption: 'On head' })
     const hero = slot(node, 'home-hero')!
@@ -307,17 +307,67 @@ describe('Home — the hero tile', () => {
     expect(text(slot(node, 'home-hero'))).toContain('Not worn')
   })
 
-  it('caps the product render at 320x260, in colour', () => {
+  it('lets the product render fill the hero, in colour', () => {
     // The one place colour belongs (DESIGN-GUIDE §1.1), so no greyscale filter.
+    // And no fixed cap: the hero is the tallest tile on the page, and a render
+    // held to 320x260 in the middle of it read as a thumbnail.
     const { node } = renderHome()
     const image = slot(node, 'home-hero')!.querySelector('img')!
     expect(image.getAttribute('src')).toBe(ARTWORK.hero)
     expect(image.className).toContain('object-contain')
     expect(image.className).not.toContain('grayscale')
-    // The cap is on the frame the render fills, not on the image itself.
     const frame = image.parentElement!
-    expect(frame.className).toContain('max-h-[260px]')
-    expect(frame.className).toContain('max-w-[320px]')
+    expect(frame.className).not.toContain('max-h-[260px]')
+    expect(frame.className).not.toContain('max-w-[320px]')
+    expect(frame.className).toContain('max-h-full')
+  })
+
+  it('carries no fact chips: the facts live on the system tile', () => {
+    const { node } = renderHome({ codec: 'AAC' })
+    expect(all(slot(node, 'home-hero')!, 'hero-chip')).toHaveLength(0)
+  })
+
+  it('names the brand without the protocol the driver label carries', () => {
+    // "Sony (MDR)" is a driver's name for itself; the caption is the brand.
+    const { node } = renderHome({}, {}, 'Sony (MDR)')
+    const caption = text(slot(node, 'home-hero'))
+    expect(caption).toContain('Sony')
+    expect(caption).not.toContain('MDR')
+  })
+})
+
+describe('Home — the system tile', () => {
+  /** Each row as "label value". */
+  const rowsOf = (node: HTMLElement) =>
+    all(slot(node, 'home-system')!, 'system-row').map(
+      (row) => `${text(row.querySelector('dt'))} ${text(row.querySelector('dd'))}`,
+    )
+
+  it('lists the facts the device reported, and only those', () => {
+    const { node } = renderHome(
+      {
+        codec: 'AAC',
+        connections: () => [
+          { name: 'A', connected: true, isThisDevice: false },
+          { name: 'B', connected: false, isThisDevice: false },
+        ],
+      },
+      { info: { model: 'Test Buds', firmware: '2.12.4', serial: null, codec: 1 } },
+    )
+    expect(rowsOf(node)).toEqual(['Model Test Buds', 'Firmware 2.12.4', 'Codec AAC', 'Links 1/2'])
+  })
+
+  it('drops a fact rather than showing an empty row', () => {
+    const { node } = renderHome({}, { info: { model: 'Test Buds', firmware: null, serial: null, codec: null } })
+    expect(rowsOf(node)).toEqual(['Model Test Buds'])
+  })
+
+  it('is one button that opens System', () => {
+    const { node, onNavigate } = renderHome()
+    const tile = slot(node, 'home-system')!
+    expect(tile.querySelectorAll('button')).toHaveLength(1)
+    fireEvent.click(tile.querySelector('button')!)
+    expect(onNavigate).toHaveBeenCalledWith('system')
   })
 })
 
@@ -366,41 +416,6 @@ describe('Home — the layout', () => {
     }
   })
 
-  it('puts the strip and the EQ tile in the middle column, in that order', () => {
-    // Spec §4.2 column 2: "compact battery strip (auto height), then the EQ
-    // preview tile (fills the rest)". Two assertions per tile, because the
-    // order and the fill are the two halves of that sentence.
-    const column = slot(renderHome().node, 'home-col-middle')!
-    expect(Array.from(column.children).map((child) => child.getAttribute('data-slot'))).toEqual([
-      'home-battery',
-      'home-eq',
-    ])
-    // Auto height in a flex column is the default, so the strip must *not* ask
-    // to grow: this is what `md:self-start` was for when the row sized it, and
-    // in a stack the absence of `flex-1` is the same statement.
-    const strip = column.children[0] as HTMLElement
-    expect(strip.className.split(' ')).not.toContain('flex-1')
-    expect(strip.className.split(' ')).toContain('md:flex-row')
-    // Fills the rest.
-    const eq = column.children[1] as HTMLElement
-    expect(eq.className.split(' ')).toContain('md:flex-1')
-  })
-
-  it('puts the noise section and the connections tile in the right column', () => {
-    // Spec §4.2 column 3: "the noise section (auto height), then the devices
-    // tile (fills the rest)".
-    const column = slot(renderHome().node, 'home-col-right')!
-    expect(Array.from(column.children).map((child) => child.getAttribute('data-slot'))).toEqual([
-      'home-noise',
-      'home-devices',
-    ])
-    const noise = column.children[0] as HTMLElement
-    const devices = column.children[1] as HTMLElement
-    // Neither asks to grow while the other is there to fill.
-    expect(noise.className.split(' ')).not.toContain('flex-1')
-    expect(devices.className.split(' ')).toContain('md:flex-1')
-  })
-
   it('gives the hero the full height of the first column, alone in it', () => {
     // `md:col-span-2` because §4.2 puts the hero across the top between 768 and
     // 1100px; from `bento:` it is column 1 of three. No `row-span` any more: the
@@ -437,19 +452,15 @@ describe('Home — the layout', () => {
     expect(right).toContain('bento:row-start-1')
     // And each is one grid item: the tiles inside carry no placement at all, or
     // the row arithmetic this replaced would creep back in.
-    for (const name of ['home-battery', 'home-eq', 'home-noise', 'home-devices']) {
+    for (const name of ['home-battery', 'home-eq', 'home-noise', 'home-devices', 'home-system']) {
       const classes = slot(node, name)!.className
       expect(classes).not.toMatch(/row-start|row-span|col-start|col-span/)
     }
   })
 
-  it('reads in the spec’s order on a phone, whatever the column wrappers say', () => {
-    // The wrappers are `display: contents` on a phone, so *document* order is
-    // the phone's order — and the document order is the columns', which is
-    // battery→EQ→noise→devices. §4.1 asks for hero → battery → noise → EQ →
-    // devices, so the tiles carry explicit `order` on the phone and drop it
-    // from `md` up, where each column's own order is the right one. Without
-    // this the equaliser moves above the noise control on every phone.
+  it('reads in priority order on a phone, whatever the column wrappers say', () => {
+    // The wrappers are `display: contents` on a phone, so without an explicit
+    // `order` the phone would read in column order rather than priority order.
     const { node } = renderHome()
     const order = (name: string) => slot(node, name)!.className.split(' ')
     expect(order('home-hero')).toContain('order-1')
@@ -457,98 +468,77 @@ describe('Home — the layout', () => {
     expect(order('home-noise')).toContain('order-3')
     expect(order('home-eq')).toContain('order-4')
     expect(order('home-devices')).toContain('order-5')
-    // …and the drop is stated, not assumed: `order-none` from `md` puts each
-    // column back in its own document order.
-    for (const name of ['home-battery', 'home-noise', 'home-eq', 'home-devices']) {
+    expect(order('home-system')).toContain('order-6')
+    for (const name of ['home-battery', 'home-noise', 'home-eq', 'home-devices', 'home-system']) {
       expect(order(name)).toContain('md:order-none')
     }
   })
 
-  it('lets the noise section fill the right column when there is no devices tile', () => {
-    // Spec §4.2: "When there is no devices tile, the noise section fills the
-    // column." In a stack this is one class rather than a row span — the tile
-    // that is alone in the column is the one that grows. Every driver with noise
-    // control and no `devices` section (three of five) lands here.
-    const { node } = renderHome({ sections: ['noise', 'sound', 'system'] })
-    expect(slot(node, 'home-devices')).toBeNull()
-    const noise = slot(node, 'home-noise')!.className
-    expect(noise.split(' ')).toContain('md:flex-1')
-    // And it is still the only child, so it is the whole column.
-    expect(slot(node, 'home-col-right')!.children).toHaveLength(1)
+  it('lets the last tile in each column fill it, and no other', () => {
+    const { node } = renderHome()
+    for (const name of ['home-col-middle', 'home-col-right']) {
+      const tiles = Array.from(slot(node, name)!.children) as HTMLElement[]
+      expect(tiles.length).toBeGreaterThan(0)
+      tiles.forEach((tile, index) => {
+        const fills = tile.className.split(' ').includes('md:flex-1')
+        expect(fills).toBe(index === tiles.length - 1)
+      })
+    }
   })
 
-  it('fills the column all the way down, not just the wrapper around the noise section', () => {
-    // **`md:flex-1` on the wrapper was not enough, and the gap it left is the
-    // finding.** The wrapper grows; what is inside it does not. A driver's noise
-    // section root is its own `<div className="flex flex-col gap-4">` (or, for
-    // HeyMelody, a single `Card`), and that box is content-height — so the
-    // column reserved ~260px of page below the last card and the hero, the
-    // middle column and this one all ended at different lines. Measured in
-    // Chrome at 1280×800 before this test existed.
-    //
-    // The chain is two descendant rules, and both are load-bearing:
-    //
-    // 1. the wrapper is a flex column from `md`, so its child can be *given*
-    //    height at all — a block's height is its content's;
-    // 2. `[&>*]:flex-1` hands it to the driver's root, and
-    //    `[&>*>*:last-child]:flex-1` hands the rest to the last block inside
-    //    that root, which is the one whose bottom edge the user sees.
-    //
-    // A driver root is reached from here rather than given a `className` prop
-    // for the same reason `AppShell` carries `md:[&>*]:min-h-0` on seventeen
-    // section roots: a prop would put a bento layout concern in five driver
-    // files and would be missed by the sixth.
-    const { node } = renderHome({ sections: ['noise', 'sound', 'system'] })
-    const classes = slot(node, 'home-noise')!.className.split(' ')
-    expect(classes).toContain('md:flex')
-    expect(classes).toContain('md:flex-col')
+  it('fills the column all the way down when the noise section is the last tile in it', () => {
+    // The wrapper growing is not enough: a driver's noise root is content-height,
+    // so the fill is handed down to it and to its last block.
+    const { node } = renderHome({ sections: ['noise', 'system'] })
+    const noise = slot(node, 'home-noise')!
+    const column = noise.parentElement!
+    expect(column.lastElementChild).toBe(noise)
+    const classes = noise.className.split(' ')
     expect(classes).toContain('md:[&>*]:flex-1')
     expect(classes).toContain('md:[&>*>*:last-child]:flex-1')
   })
 
-  it('does not ask a noise section to stretch when a devices tile shares the column', () => {
-    // The same classes with something below them would push the connections
-    // tile off the bottom of the window, because §4.2 gives *that* tile the
-    // leftover and the column is `md:min-h-0`. Auto height up here is the
-    // spec's sentence: "the noise section (auto height), then the devices tile
-    // (fills the rest)".
-    const { node } = renderHome({ sections: ['noise', 'sound', 'devices', 'system'] })
-    const classes = slot(node, 'home-noise')!.className.split(' ')
-    expect(classes).toContain('shrink-0')
-    expect(classes).not.toContain('md:flex-1')
-    expect(classes.some((token) => token.includes('flex-1'))).toBe(false)
-  })
-
-  it('lets the connections tile fill the right column when there is no noise section', () => {
-    // The reverse of the rule above, and the other half of the same §4.2
-    // sentence. Nothing above it to share the column, so it is the only child and
-    // it grows — which is what it already does, so the case needed no branch.
-    const { node } = renderHome({ sections: ['sound', 'devices', 'system'] })
-    expect(slot(node, 'home-noise')).toBeNull()
-    const devices = slot(node, 'home-devices')!.className
-    expect(devices.split(' ')).toContain('md:flex-1')
-    expect(slot(node, 'home-col-right')!.children).toHaveLength(1)
-  })
-
-  it('still lays out for a driver that declares neither slot', () => {
-    // Reachable, not hypothetical: a device whose probe answers "no ANC, no
-    // pairing" leaves one of the two drivers with sections `sound` and `system`
-    // alone. Nothing can fill the right-hand column, and the arrangement the
-    // spec gives for a driver *with* both slots is kept rather than reshuffled
-    // for a case it does not describe — which leaves that column empty. Recorded
-    // here so it is a decision, not an oversight. The middle column is
-    // unaffected: strip above EQ, which is the spec's column 2 either way.
+  it('never leaves a column empty for a device with few features', () => {
+    // The WF-C500 shape: no noise control, no paired-device list. Battery, EQ
+    // and System still spread over both columns.
     const { node } = renderHome({ sections: ['sound', 'system'] })
-    expect(slot(node, 'home-noise')).toBeNull()
-    expect(slot(node, 'home-devices')).toBeNull()
-    expect(slot(node, 'home-col-right')!.children).toHaveLength(0)
-    const column = slot(node, 'home-col-middle')!
-    expect(Array.from(column.children).map((child) => child.getAttribute('data-slot'))).toEqual([
-      'home-battery',
-      'home-eq',
-    ])
+    expect(slot(node, 'home-col-middle')!.children.length).toBeGreaterThan(0)
+    expect(slot(node, 'home-col-right')!.children.length).toBeGreaterThan(0)
   })
 })
+
+describe('placeTiles', () => {
+  it('balances a full set across the two columns, in priority order within each', () => {
+    expect(placeTiles(['battery', 'noise', 'eq', 'devices', 'system'])).toEqual({
+      middle: ['battery', 'eq', 'system'],
+      right: ['noise', 'devices'],
+    })
+  })
+
+  it('keeps the battery strip at the top of the middle column', () => {
+    for (const ids of [
+      ['battery', 'noise', 'eq', 'system'],
+      ['battery', 'eq', 'system'],
+      ['battery', 'system'],
+    ] as const) {
+      expect(placeTiles([...ids]).middle[0]).toBe('battery')
+    }
+  })
+
+  it('puts something in both columns whenever there are two tiles or more', () => {
+    for (const ids of [
+      ['battery', 'system'],
+      ['battery', 'eq', 'system'],
+      ['battery', 'noise', 'system'],
+      ['battery', 'devices', 'system'],
+    ] as const) {
+      const { middle, right } = placeTiles([...ids])
+      expect(middle.length).toBeGreaterThan(0)
+      expect(right.length).toBeGreaterThan(0)
+    }
+  })
+})
+
 
 /**
  * The widths Home uses, and why they are named ones.
@@ -607,7 +597,7 @@ describe('Home — the idle dim', () => {
     // bar stay at full strength", because a page that keeps showing a
     // disconnected device must not dim the one thing that says it is.
     const { node } = renderHome({}, idle)
-    for (const name of ['home-battery', 'home-noise', 'home-eq', 'home-devices']) {
+    for (const name of ['home-battery', 'home-noise', 'home-eq', 'home-devices', 'home-system']) {
       expect(slot(node, name)!.className).toContain('opacity-50')
       expect(slot(node, name)!.className).toContain('pointer-events-none')
     }

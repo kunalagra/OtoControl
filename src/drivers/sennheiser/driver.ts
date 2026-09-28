@@ -106,19 +106,33 @@ export const SENNHEISER_DRIVER = {
   eqPreview: (state: DeviceState) => {
     const { config, gains } = state.eq;
     if (config === null) return null;
+    // Every band or none: an unread band drawn as 0 dB is a flat band nobody
+    // reported, and it can match the curve to a preset the headphones are not
+    // on. The tile falls back to its plain link until the read completes.
+    const read: number[] = [];
+    for (let band = 0; band < config.bands; band += 1) {
+      const gain = gains[band];
+      if (gain === undefined) return null;
+      read.push(gain);
+    }
     return {
       // Null for a hand-edited curve, which the tile shows as Custom — the same
       // answer `Sound` gives its preset list, from the same helper.
-      preset: eqPresetName(gains),
-      gains: gains.map((gain) => gain ?? 0),
+      preset: eqPresetName(read),
+      gains: read,
       range: { min: config.minGain, max: config.maxGain },
     };
   },
   // The paired-device list `sections/Devices.tsx` renders, flattened for the
   // Home tile. `ownIndex` is the entry this machine is talking through, and the
   // tile marks it "· this" rather than leaving four rows to choose between.
+  //
+  // Null, not an empty list, until the device has named at least one entry: a
+  // connected Momentum always lists the host it is talking to, so an empty
+  // list is one that has not been read, and "0/0 links" would be invented.
   connections: (state: DeviceState) => {
     const { devices, ownIndex } = state.connections;
+    if (devices.length === 0) return null;
     return devices.map((entry) => ({
       name: entry.name || `Device ${entry.index + 1}`,
       connected: entry.connected,

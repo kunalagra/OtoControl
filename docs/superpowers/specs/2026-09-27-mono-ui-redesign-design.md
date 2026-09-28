@@ -196,6 +196,26 @@ the shell. The restyled `EqualizerPanel` (§7) provides the look:
 
 ### 4.3 Home composition
 
+> **Amendment (2026-09-28, user request).** Home is a priority list of
+> tiles rather than fixed slots, so a device with few features never leaves a
+> column empty:
+>
+> - **Tile order:** battery, noise, EQ, devices, then a new **System** tile.
+>   Each tile exists only when the driver declares its section: EQ needs
+>   `sound`, and devices needs `devices`. Battery and System always exist.
+> - **Placement:** `placeTiles` in `ui/sections/homeTiles.ts` adds each tile,
+>   in priority order, to whichever desktop stack is shorter. The last tile
+>   in each stack fills it.
+> - **Phone:** tiles read in priority order.
+> - **Hero:** no fact chips; the render fills the tile. The brand caption
+>   drops the protocol, so "Sony (MDR)" becomes "Sony".
+> - **System tile:** lists Model, Firmware, Codec and Links (only the facts
+>   reported) and opens System.
+> - **EQ peak:** only a positive gain is painted red.
+>
+> Items 1–5 below describe the tiles themselves and still apply, except where
+> this note overrides them.
+
 Home is a new shared component, `ui/sections/Home.tsx`. It renders, in order:
 
 1. **Hero tile.**

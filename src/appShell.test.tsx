@@ -279,7 +279,9 @@ describe('Home, for a real Sony', () => {
     // Not even the blunter fallback: this driver reports the headphones as worn
     // whatever the buds are doing, and "Not worn" would contradict it.
     expect(hero).not.toContain('Not worn')
-    expect(hero).toContain('Sony (MDR)')
+    // The brand, without the protocol the driver's own label carries.
+    expect(hero).toContain('Sony')
+    expect(hero).not.toContain('(MDR)')
   })
 })
 

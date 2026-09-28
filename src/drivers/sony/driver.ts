@@ -123,8 +123,7 @@ export const SONY_DRIVER = {
       ? null
       : { preset: eqPresetName(state.eq.preset), gains: state.eq.gains, range: EQ_RANGE },
   // The paired-device list `sections/SonyConnections.tsx` renders. Sony has no
-  // "own index" the way GAIA does: the entry the headphones are routing audio
-  // to is the one this app is talking through, and it is what the tile marks.
+  // "own index" the way GAIA does, so no entry is marked as this one.
   //
   // An empty list reads as unsupported, not as "zero paired": entry-level
   // models (WF-C500) answer the pairing query with no devices, and there is
@@ -132,11 +131,13 @@ export const SONY_DRIVER = {
   // predicate, so the tab, the Home tile and the LINKS chip disappear together.
   connections: (state: SonyState) => {
     if (!hasPairingList(state)) return null;
-    const { devices, playbackMac } = state.connections!;
-    return devices.map((entry) => ({
+    // `playbackMac` is the peer audio is playing from ("Audio here" in the
+    // Connections section), not the peer this app talks through, and MDR has
+    // no field for the latter — so no entry claims to be this one.
+    return state.connections!.devices.map((entry) => ({
       name: entry.name || entry.mac,
       connected: entry.connected,
-      isThisDevice: entry.mac === playbackMac,
+      isThisDevice: false,
     }));
   },
 } as const satisfies DeviceDriver<SonyDevice, SonyState>;

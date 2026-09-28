@@ -468,6 +468,23 @@ describe('eqPreview and connections', () => {
     expect(driver.eqPreview!(state)?.preset).toBeNull();
   });
 
+  it('has no Sennheiser preview while any band is still unread', () => {
+    // An unread band drawn as 0 dB is a flat band the device never reported,
+    // and it can make the curve match a preset name the headphones are not on.
+    const state = {
+      ...initialState,
+      status: 'connected' as const,
+      eq: { config: { bands: 5, minGain: -6, maxGain: 6 }, gains: [0, 0, undefined, 0, 0] },
+    };
+    expect(SENNHEISER_DRIVER.eqPreview!(state)).toBeNull();
+  });
+
+  it('has no Sennheiser connection list before the device has named one', () => {
+    // A connected Momentum always lists at least this host, so an empty list is
+    // one that has not been read — not "0 of 0 links".
+    expect(SENNHEISER_DRIVER.connections!(initialState)).toBeNull();
+  });
+
   it('has no Sennheiser preview to draw before the config query is answered', () => {
     expect(SENNHEISER_DRIVER.eqPreview!(initialState)).toBeNull();
   });
@@ -485,7 +502,7 @@ describe('eqPreview and connections', () => {
     expect(driver.eqPreview!(initialSonyState)).toBeNull();
   });
 
-  it('marks the Sony entry the headphones are routing audio to as this device', () => {
+  it('marks no Sony entry as this device, since MDR cannot say which one it is', () => {
     const driver = SONY_DRIVER;
     const state = {
       ...initialSonyState,
@@ -498,8 +515,12 @@ describe('eqPreview and connections', () => {
         playbackFixed: null,
       },
     };
+    // `playbackMac` is the peer the headphones are *playing from*, which the
+    // Sony section labels "Audio here". It says nothing about which peer this
+    // app is talking through — a phone streaming music is not "· this" on the
+    // laptop — and MDR reports nothing that does, so no entry is marked.
     expect(driver.connections!(state)).toEqual([
-      { name: 'MacBook Pro', connected: true, isThisDevice: true },
+      { name: 'MacBook Pro', connected: true, isThisDevice: false },
       { name: 'Pixel 8', connected: false, isThisDevice: false },
     ]);
     expect(driver.connections!(initialSonyState)).toBeNull();
