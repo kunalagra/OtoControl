@@ -8,6 +8,9 @@ import { type VariantProps } from "class-variance-authority"
 import { cn } from "@/lib/utils"
 import { toggleVariants } from "@/components/ui/toggle"
 
+/** 6px, the gap DESIGN-GUIDE §5.3 puts between the blocks. */
+const DEFAULT_SPACING = 1.5
+
 const ToggleGroupContext = React.createContext<
   VariantProps<typeof toggleVariants> & {
     spacing?: number
@@ -16,15 +19,25 @@ const ToggleGroupContext = React.createContext<
 >({
   size: "default",
   variant: "default",
-  spacing: 2,
+  spacing: DEFAULT_SPACING,
   orientation: "horizontal",
 })
 
+/**
+ * A segmented choice, DESIGN-GUIDE §5.3. The container is deliberately
+ * unadorned — no fill, no radius, nothing between the blocks but the gap — so
+ * that the blocks read as peers sitting straight on the tile.
+ *
+ * The gap is `spacing` Tailwind steps, applied through a custom property so the
+ * class is a single `calc()` rather than one utility per possible value. It has
+ * to be that `calc()`: `gap-(--gap)` alone would be spacing steps, not pixels,
+ * and the author asking for `spacing={2}` means 8px.
+ */
 function ToggleGroup({
   className,
   variant,
   size,
-  spacing = 2,
+  spacing = DEFAULT_SPACING,
   orientation = "horizontal",
   children,
   ...props
@@ -42,7 +55,7 @@ function ToggleGroup({
       data-orientation={orientation}
       style={{ "--gap": spacing } as React.CSSProperties}
       className={cn(
-        "group/toggle-group flex w-fit flex-row items-center gap-[--spacing(var(--gap))] data-[spacing=0]:data-[variant=outline]:rounded-3xl data-vertical:flex-col data-vertical:items-stretch",
+        "group/toggle-group flex w-fit flex-row items-center gap-[calc(var(--spacing)*var(--gap))] data-vertical:flex-col data-vertical:items-stretch",
         className
       )}
       {...props}
@@ -56,6 +69,11 @@ function ToggleGroup({
   )
 }
 
+/**
+ * One block of the group. `flex-1` is what makes the blocks *equal* — but only
+ * where the row has a width to divide, which is why the ANC-scene chip rows
+ * (a `w-fit` group) keep their content-sized pills without having to opt out.
+ */
 function ToggleGroupItem({
   className,
   children,
@@ -72,7 +90,7 @@ function ToggleGroupItem({
       data-size={context.size || size}
       data-spacing={context.spacing}
       className={cn(
-        "shrink-0 group-data-[spacing=0]/toggle-group:rounded-none group-data-[spacing=0]/toggle-group:px-3 group-data-[spacing=0]/toggle-group:shadow-none focus:z-10 focus-visible:z-10 group-data-[spacing=0]/toggle-group:has-data-[icon=inline-end]:pr-2.5 group-data-[spacing=0]/toggle-group:has-data-[icon=inline-start]:pl-2.5 group-data-horizontal/toggle-group:data-[spacing=0]:first:rounded-l-3xl group-data-vertical/toggle-group:data-[spacing=0]:first:rounded-t-3xl group-data-horizontal/toggle-group:data-[spacing=0]:last:rounded-r-3xl group-data-vertical/toggle-group:data-[spacing=0]:last:rounded-b-3xl data-[state=on]:bg-muted group-data-horizontal/toggle-group:data-[spacing=0]:data-[variant=outline]:border-l-0 group-data-vertical/toggle-group:data-[spacing=0]:data-[variant=outline]:border-t-0 group-data-horizontal/toggle-group:data-[spacing=0]:data-[variant=outline]:first:border-l group-data-vertical/toggle-group:data-[spacing=0]:data-[variant=outline]:first:border-t",
+        "flex-1 min-w-0 focus-visible:z-10",
         toggleVariants({
           variant: context.variant || variant,
           size: context.size || size,

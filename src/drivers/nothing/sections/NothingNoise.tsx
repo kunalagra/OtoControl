@@ -1,9 +1,9 @@
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Switch } from '@/components/ui/switch'
-import { cn } from '@/lib/utils'
 import { AncLevel } from '@/drivers/nothing/commands'
 import type { NothingDevice, NothingState } from '@/drivers/nothing/device'
+import { SegmentButton } from '@/ui/controls/SegmentButton'
 import { SettingRow } from '@/ui/controls/SettingRow'
 
 interface Props {
@@ -55,26 +55,16 @@ export function NothingNoise({ device, state }: Props) {
             ) : (
               <div className="grid grid-cols-2 gap-2">
                 {LEVELS.map(({ value, label, hint }) => (
-                  <button
+                  <SegmentButton
                     key={value}
-                    type="button"
+                    pressed={state.anc === value}
                     disabled={disabled}
-                    aria-pressed={state.anc === value}
-                    onClick={() => void device.setAncLevel(value)}
-                    className={cn(
-                      'flex flex-col gap-0.5 rounded-lg border px-2.5 py-2 text-left transition-colors',
-                      'focus-visible:ring-ring outline-none focus-visible:ring-2',
-                      'disabled:cursor-default disabled:opacity-50',
-                      state.anc === value
-                        ? 'border-primary bg-primary/10'
-                        : 'border-border hover:border-muted-foreground/40',
-                    )}
-                  >
-                    <span className="text-sm font-medium">{label}</span>
-                    {hint && (
-                      <span className="text-muted-foreground text-[11px] leading-tight">{hint}</span>
-                    )}
-                  </button>
+                    onSelect={() => void device.setAncLevel(value)}
+                    label={label}
+                    hint={hint}
+                    size="lg"
+                    className="px-2.5 py-2"
+                  />
                 ))}
               </div>
             )}

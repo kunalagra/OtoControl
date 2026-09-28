@@ -89,7 +89,7 @@ tokens (`--surface-raised`, `--signal`, `--signal-strong`).
 | `--border` | `#e0e0e0` |
 | `--primary` / `--signal` | `#ff4d3d` (fills and marks only) |
 | `--primary-foreground` | `#000000` |
-| `--signal-strong` | `#d92b1c` (red **text** in light mode, 4.9 : 1) |
+| `--signal-strong` | `#c72414` (red **text** in light mode: 5.69 : 1 on white, 5.08 on `#f2f2f2`, 4.56 on `#e6e6e6` — *not* `#d92b1c`, whose 4.9 : 1 is true on white and nowhere else) |
 | `--ring` | `#000000` |
 
 The battery hero block is inverted in both themes: foreground background with
@@ -273,6 +273,18 @@ See spec §7.3 for behaviour. Anatomy, from top to bottom:
   - left: Title plus a "Switch" sm pill;
   - right: status token, "Refresh", "Disconnect" and "Add device" sm pills.
     "Add device" is a popover with the two pickers.
+
+> **Amendment (final review, shipped behaviour).** The switcher (phone
+> chevron and desktop "Switch" pill) renders only when there is something
+> to switch to (`available.length >= MIN_DEVICES_TO_SWITCH`): one device
+> is a dropdown with one entry. The phone `⋯` menu drops the device
+> actions when no device is granted — with no device the empty state
+> already carries both connect buttons, so the menu would say it twice;
+> only the theme toggle remains, because a phone has no rail to put it
+> on. The title row reads the app name with no device (the status token
+> carries the state); the model-as-switcher-button from the phone list
+> above is split into a heading plus a separate chevron so the name stays
+> a heading for assistive tech.
 
 ### 5.11 Status token
 

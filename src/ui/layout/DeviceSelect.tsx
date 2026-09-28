@@ -14,12 +14,24 @@ interface Props {
 }
 
 /**
+ * How many granted devices it takes before switching between them is a
+ * question worth asking at all.
+ *
+ * A dropdown of one is not a dropdown, and a "Switch" pill beside the only
+ * device name in the app is a control that cannot do anything — so the top bar
+ * asks this before it offers one, and `DeviceSelect` asks it before it renders.
+ * A constant rather than a helper so both sides name the same rule without
+ * either importing the other's component.
+ */
+export const MIN_DEVICES_TO_SWITCH = 2
+
+/**
  * Switches between granted devices.
  *
- * Only shown when there is more than one, since with a single device it would
- * be a dropdown with one entry. Labels come from the model string cached on a
- * previous connection — `port.getInfo()` exposes only a service ID, so an
- * unvisited device can only be named by brand.
+ * Only shown when there are at least `MIN_DEVICES_TO_SWITCH`, for the reason
+ * above. Labels come from the model string cached on a previous connection —
+ * `port.getInfo()` exposes only a service ID, so an unvisited device can only
+ * be named by brand.
  *
  * **Serial devices only.** `manager.available` comes from `listGrantedPorts()`,
  * so a BLE device — every Soundcore — never appears here and cannot be
@@ -30,7 +42,7 @@ interface Props {
  */
 export function DeviceSelect({ manager, active }: Props) {
   const available = manager.available
-  if (available.length < 2) return null
+  if (available.length < MIN_DEVICES_TO_SWITCH) return null
 
   // The active entry is identified by brand, which is as precise as the port
   // information allows.

@@ -182,7 +182,7 @@ export function ProbePanel({ device, connected }: Props) {
                   className={cn(
                     result.outcome === 'response' && 'text-emerald-500',
                     (result.outcome === 'error' || result.outcome === 'blocked') &&
-                      'text-destructive',
+                      'text-signal-strong',
                   )}
                 >
                   {OUTCOME_LABEL[result.outcome]}

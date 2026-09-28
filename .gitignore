@@ -15,7 +15,12 @@ dist-ssr
 # Agent scratch: isolated worktrees and per-plan execution state. Both live
 # inside the repo and would otherwise show up as untracked in every checkout.
 .claude/worktrees/
+.worktrees/
 .superpowers/
+# Browser verification artifacts (screenshots, harness dumps) — evidence, not source.
+shots/
+task-6-screenshots/
+.playwright-mcp/
 
 # Editor directories and files
 .vscode/*

@@ -385,6 +385,25 @@ export const EQ_PRESETS: Array<{ name: string; gains: number[] }> = [
   { name: 'Jazz', gains: [-3.2, 0, 2.2, 2.2, 0] },
 ];
 
+/**
+ * The preset a curve is playing, or null when it is hand-edited.
+ *
+ * GAIA has no preset *id* on the wire: the device holds band gains and this app
+ * sends whole curves, so "which preset is this" is a comparison against the
+ * table above — which is what the Sound page's preset list has always done to
+ * decide which row to mark selected. The Home tile asks the same question for
+ * the same reason, so the answer lives here once rather than written twice. A
+ * curve that matches no preset is Custom, not the nearest one.
+ */
+export function eqPresetName(gains: ReadonlyArray<number | undefined>): string | null {
+  const match = EQ_PRESETS.find(
+    (preset) =>
+      gains.length === preset.gains.length &&
+      preset.gains.every((value, index) => Math.abs((gains[index] ?? 0) - value) < 0.05),
+  );
+  return match ? match.name : null;
+}
+
 // The config also carries per-band `max_headroom`, `loudness_weights` and
 // `q_factor`. Their meaning is not established — the Dance preset exceeds its
 // own band's max_headroom — so they are deliberately not modelled here. The

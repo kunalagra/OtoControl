@@ -1,5 +1,5 @@
 import { renderToStaticMarkup } from 'react-dom/server'
-import type { ReactElement } from 'react'
+import type { ComponentType, ReactElement } from 'react'
 import { describe, expect, it } from 'vitest'
 
 import { initialState } from '@/drivers/sennheiser/state'
@@ -54,7 +54,7 @@ const noNavigate = () => undefined
 interface SectionArgs {
   device: never
   state: unknown
-  onNavigate?: () => void
+  onNavigate?: (sectionId: string) => void
 }
 
 /**
@@ -77,21 +77,42 @@ interface SectionArgs {
  */
 type Descriptor = typeof SENNHEISER_DRIVER | typeof SONY_DRIVER
 
-const section = (driver: Descriptor, id: string, state: unknown) => {
+/**
+ * `componentFor` returns whatever the driver's own map holds, so the two
+ * brands' sections come back as a union of prop types. Every one of them
+ * takes the same three, so the union is collapsed here rather than at each of
+ * the twelve call sites.
+ *
+ * Through `unknown` because the erased props are a *superset* of what these
+ * sections declare: `componentFor` also hands a shell-owned section the whole
+ * `ActiveDevice` (see `ResolvedSectionProps`), which no driver's component
+ * takes. Only driver sections are rendered here, so that prop is never passed.
+ */
+const section = (driver: Descriptor, id: string, state: unknown): ComponentType<SectionArgs> => {
   const active = { id: driver.id, driver, device, state } as ActiveDevice
   const Component = componentFor(active, id)
   if (!Component) throw new Error(`no component for ${driver.id} section "${id}"`)
-  // `componentFor` returns a `ComponentType`, whose `ComponentClass` arm is not
-  // callable. Every section in this codebase is a function component, and
-  // calling it directly is how the rest of the suite renders one.
-  return Component as (props: SectionArgs) => ReactElement
+  return Component as unknown as ComponentType<SectionArgs>
 }
 
-const sennheiser = (id: string, state: DeviceState) =>
-  section(SENNHEISER_DRIVER, id, state)({ device, state, onNavigate: noNavigate }) as ReactElement
+/**
+ * The section as an *element*, not as its return value.
+ *
+ * Rendering it as `Component(props)` — which is how the panel tests render a
+ * component with no hooks — only works while a section uses none. Drafting a
+ * slider means a section now calls `useState`, and a hook outside a render
+ * throws. Handing `renderToStaticMarkup` the element renders it properly
+ * either way.
+ */
+const sennheiser = (id: string, state: DeviceState): ReactElement => {
+  const Component = section(SENNHEISER_DRIVER, id, state)
+  return <Component device={device} state={state} onNavigate={noNavigate} />
+}
 
-const sony = (id: string, state: SonyState) =>
-  section(SONY_DRIVER, id, state)({ device, state }) as ReactElement
+const sony = (id: string, state: SonyState): ReactElement => {
+  const Component = section(SONY_DRIVER, id, state)
+  return <Component device={device} state={state} onNavigate={noNavigate} />
+}
 
 describe('Sound', () => {
   it('renders disconnected (initial state)', () => {

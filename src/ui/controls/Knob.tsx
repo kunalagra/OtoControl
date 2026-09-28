@@ -6,7 +6,15 @@ import type { Range } from './knobGeometry'
 
 interface KnobProps {
   value: number
+  /** Per-tick, while dragging. For live preview only — see `onCommit`. */
   onChange(value: number): void
+  /**
+   * Called once, when the interaction ends. Where a device write belongs: the
+   * knob is a custom control rather than a native input, so there is no
+   * platform "commit" event to lean on, and per-tick writes are what make a
+   * drag fight the device's replies (spec §7.1).
+   */
+  onCommit?(value: number): void
   range?: Range
   /** Arrow-key increment. Page keys move five of these. */
   step?: number
@@ -37,6 +45,7 @@ const VIEWBOX = 112
 export function Knob({
   value,
   onChange,
+  onCommit,
   range = { min: 0, max: 100 },
   step = 1,
   detent,
@@ -51,29 +60,68 @@ export function Knob({
   const svgRef = useRef<SVGSVGElement>(null)
   const [dragging, setDragging] = useState(false)
   const labelId = useId()
+  /**
+   * The value a pointer gesture started from, or null when none is live.
+   *
+   * This cannot be read off `value`: a caller that drafts (as `Noise` does)
+   * passes the draft back in as `value`, so by release the prop has already
+   * been moved by the last `pointermove` and "did anything change?" is always
+   * false. Same reasoning as the fader's `startRef`.
+   */
+  const startRef = useRef<number | null>(null)
 
-  const emit = useCallback(
-    (next: number, snap: boolean) => {
-      const settled =
+  /** The detent and the step, and nothing else. */
+  const settle = useCallback(
+    (next: number, snap: boolean): number => {
+      const snapped =
         snap && detent !== undefined && Math.abs(next - detent) <= detentTolerance
           ? detent
           : next
-      const rounded = step >= 1 ? Math.round(settled) : settled
-      if (rounded !== value) onChange(rounded)
+      return step >= 1 ? Math.round(snapped) : snapped
     },
-    [detent, detentTolerance, onChange, step, value],
+    [detent, detentTolerance, step],
   )
 
-  const track = useCallback(
-    (event: { clientX: number; clientY: number }, snap: boolean) => {
+  /** The value a pointer position means, or null before the dial is measured. */
+  const valueAt = useCallback(
+    (event: { clientX: number; clientY: number }): number | null => {
       const svg = svgRef.current
-      if (!svg) return
+      if (!svg) return null
       const box = svg.getBoundingClientRect()
       const dx = event.clientX - (box.left + box.width / 2)
       const dy = event.clientY - (box.top + box.height / 2)
-      emit(pointerToValue(dx, dy, range), snap)
+      return pointerToValue(dx, dy, range)
     },
-    [emit, range],
+    [range],
+  )
+
+  /** Per tick: drafts only, and only where the value actually moved. */
+  const draft = useCallback(
+    (next: number, snap: boolean): number | null => {
+      const rounded = settle(next, snap)
+      if (rounded === value) return null
+      onChange(rounded)
+      return rounded
+    },
+    [onChange, settle, value],
+  )
+
+  /**
+   * The end of an interaction: the value it landed on, or null when it landed
+   * where it started. `from` is the value the interaction began at, which for a
+   * drag is the gesture's own start rather than the live prop.
+   */
+  const release = useCallback(
+    (from: number, next: number, snap: boolean): number | null => {
+      const rounded = settle(next, snap)
+      if (rounded === from) return null
+      // A release can land somewhere the last tick did not — a detent snap, or
+      // a pointerup without a final move — so the draft is brought into step
+      // before the value is handed over as the committed one.
+      if (rounded !== value) onChange(rounded)
+      return rounded
+    },
+    [onChange, settle, value],
   )
 
   const thumb = polar(valueToAngle(value, range), RADIUS)
@@ -96,25 +144,46 @@ export function Knob({
           aria-disabled={disabled}
           className={cn(
             'size-full touch-none select-none rounded-full outline-none transition-opacity',
-            'focus-visible:ring-ring/60 focus-visible:ring-2 focus-visible:ring-offset-2',
+            'focus-visible:ring-ring focus-visible:ring-2 focus-visible:ring-offset-2',
             'focus-visible:ring-offset-background',
             disabled ? 'opacity-40' : dragging ? 'cursor-grabbing' : 'cursor-grab',
           )}
           onPointerDown={(event) => {
             if (disabled) return
             event.currentTarget.setPointerCapture(event.pointerId)
+            startRef.current = value
             setDragging(true)
-            track(event, false)
+            const next = valueAt(event)
+            if (next !== null) draft(next, false)
           }}
           onPointerMove={(event) => {
-            if (dragging) track(event, false)
+            if (!dragging) return
+            const next = valueAt(event)
+            if (next !== null) draft(next, false)
           }}
           onPointerUp={(event) => {
             if (!dragging) return
             setDragging(false)
-            track(event, true)
+            const from = startRef.current
+            startRef.current = null
+            const next = valueAt(event)
+            if (from === null || next === null) return
+            const settled = release(from, next, true)
+            if (settled !== null) onCommit?.(settled)
           }}
-          onPointerCancel={() => setDragging(false)}
+          onPointerCancel={() => {
+            setDragging(false)
+            const from = startRef.current
+            startRef.current = null
+            if (from === null) return
+            // The browser took the gesture away, but the value on screen is the
+            // one the user was dragging to. Committing it keeps the dial and the
+            // headphones in agreement — and, more to the point, releases the
+            // caller's draft instead of leaving it pinned at a value nothing
+            // will ever confirm.
+            const settled = release(from, value, false)
+            if (settled !== null) onCommit?.(settled)
+          }}
           onKeyDown={(event) => {
             if (disabled) return
             const next = keyboardValue(event.key, value, range, {
@@ -123,7 +192,11 @@ export function Knob({
             })
             if (next === null) return
             event.preventDefault()
-            emit(next, false)
+            // One key press is one interaction, so the commit belongs here.
+            // There is no release to wait for on a control this custom, and the
+            // value it started at is the one the key was read against.
+            const settled = release(value, next, false)
+            if (settled !== null) onCommit?.(settled)
           }}
         >
           <path

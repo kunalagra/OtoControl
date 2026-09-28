@@ -104,6 +104,15 @@ Order from top to bottom:
    - Right: the status token (§4.4), and a menu button that holds Refresh,
      Disconnect, the Add-device pickers and the theme toggle.
    - No device image here. Home carries it.
+   - **Amendment (task 6, measured).** The menu holds the same
+     `ConnectionControls` the desktop branch uses — Refresh, Disconnect and
+     the two pickers, as the connection state allows — and the theme toggle
+     always. With **no device granted** it holds the theme toggle *alone*: the
+     NoDevice hero of §3.2 is already a full pair of connect buttons on the
+     page, and a menu that offers them again says the same thing twice. The
+     desktop branch had always made that call; the phone was the exception
+     because its bar had nowhere else to put them, and the empty state is what
+     removed that reason. See `TopBar.tsx`.
 2. **Section body.**
    - Scrolls. Bottom padding = pill height + 16 px + `env(safe-area-inset-bottom)`.
 3. **Floating pill tab bar.**
@@ -112,8 +121,29 @@ Order from top to bottom:
    - The active tab is an inverted pill (foreground background, background
      text) with an uppercase 10 px label.
    - Inactive tabs are 55 % opacity text.
+     - **Amendment (task 6, measured).** Shipped as `--muted-foreground` at
+       full strength, with the inverted fill kept as the hierarchy. The
+       instruction here is *visual* — the active tab should read as the one
+       you are on — and the inversion says that more strongly than a dimmer
+       label ever did. What had to go is the dimming, because on the surfaces
+       this nav actually sits on it is not a contrast trade-off, it is
+       illegible: `#777` at 55 % is **2.1 : 1** on the dark pill's `#111` and
+       **2.0 : 1** on the light pill's `#f2f2f2`, and the bare `#777` the rail
+       asked for was the same bug one step further along — 4.69 : 1 in dark and
+       **4.48 : 1** in light, short of the 4.5 a 9 px label needs.
+       `--muted-foreground` measures **4.76 : 1** (light) and **5.33 : 1**
+       (dark) on the pill, and 5.33 / 5.92 : 1 on the page, so §8 is satisfied
+       where the opacity was only ever one way of drawing the same
+       distinction. One class, both themes, no arbitrary hex to drift.
    - Icon plus label, or label only if there are more than four tabs.
      There are never more than four today.
+     - **Amendment (task 6).** Every item is icon + label at both widths — the
+       pill shows `shortLabel`, the rail the full label — and there is no
+       label-only branch. §3.1's list tops out at four (Home, Sound, Devices,
+       System), and a fifth tab is a driver adding a section rather than a
+       layout case that has to be handled, so the rule stays written here and
+       unimplemented; `Nav.tsx` is one component in two layouts and neither
+       drops the icon.
 
 Phone Home is a single column: hero → battery + status tiles (2-up grid) →
 noise → EQ preview → devices tile.
@@ -133,6 +163,13 @@ noise → EQ preview → devices tile.
    - **Top bar** (not sticky on desktop):
      - left: model name at 22 px / 800 weight, and a "Switch" pill that opens
        `DeviceSelect`;
+       - **Amendment (task 6).** The pill is conditional, not unconditional:
+         it renders only when `manager.available.length >= 2`
+         (`MIN_DEVICES_TO_SWITCH`). A dropdown holding one entry is not a
+         dropdown, and a "Switch" pill beside the only device name in the app
+         is a control that cannot do anything — on a phone it is also a 44 px
+         target next to the status token for no possible effect. `DeviceSelect`
+         asks the same question before rendering the list.
      - right: the status token, a Refresh pill, a Disconnect pill, and an
        "Add device" pill that opens the two pickers.
    - Then the section body.
@@ -419,8 +456,21 @@ receives, or are omitted if the caller doesn't supply per-preset gains.
     red fill (the selected segment, the active preset's red elements) are
     therefore **black** (6.4 : 1), not white as in the mockup;
   - in light mode, red on white is 3.3 : 1, so red there is for fills and
-    marks only. Red text in light mode uses `--signal-strong` `#d92b1c`
-    (4.9 : 1).
+    marks only. Red text in light mode uses `--signal-strong`.
+    - **Amendment (task 6, computed).** The token is `#c72414`, and the
+      "4.9 : 1" quoted for `#d92b1c` was measured on **white only** — the one
+      surface red text is *not* painted on. Relative luminance:
+
+      | red | white | `--card` `#f2f2f2` | `--surface-raised` `#e6e6e6` |
+      |---|---|---|---|
+      | `#d92b1c` (was) | 4.87 | **4.35** | **3.90** |
+      | `#c72414` (now) | 5.69 | 5.08 | 4.56 |
+
+      Both old numbers are below AA for body text, and those two grounds are
+      where the destructive `alert` description and the fader's active readout
+      are painted. `theme.test.ts` computes this table rather than asserting
+      the hex, so the next token that is right on white and wrong on a block
+      fails the suite.
 - The focus ring is visible on every control: a 2 px foreground outline with a
   2 px offset.
 

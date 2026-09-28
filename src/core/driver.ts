@@ -145,6 +145,38 @@ export interface DriverSection {
 }
 
 /**
+ * A curve and the name of the preset that produced it, for Home's EQ tile
+ * (spec §5.2).
+ *
+ * The shape carries the range as well as the gains because the tile maps each
+ * gain onto it, and a bar drawn without knowing the range is a guess about
+ * where flat sits — the single most misleading thing a small EQ preview can do.
+ * `range` comes from the device wherever the device reports one, so the bars
+ * mean the same thing on a five-band ±6 dB curve and a six-band ±10 one.
+ */
+export interface EqPreview {
+  /** Display name, or null when the curve is hand-edited or the preset unknown. */
+  preset: string | null;
+  /** One gain per band, in dB, in band order. */
+  gains: number[];
+  range: { min: number; max: number };
+}
+
+/**
+ * One row of the headphones' own paired-device list (spec §5.3).
+ *
+ * `isThisDevice` is the entry this app is talking through, so the tile can mark
+ * it rather than leaving the user to work out which of four rows is the machine
+ * in their hand. A driver that cannot tell reports every row as false rather
+ * than guessing one.
+ */
+export interface ConnectionSummary {
+  name: string;
+  connected: boolean;
+  isThisDevice: boolean;
+}
+
+/**
  * A manufacturer, as one entry in `DRIVERS` rather than a subclass.
  *
  * `guard` is part of the contract in spec §3.2, but deliberately absent
@@ -232,6 +264,38 @@ export interface DeviceDriver<TDevice, TState> {
    * tier keeps only the `DeviceArtwork` shape (`core/artwork.ts`).
    */
   artwork(state: TState): DeviceArtwork;
+  /**
+   * The curve and preset name Home's EQ tile draws, or null when there is
+   * nothing to draw (spec §5.2, §4.3).
+   *
+   * Optional, and deliberately so: a driver whose Sound page has no equaliser to
+   * preview simply does not implement it, and the tile falls back to a link
+   * rather than the shared tier inventing an empty curve. Everything here is
+   * data the driver's own Sound section already reads — this is a second door
+   * onto the same state, not a new source of truth.
+   */
+  eqPreview?(state: TState): EqPreview | null;
+  /**
+   * The headphones' own paired-device list, as Home's devices tile shows it
+   * (spec §5.3, §4.3).
+   *
+   * Optional for the same reason, and for a second one: only two of the five
+   * drivers read a pairing-device table at all. `null` means "not read yet or
+   * this device reports none", which the tile shows as a plain link — the tile
+   * itself only exists for a driver that declares a `devices` section.
+   */
+  connections?(state: TState): ConnectionSummary[] | null;
+  /**
+   * Where the headphones are, in this driver's own words, or null when it has
+   * nothing to say (spec §4.3, the hero's wear caption).
+   *
+   * Separate from `statusLine` because that field is free to be about something
+   * else: several drivers spend it on per-cell levels, and one spends it on a
+   * status line ("L in case · R in case") that reads like a wear state without
+   * being one. Home's caption wants the wear state and nothing else, so it asks
+   * for it by name rather than guessing which of those `detail` happens to be.
+   */
+  wearCaption?(state: TState): string | null;
 }
 
 /**

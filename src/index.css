@@ -16,6 +16,10 @@
     --color-sidebar-primary: var(--sidebar-primary);
     --color-sidebar-foreground: var(--sidebar-foreground);
     --color-sidebar: var(--sidebar);
+    --color-surface-raised: var(--surface-raised);
+    --color-signal-strong: var(--signal-strong);
+    --color-signal: var(--signal);
+    --color-segment-off: var(--segment-off);
     --color-chart-5: var(--chart-5);
     --color-chart-4: var(--chart-4);
     --color-chart-3: var(--chart-3);
@@ -46,75 +50,149 @@
     --radius-2xl: calc(var(--radius) * 1.8);
     --radius-3xl: calc(var(--radius) * 2.2);
     --radius-4xl: calc(var(--radius) * 2.6);
+    /*
+     * The bento's three-column width — spec §4.2, "between 768 and 1100px the
+     * grid drops to 2 columns".
+     *
+     * A *named* breakpoint rather than `min-[1100px]:`, and that is the whole
+     * point of the name. Tailwind sorts an arbitrary min-width variant before
+     * the named ones in the emitted stylesheet, so `min-[1100px]:` and `md:`
+     * rules came out in the wrong order: at every width from 1100px up the
+     * later `md:` rule won on equal specificity, and the three-column bento
+     * never applied — the hero rendered as a sliver on the far right. Two rules
+     * that disagree have to settle it by order, so both have to be in the same
+     * ordered family. Named breakpoints are ordered by their width, which is
+     * also the order the layout means.
+     */
+    --breakpoint-bento: 68.75rem;
 }
 
+/* Mono palette, per docs/design/mono/DESIGN-GUIDE.md section 2. */
 :root {
-    --background: oklch(1 0 0);
-    --foreground: oklch(0.141 0.005 285.823);
-    --card: oklch(1 0 0);
-    --card-foreground: oklch(0.141 0.005 285.823);
-    --popover: oklch(1 0 0);
-    --popover-foreground: oklch(0.141 0.005 285.823);
-    --primary: oklch(0.52 0.105 223.128);
-    --primary-foreground: oklch(0.984 0.019 200.873);
-    --secondary: oklch(0.967 0.001 286.375);
-    --secondary-foreground: oklch(0.21 0.006 285.885);
-    --muted: oklch(0.967 0.001 286.375);
-    --muted-foreground: oklch(0.552 0.016 285.938);
-    --accent: oklch(0.52 0.105 223.128);
-    --accent-foreground: oklch(0.984 0.019 200.873);
-    --destructive: oklch(0.577 0.245 27.325);
-    --border: oklch(0.92 0.004 286.32);
-    --input: oklch(0.92 0.004 286.32);
-    --ring: oklch(0.705 0.015 286.067);
+    --background: #ffffff;
+    --foreground: #000000;
+    --card: #f2f2f2;
+    --card-foreground: #000000;
+    --popover: #f2f2f2;
+    --popover-foreground: #000000;
+    --primary: #ff4d3d;
+    --primary-foreground: #000000;
+    --secondary: #e6e6e6;
+    --secondary-foreground: #000000;
+    --muted: #e6e6e6;
+    --muted-foreground: #6b6b6b;
+    --accent: #e6e6e6;
+    --accent-foreground: #000000;
+    --destructive: #ff4d3d;
+    --border: #e0e0e0;
+    --input: #e0e0e0;
+    --ring: #000000;
     --chart-1: oklch(0.897 0.196 126.665);
     --chart-2: oklch(0.768 0.233 130.85);
     --chart-3: oklch(0.648 0.2 131.684);
     --chart-4: oklch(0.532 0.157 131.589);
     --chart-5: oklch(0.453 0.124 130.933);
-    --radius: 0.45rem;
-    --sidebar: oklch(0.985 0 0);
-    --sidebar-foreground: oklch(0.141 0.005 285.823);
-    --sidebar-primary: oklch(0.609 0.126 221.723);
-    --sidebar-primary-foreground: oklch(0.984 0.019 200.873);
-    --sidebar-accent: oklch(0.967 0.001 286.375);
-    --sidebar-accent-foreground: oklch(0.21 0.006 285.885);
-    --sidebar-border: oklch(0.92 0.004 286.32);
-    --sidebar-ring: oklch(0.705 0.015 286.067);
+    --surface-raised: #e6e6e6;
+    --signal: #ff4d3d;
+    /*
+     * Red *text* in light mode, and it is a step past `#d92b1c`.
+     *
+     * `#d92b1c` is 4.87 : 1 on white — which is where the "4.9 : 1" quoted in the
+     * design guide and the spec was measured, and it is the only place it was
+     * ever true. Red text is not painted on white: the alert's description sits
+     * on a block (`#f2f2f2`, 4.35 : 1) and the fader's active readout can sit on
+     * the raised surface (`#e6e6e6`, 3.90 : 1), and both are below AA for body
+     * text. `#c72414` is 5.69 / 5.08 / 4.56 on those three grounds, so it holds
+     * where the text actually is rather than where the palette diagram is.
+     * `theme.test.ts` computes all of these rather than taking them on trust.
+     */
+    --signal-strong: #c72414;
+    --segment-off: #d4d4d4;
+    --radius: 1rem;
+    --sidebar: #ffffff;
+    --sidebar-foreground: #000000;
+    --sidebar-primary: #ff4d3d;
+    --sidebar-primary-foreground: #000000;
+    --sidebar-accent: #e6e6e6;
+    --sidebar-accent-foreground: #000000;
+    --sidebar-border: #e0e0e0;
+    --sidebar-ring: #000000;
 }
 
 .dark {
-    --background: oklch(0.141 0.005 285.823);
-    --foreground: oklch(0.985 0 0);
-    --card: oklch(0.21 0.006 285.885);
-    --card-foreground: oklch(0.985 0 0);
-    --popover: oklch(0.21 0.006 285.885);
-    --popover-foreground: oklch(0.985 0 0);
-    --primary: oklch(0.45 0.085 224.283);
-    --primary-foreground: oklch(0.984 0.019 200.873);
-    --secondary: oklch(0.274 0.006 286.033);
-    --secondary-foreground: oklch(0.985 0 0);
-    --muted: oklch(0.274 0.006 286.033);
-    --muted-foreground: oklch(0.705 0.015 286.067);
-    --accent: oklch(0.45 0.085 224.283);
-    --accent-foreground: oklch(0.984 0.019 200.873);
-    --destructive: oklch(0.704 0.191 22.216);
-    --border: oklch(1 0 0 / 10%);
-    --input: oklch(1 0 0 / 15%);
-    --ring: oklch(0.552 0.016 285.938);
+    --background: #000000;
+    --foreground: #ffffff;
+    --card: #111111;
+    --card-foreground: #ffffff;
+    --popover: #111111;
+    --popover-foreground: #ffffff;
+    --primary: #ff4d3d;
+    --primary-foreground: #000000;
+    --secondary: #1d1d1d;
+    --secondary-foreground: #ffffff;
+    --muted: #1f1f1f;
+    --muted-foreground: #888888;
+    --accent: #1d1d1d;
+    --accent-foreground: #ffffff;
+    --destructive: #ff4d3d;
+    --border: #1f1f1f;
+    --input: #1f1f1f;
+    --ring: #ffffff;
     --chart-1: oklch(0.897 0.196 126.665);
     --chart-2: oklch(0.768 0.233 130.85);
     --chart-3: oklch(0.648 0.2 131.684);
     --chart-4: oklch(0.532 0.157 131.589);
     --chart-5: oklch(0.453 0.124 130.933);
-    --sidebar: oklch(0.21 0.006 285.885);
-    --sidebar-foreground: oklch(0.985 0 0);
-    --sidebar-primary: oklch(0.715 0.143 215.221);
-    --sidebar-primary-foreground: oklch(0.302 0.056 229.695);
-    --sidebar-accent: oklch(0.274 0.006 286.033);
-    --sidebar-accent-foreground: oklch(0.985 0 0);
-    --sidebar-border: oklch(1 0 0 / 10%);
-    --sidebar-ring: oklch(0.552 0.016 285.938);
+    --surface-raised: #1d1d1d;
+    --signal: #ff4d3d;
+    --signal-strong: #ff4d3d;
+    --segment-off: #2a2a2a;
+    --sidebar: #000000;
+    --sidebar-foreground: #ffffff;
+    --sidebar-primary: #ff4d3d;
+    --sidebar-primary-foreground: #000000;
+    --sidebar-accent: #1d1d1d;
+    --sidebar-accent-foreground: #ffffff;
+    --sidebar-border: #1f1f1f;
+    --sidebar-ring: #ffffff;
+}
+
+/* Dotted texture, per docs/design/mono/DESIGN-GUIDE.md section 3. */
+.mono-dots {
+    background-color: var(--card);
+    background-image: radial-gradient(color-mix(in oklab, var(--foreground) 12%, transparent) 1px, transparent 1.4px);
+    background-size: 12px 12px;
+}
+
+/* The fader desk sits under the hand, so its texture steps back. */
+.mono-dots-fader {
+    background-color: var(--card);
+    background-image: radial-gradient(color-mix(in oklab, var(--foreground) 8%, transparent) 1px, transparent 1.4px);
+    background-size: 10px 10px;
+}
+
+/*
+ * DESIGN-GUIDE §6, last row: "prefers-reduced-motion — disable all of the
+ * above". Everything the motion table allows is a transition or an animation
+ * (selection colour, the switch knob, a menu's slide), so this is one blanket
+ * rule rather than an opt-out at each site — three of them were added after the
+ * question was first asked, and a rule that has to be remembered per component
+ * is a rule the next component forgets.
+ *
+ * `0.01ms` rather than `0s`: a transition whose duration is exactly zero never
+ * fires `transitionend`, so anything waiting on that event would sit in its
+ * opening state for good. `!important` because every rule above is a utility at
+ * the same specificity, and this one has to win at the root.
+ */
+@media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.01ms !important;
+        scroll-behavior: auto !important;
+    }
 }
 
 @layer base {

@@ -47,6 +47,34 @@ export interface DeviceSummary {
   budCharging?: { left: boolean; right: boolean } | null
   /** True when worn, or when the driver cannot tell — see `DeviceDriver.worn`. */
   worn: boolean
+  /** The firmware string the device reported, or null when it has none. */
+  firmware: string | null
+  /**
+   * Every battery cell the device reports, in display order. Empty when unknown.
+   *
+   * Separate from `battery` because a single number cannot describe a case: an
+   * earbud reporting 60% says nothing about whether the buds in it will last
+   * the train ride, and the Home tile shows one row per cell rather than
+   * collapsing them (spec §5.1, §4.3). `battery` stays the minimum across the
+   * cells that are actually reporting, for the callers that want the one number
+   * that limits you.
+   */
+  cells: BatteryCellSummary[]
+}
+
+/**
+ * One row of a battery readout, as every driver normalises its cells into.
+ *
+ * The label set is closed rather than free text because it is a *slot* name —
+ * the tile renders it as a short heading beside a segment bar ("L", "R", "Case")
+ * — and because a driver's own vocabulary for the same cell ("Left", "Right")
+ * does not fit in that space. 'Battery' is the single-cell case, where the
+ * heading would otherwise be empty.
+ */
+export interface BatteryCellSummary {
+  label: 'Battery' | 'L' | 'R' | 'Case'
+  level: number
+  charging: boolean
 }
 
 /**
@@ -58,6 +86,32 @@ export interface DeviceSummary {
  */
 const fallbackName = (status: string, brandName: string): string =>
   status === 'connected' || status === 'connecting' ? brandName : 'No device'
+
+/**
+ * One battery cell, or nothing where the driver has not read one.
+ *
+ * Every branch below has a fixed set of cells it knows about and fills in
+ * whichever the device reported, so this is the shape all four share: a list
+ * (`cells`) to spread into, and the same list to take the minimum from
+ * (`battery`), which is why the two cannot drift apart.
+ *
+ * A cell that is absent, or present but reporting no level, contributes
+ * nothing: Soundcore's other bud is a null level when it is docked as host, and
+ * a level with no cell behind it would be a 0% on a battery that is merely out
+ * of reach. (Sony's bud in the case is a different case again — a real 0 with
+ * UNKNOWN status — and is filtered on `present` in that branch.)
+ */
+const cell = (
+  label: BatteryCellSummary['label'],
+  value: { level: number | null; charging: boolean } | null | undefined,
+): BatteryCellSummary[] =>
+  value == null || value.level === null
+    ? []
+    : [{ label, level: value.level, charging: value.charging }]
+
+/** The one number that limits you: the lowest cell actually reporting. */
+const lowest = (cells: BatteryCellSummary[]): number | null =>
+  cells.length ? Math.min(...cells.map((entry) => entry.level)) : null
 
 export function summarise(active: ActiveDevice): DeviceSummary {
   // The `DriverId` literal, rather than reading `.id` back off the Sony
@@ -72,15 +126,11 @@ export function summarise(active: ActiveDevice): DeviceSummary {
     const { driver, state } = active
     // A side reporting null is absent (bud docked with the other one as host,
     // say), not flat — it limits you no less than the lowest present cell.
-    const levels = state.battery
-      ? [state.battery.left.level, state.battery.right.level].filter(
-          (level): level is number => level !== null,
-        )
-      : []
+    const cells = [...cell('L', state.battery?.left), ...cell('R', state.battery?.right)]
     return {
       model: state.info.model ?? fallbackName(state.status, 'Soundcore earbuds'),
       hasDevice: state.info.model !== null || state.info.serial !== null,
-      battery: levels.length ? Math.min(...levels) : null,
+      battery: lowest(cells),
       charging: state.battery ? state.battery.left.charging || state.battery.right.charging : false,
       codec: driver.codecName(state),
       detail: driver.statusLine(state),
@@ -89,6 +139,8 @@ export function summarise(active: ActiveDevice): DeviceSummary {
         ? { left: state.battery.left.charging, right: state.battery.right.charging }
         : null,
       worn: driver.worn(state),
+      firmware: state.info.firmware,
+      cells,
     }
   }
 
@@ -97,50 +149,68 @@ export function summarise(active: ActiveDevice): DeviceSummary {
     // `single` is the over-ears' one cell; earbuds leave it null and report
     // the pair instead, so including all four needs no branch.
     const cells = [
-      state.battery.left,
-      state.battery.right,
-      state.battery.case,
-      state.battery.single,
-    ].filter(
-      (cell): cell is { level: number; charging: boolean } => cell !== null,
-    )
+      ...cell('L', state.battery.left),
+      ...cell('R', state.battery.right),
+      ...cell('Case', state.battery.case),
+      ...cell('Battery', state.battery.single),
+    ]
     return {
       model: state.info.model ?? fallbackName(state.status, 'Nothing / CMF earbuds'),
       hasDevice: state.info.model !== null || state.info.firmware !== null,
-      battery: cells.length ? Math.min(...cells.map((cell) => cell.level)) : null,
-      charging: cells.some((cell) => cell.charging),
+      battery: lowest(cells),
+      charging: cells.some((entry) => entry.charging),
       codec: driver.codecName(state),
       detail: driver.statusLine(state),
       artwork: driver.artwork(state),
       worn: driver.worn(state),
+      firmware: state.info.firmware,
+      cells,
     }
   }
 
   if (active.id === 'sony-mdr') {
     const { driver, state } = active
-    const cells = state.battery
-      ? [state.battery.left, state.battery.right]
-      : state.singleBattery
-        ? [state.singleBattery]
-        : []
-    // An earbud in the case reports level 0 with status UNKNOWN. Including it
-    // would show 0% while the bud you are wearing is full.
-    const reporting = cells.filter((cell) => cell.present)
+    // Labelled by the field each cell arrived in, never by position in a filtered
+    // list: an earbud in the case reports level 0 with UNKNOWN status, and
+    // dropping it from the pair would leave the *other* bud first — filing the
+    // right earbud's 80% under "L". Each side is therefore dropped on its own
+    // terms and keeps its own name.
+    const cells: BatteryCellSummary[] = state.battery
+      ? [
+          ...cell('L', state.battery.left.present ? state.battery.left : null),
+          ...cell('R', state.battery.right.present ? state.battery.right : null),
+        ]
+      : cell('Battery', state.singleBattery?.present ? state.singleBattery : null)
     return {
       model: state.info.model ?? fallbackName(state.status, 'Sony headphones'),
       hasDevice: state.info.model !== null,
       // The lower of those actually reporting is what limits you.
-      battery: reporting.length ? Math.min(...reporting.map((cell) => cell.level)) : null,
-      charging: reporting.some((cell) => cell.charging),
+      battery: lowest(cells),
+      charging: cells.some((entry) => entry.charging),
       codec: driver.codecName(state),
       detail: driver.statusLine(state),
       artwork: driver.artwork(state),
       worn: driver.worn(state),
+      firmware: state.info.firmware,
+      cells,
     }
   }
 
   if (active.id === 'heymelody') {
     const { driver, state } = active
+    // The protocol labels its cells "Left"/"Right"/"Case" (see `BATTERY_LABEL`,
+    // which System uses); the tile's headings are the short forms, so the
+    // mapping is written out here rather than importing that table.
+    const CELL_LABEL: Record<(typeof state.battery)[number]['device'], BatteryCellSummary['label']> = {
+      left: 'L',
+      right: 'R',
+      case: 'Case',
+    }
+    const cells: BatteryCellSummary[] = state.battery.map((entry) => ({
+      label: CELL_LABEL[entry.device],
+      level: entry.level,
+      charging: entry.charging,
+    }))
     return {
       model: state.info.model ?? fallbackName(state.status, 'HeyMelody earbuds'),
       // A valid `productId` with no catalog match (a model newer than this
@@ -148,12 +218,17 @@ export function summarise(active: ActiveDevice): DeviceSummary {
       // Soundcore and Nothing branches above use their own secondary identity
       // field (`serial`/`firmware`) for exactly this case.
       hasDevice: state.info.model !== null || state.info.productId !== null,
-      battery: state.battery.length ? Math.min(...state.battery.map((cell) => cell.level)) : null,
-      charging: state.battery.some((cell) => cell.charging),
+      battery: lowest(cells),
+      charging: cells.some((entry) => entry.charging),
       codec: driver.codecName(state),
       detail: driver.statusLine(state),
       artwork: driver.artwork(state),
       worn: driver.worn(state),
+      // One version per device (left, right, case, "other"). The single field a
+      // hero chip can show is the first one reported; the System page lists them
+      // all, which is where a per-device difference belongs.
+      firmware: state.info.version[0]?.version ?? null,
+      cells,
     }
   }
 
@@ -167,5 +242,10 @@ export function summarise(active: ActiveDevice): DeviceSummary {
     detail: driver.statusLine(state),
     artwork: driver.artwork(state),
     worn: driver.worn(state),
+    firmware: state.info.firmware,
+    cells: cell(
+      'Battery',
+      state.battery === null ? null : { level: state.battery, charging: state.charging === true },
+    ),
   }
 }

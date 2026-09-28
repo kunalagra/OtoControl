@@ -121,6 +121,44 @@ describe('SONY_DRIVER.sections', () => {
     expect(ids).toContain('noise');
   });
 
+  it('drops the devices tab once capabilities are known and the pairing list is empty', () => {
+    // WF-C500 answers the pairing query with zero devices — no multipoint, no
+    // list to manage. An empty list is unactionable ("0/0" helps nobody), so it
+    // reads as unsupported: no tab, and `connections()` below returns null so
+    // Home draws neither the tile nor the LINKS chip.
+    const state = {
+      ...initialSonyState,
+      capabilities: new Set([1]),
+      noiseVariant: 1,
+      connections: { devices: [], playbackMac: null, playbackFixed: null },
+    };
+    const ids = SONY_DRIVER.sections(state).map((s) => s.id);
+    expect(ids).not.toContain('devices');
+  });
+
+  it('keeps the devices tab once capabilities are known and the list has an entry', () => {
+    const state = {
+      ...initialSonyState,
+      capabilities: new Set([1]),
+      noiseVariant: 1,
+      connections: {
+        devices: [{ mac: 'AA', name: 'Phone', status: 1, connected: true, classOfDevice: null }],
+        playbackMac: 'AA',
+        playbackFixed: null,
+      },
+    };
+    const ids = SONY_DRIVER.sections(state).map((s) => s.id);
+    expect(ids).toContain('devices');
+  });
+
+  it('maps an empty pairing list to no connections readout', () => {
+    const state = {
+      ...initialSonyState,
+      connections: { devices: [], playbackMac: null, playbackFixed: null },
+    };
+    expect(SONY_DRIVER.connections(state)).toBeNull();
+  });
+
   it('gives every declared section a component to render it', () => {
     const known = { ...initialSonyState, capabilities: new Set([1]), noiseVariant: 1 };
     const components: Record<string, unknown> = SONY_DRIVER.components;

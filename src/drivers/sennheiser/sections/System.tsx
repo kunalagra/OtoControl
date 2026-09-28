@@ -21,11 +21,21 @@ import { DebugEntry } from './DebugEntry'
 import { DeviceInfoPanel } from '@/ui/panels/DeviceInfoPanel'
 import { AutoPowerOffPanel } from '@/ui/panels/AutoPowerOffPanel'
 import { withReportedValue } from '@/ui/panels/autoPowerOff'
+import { useCommittedValue } from '@/ui/controls/useCommittedValue'
 import type { SectionProps } from './types'
+
+/** Base UI hands a single-value slider an array. */
+const settle = (value: number | readonly number[]): number =>
+  // `Array.isArray` cannot narrow a readonly array out of the union.
+  typeof value === 'number' ? value : value[0]
 
 export function System({ device, state, onNavigate }: SectionProps) {
   const disabled = state.status !== 'connected'
   const { powerOffSeconds } = state
+  // Drafted so a drag writes once, on release — see `useCommittedValue`.
+  const [sidetone, setDraftSidetone, commitSidetone] = useCommittedValue(
+    state.sidetone ?? 0,
+  )
   const behaviourToggles = togglesFor(state.info.model).filter(
     (toggle) => toggle.group === 'behaviour',
   )
@@ -135,15 +145,20 @@ export function System({ device, state, onNavigate }: SectionProps) {
           <SettingRow label="Sidetone" hint="How much of your own voice you hear on calls.">
             <div className="flex w-40 items-center gap-3">
               <Slider
-                value={[state.sidetone ?? 0]}
+                value={[sidetone]}
                 min={0}
                 max={SIDETONE_MAX}
                 step={1}
                 disabled={disabled || state.sidetone === null}
                 aria-label="Sidetone level"
-                onValueChange={(value) =>
-                  void device.setSidetone(Array.isArray(value) ? value[0] : value)
-                }
+                onValueChange={(value) => setDraftSidetone(settle(value))}
+                onValueCommitted={(value) => {
+                  // The committed value, not the draft: a key press fires change
+                  // and commit in one event, before React re-renders.
+                  const settled = settle(value)
+                  commitSidetone(settled)
+                  void device.setSidetone(settled)
+                }}
               />
               <span className="text-muted-foreground w-4 text-right text-xs tabular-nums">
                 {state.sidetone ?? '—'}

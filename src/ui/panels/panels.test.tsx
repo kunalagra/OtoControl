@@ -1,4 +1,5 @@
 import { renderToStaticMarkup } from 'react-dom/server'
+import type { ReactNode } from 'react'
 import { describe, expect, it } from 'vitest'
 
 import { Button } from '@/components/ui/button'
@@ -9,7 +10,7 @@ import { Fader } from '../controls/Fader'
 import { AutoPowerOffPanel } from './AutoPowerOffPanel'
 import { DeviceInfoPanel } from './DeviceInfoPanel'
 import { EqualizerPanel } from './EqualizerPanel'
-import type { EqualizerPanelProps } from './EqualizerPanel'
+import type { EqPresetOption, EqualizerPanelProps } from './EqualizerPanel'
 import { TogglesPanel } from './TogglesPanel'
 import { elements, ofType, text } from './tree.test-helper'
 
@@ -243,8 +244,30 @@ const BASE: EqualizerPanelProps = {
   unavailable: null,
   footer: '',
   onPresetSelect: () => {},
-  onBandChange: () => {},
+  onBandCommit: () => {},
 }
+
+/**
+ * The preset controls are plain buttons in both layouts, so they are found by
+ * host element rather than by component. The phone chips and the desktop rows
+ * are the same list rendered twice — one is `lg:hidden`, the other `hidden` —
+ * so a test can assert against either without knowing which one a given
+ * viewport would show.
+ */
+const buttons = (tree: ReactNode) => elements(tree).filter((el) => el.type === 'button')
+
+const slot = (tree: ReactNode, name: string) =>
+  elements(tree).find((el) => (el.props as { 'data-slot'?: string })['data-slot'] === name)
+
+const classesOf = (tree: ReactNode, name: string): string[] => {
+  const found = slot(tree, name) as { props?: { className?: string } } | undefined
+  return found?.props?.className?.split(' ') ?? []
+}
+
+const FLAT_AND_ROCK: EqPresetOption[] = [
+  { id: 'flat', name: 'Flat', active: false, gains: [0, 0, 0, 0, 0] },
+  { id: 'rock', name: 'Rock', active: true, gains: [0, 2, 2.5, 1.5, -2] },
+]
 
 describe('EqualizerPanel', () => {
   it('shows the unavailable message instead of controls', () => {
@@ -254,75 +277,212 @@ describe('EqualizerPanel', () => {
       presets: [{ id: 'flat', name: 'Flat', active: true }],
     })
     expect(text(tree)).toContain('Connect to load the equaliser.')
+    expect(ofType(tree, Fader)).toHaveLength(0)
+    // The Reset pill is a header control, not an equaliser control, but it
+    // cannot select a curve the device has not reported — so it goes too.
     expect(ofType(tree, Button)).toHaveLength(0)
   })
 
-  it('reports the selected preset by id', () => {
+  it('reports the selected preset by id, from either layout', () => {
     const picked: string[] = []
     const tree = EqualizerPanel({
       ...BASE,
-      presets: [
-        { id: 'flat', name: 'Flat', active: true },
-        { id: 'bass', name: 'Bass', active: false },
-      ],
+      presets: FLAT_AND_ROCK,
       onPresetSelect: (id) => picked.push(id),
     })
 
-    const buttons = ofType(tree, Button)
-    expect(buttons).toHaveLength(2)
-    ;(buttons[1].props as { onClick(): void }).onClick()
-    expect(picked).toEqual(['bass'])
+    // Two layouts, so every choice is offered twice: a phone chip and a row.
+    const all = buttons(tree)
+    expect(all).toHaveLength(4)
+    const flatChips = all.filter((el) => text(el).startsWith('Flat'))
+    expect(flatChips).toHaveLength(2)
+    for (const el of flatChips) (el.props as { onClick(): void }).onClick()
+    expect(picked).toEqual(['flat', 'flat'])
   })
 
-  it('marks only the active preset as default variant', () => {
+  it('marks only the active preset as pressed, and inverts it', () => {
+    const tree = EqualizerPanel({ ...BASE, presets: FLAT_AND_ROCK })
+    const pressed = buttons(tree).map(
+      (el) => (el.props as { 'aria-pressed': boolean })['aria-pressed'],
+    )
+    expect(pressed).toEqual([false, true, false, true])
+
+    const activeRow = buttons(tree).filter(
+      (el) => (el.props as { 'aria-pressed': boolean })['aria-pressed'],
+    )[0]
+    const classes = (activeRow.props as { className: string }).className
+    expect(classes).toContain('bg-foreground')
+    expect(classes).toContain('text-background')
+
+    const idleRow = buttons(tree)[0]
+    expect((idleRow.props as { className: string }).className).not.toContain('bg-foreground')
+  })
+
+  it('renders the preset name, not its opaque id', () => {
     const tree = EqualizerPanel({
       ...BASE,
-      presets: [
-        { id: 'flat', name: 'Flat', active: true },
-        { id: 'bass', name: 'Bass', active: false },
-      ],
+      presets: [{ id: 'preset-flat-id', name: 'Flat', active: true }],
     })
-    const variants = ofType(tree, Button).map((b) => (b.props as { variant: string }).variant)
-    expect(variants).toEqual(['default', 'outline'])
+    expect(buttons(tree).map((el) => text(el))).toEqual(['Flat', 'Flat'])
   })
 
-  it('omits the preset row entirely when there are no presets', () => {
+  it('omits both preset layouts entirely when there are no presets', () => {
     const tree = EqualizerPanel({ ...BASE, footer: '6 bands' })
-    expect(ofType(tree, Button)).toHaveLength(0)
-    expect(text(tree)).toContain('6 bands')
+    expect(buttons(tree)).toHaveLength(0)
+    expect(slot(tree, 'eq-chips')).toBeUndefined()
+    expect(slot(tree, 'eq-preset-list')).toBeUndefined()
     // Zero buttons is also true with presets present but none active, or if the
-    // preset wrapper rendered empty — so pin the wrapper itself being absent,
-    // not just its (necessarily empty) contents.
-    const wrappers = elements(tree).filter(
-      (el) => el.type === 'div' && (el.props as { className?: string }).className?.includes('flex-wrap'),
-    )
-    expect(wrappers).toHaveLength(0)
+    // preset wrapper rendered empty — so pin the wrappers themselves being
+    // absent, not just their (necessarily empty) contents.
+    expect(text(tree)).toContain('6 bands')
   })
 
-  it('renders one fader per band, captioned, and reports the band index', () => {
-    const changes: Array<[number, number]> = []
+  it('previews a preset as five bars, with the active row\'s peak bar in red', () => {
+    const tree = EqualizerPanel({ ...BASE, presets: FLAT_AND_ROCK })
+    // Two previews, five bars each. The bars are 4px spans, which is the only
+    // class they carry; what else is on one is the colour under test.
+    const bars = elements(tree).filter(
+      (el) => el.type === 'span' && (el.props as { className?: string }).className?.includes('w-1'),
+    )
+    expect(bars).toHaveLength(10)
+
+    const heights = bars.map((el) => (el.props as { style: { height: string } }).style.height)
+    // Rock's own peak is 2.5 dB of a 10 dB range: the tallest bar, and the one
+    // that goes red on the inverted row. Its neighbours stay in the row colour.
+    const peak = heights.indexOf('25%')
+    expect(peak).toBe(7)
+    expect((bars[peak].props as { className: string }).className).toContain('bg-signal')
+    // The rest of the inverted row's bars take the row's own colour.
+    expect((bars[6].props as { className: string }).className).toContain('bg-background')
+    // Flat's bars are stubs, not nothing: a zero-height bar reads as broken.
+    expect(heights[5]).toBe('15%')
+  })
+
+  it('omits the preview for a driver that supplies no per-preset gains', () => {
+    const tree = EqualizerPanel({
+      ...BASE,
+      presets: [{ id: 'off', name: 'Off', active: true }],
+    })
+    expect(
+      elements(tree).filter(
+        (el) => (el.props as { className?: string }).className?.includes('w-1'),
+      ),
+    ).toHaveLength(0)
+  })
+
+  it('draws the desk at phone height, and taller from 1024px', () => {
+    const classes = classesOf(EqualizerPanel({ ...BASE, bands: [{ value: 1, label: 'a', caption: 'a' }] }), 'eq-desk')
+    expect(classes).toContain('min-h-[220px]')
+    expect(classes).toContain('lg:min-h-[240px]')
+    // The desk sits under the hand, so its texture steps back (DESIGN-GUIDE §3).
+    expect(classes).toContain('mono-dots-fader')
+  })
+
+  it('fills the height it is given from 1024px, rather than sitting at its floor', () => {
+    // Spec §7.3: "220px on the phone Sound tab, filling the desk on desktop
+    // (minimum 240px)". The minimum is the *floor*, not the height — and a desk
+    // pinned to 240px at the bottom of a 700px screen is the floor winning.
+    //
+    // Three links in one chain, and each is load-bearing: the panel asks to grow
+    // (`lg:flex-1`), it is allowed to shrink below its content (`lg:min-h-0`),
+    // and the row the desk sits in takes the height that growth produced
+    // (`lg:auto-rows-fr`, with `lg:flex-1` on the grid itself). All three are
+    // asserted because dropping any one of them leaves the desk at 240px with no
+    // visible error anywhere.
+    const tree = EqualizerPanel({ ...BASE, presets: FLAT_AND_ROCK, bands: [{ value: 1, label: 'a', caption: 'a' }] })
+    const root = elements(tree)[0] as { props: { className: string } }
+    expect(root.props.className).toContain('lg:flex-1')
+    expect(root.props.className).toContain('lg:min-h-0')
+    const row = elements(tree).find((el) => {
+      const className = (el.props as { className?: string }).className ?? ''
+      return className.split(' ').includes('lg:auto-rows-fr')
+    })
+    expect(row).toBeDefined()
+    expect((row?.props as { className: string } | undefined)?.className).toContain('lg:flex-1')
+  })
+
+  it('makes a preset chip a 44px target on a phone, and a list row on a desktop', () => {
+    // Spec §8 names the chips. The guide's own `py-2` + 11px label is 31px, and
+    // hit slop cannot make up the difference in a 4-column grid with 6px gutters
+    // (3px of neighbour per edge), so the chip itself is the floor — and only on
+    // the phone, where the chip grid is the layout at all.
+    const chip = buttons(EqualizerPanel({ ...BASE, presets: FLAT_AND_ROCK }))[0] as {
+      props: { className: string }
+    }
+    expect(chip.props.className).toContain('min-h-11')
+    expect(chip.props.className).toContain('lg:min-h-0')
+  })
+
+  it('puts the preset list in a 260px column beside the desk from 1024px', () => {
+    const tree = EqualizerPanel({ ...BASE, presets: FLAT_AND_ROCK })
+    const grid = elements(tree).find((el) => {
+      const className = (el.props as { className?: string }).className ?? ''
+      return className.split(' ').includes('lg:grid-cols-[260px_1fr]')
+    })
+    expect(grid).toBeDefined()
+    // The phone chips step aside for it, rather than both showing at once.
+    expect(classesOf(tree, 'eq-chips')).toContain('lg:hidden')
+    expect(classesOf(tree, 'eq-preset-list')).toContain('lg:flex')
+  })
+
+  it('names the current preset in section display, and says Custom when none matches', () => {
+    expect(text(EqualizerPanel({ ...BASE, presets: FLAT_AND_ROCK }))).toContain('Rock')
+    // A hand-edited curve belongs to no preset, and saying so beats naming one
+    // that is not playing.
+    expect(
+      text(
+        EqualizerPanel({
+          ...BASE,
+          presets: [{ id: 'rock', name: 'Rock', active: false }],
+        }),
+      ),
+    ).toContain('Custom')
+  })
+
+  it('offers Reset to Flat only when the driver has a Flat preset, and selects it', () => {
+    const picked: string[] = []
+    const withFlat = EqualizerPanel({
+      ...BASE,
+      presets: FLAT_AND_ROCK,
+      onPresetSelect: (id) => picked.push(id),
+    })
+    const pill = ofType(withFlat, Button)[0]
+    expect(text(pill)).toBe('Reset to Flat')
+    ;(pill.props as { onClick(): void }).onClick()
+    expect(picked).toEqual(['flat'])
+
+    // Sony names its flat preset "Off", and there is nothing to reset to.
+    const withoutFlat = EqualizerPanel({
+      ...BASE,
+      presets: [{ id: 'off', name: 'Off', active: true }],
+    })
+    expect(ofType(withoutFlat, Button)).toHaveLength(0)
+  })
+
+  it('disables the reset pill along with everything else', () => {
+    const tree = EqualizerPanel({ ...BASE, presets: FLAT_AND_ROCK, disabled: true })
+    expect((ofType(tree, Button)[0].props as { disabled: boolean }).disabled).toBe(true)
+  })
+
+  it('renders one fader per band, captioned, and reports the band index on commit', () => {
+    const commits: Array<[number, number]> = []
     const tree = EqualizerPanel({
       ...BASE,
       bands: [
         { value: 3, label: '100 Hz gain', caption: '100' },
         { value: -2, label: '1 kHz gain', caption: '1k' },
       ],
-      onBandChange: (index, value) => changes.push([index, value]),
+      onBandCommit: (index, value) => commits.push([index, value]),
     })
 
     const faders = ofType(tree, Fader)
     expect(faders.map((f) => (f.props as { caption: string }).caption)).toEqual(['100', '1k'])
-    ;(faders[1].props as { onChange(value: number): void }).onChange(5)
-    expect(changes).toEqual([[1, 5]])
-  })
-
-  it('renders the preset button text from its name, not its opaque id', () => {
-    const tree = EqualizerPanel({
-      ...BASE,
-      presets: [{ id: 'preset-flat-id', name: 'Flat', active: true }],
-    })
-    const buttons = ofType(tree, Button)
-    expect(text(buttons[0])).toBe('Flat')
+    ;(faders[1].props as { onCommit(value: number): void }).onCommit(5)
+    expect(commits).toEqual([[1, 5]])
+    // The panel hands the fader a commit hook and no per-tick one: a device
+    // write from every tick of a drag is the bug this whole panel is built
+    // around, and a live-preview prop is an invitation to reintroduce it.
+    expect((faders[0].props as { onChange?: unknown }).onChange).toBeUndefined()
   })
 
   it("passes each band's value, range and label straight through to its fader", () => {
@@ -343,23 +503,27 @@ describe('EqualizerPanel', () => {
     expect(props.label).toBe('100 Hz gain')
   })
 
-  it('disables every preset button and fader when the panel is disabled, and neither when it is not', () => {
+  it('disables every preset control and fader when the panel is disabled, and neither when it is not', () => {
     const disabledTree = EqualizerPanel({
       ...BASE,
       disabled: true,
-      presets: [{ id: 'flat', name: 'Flat', active: true }],
+      presets: FLAT_AND_ROCK,
       bands: [{ value: 3, label: '100 Hz gain', caption: '100' }],
     })
-    expect((ofType(disabledTree, Button)[0].props as { disabled: boolean }).disabled).toBe(true)
+    for (const el of buttons(disabledTree)) {
+      expect((el.props as { disabled: boolean }).disabled).toBe(true)
+    }
     expect((ofType(disabledTree, Fader)[0].props as { disabled: boolean }).disabled).toBe(true)
 
     const enabledTree = EqualizerPanel({
       ...BASE,
       disabled: false,
-      presets: [{ id: 'flat', name: 'Flat', active: true }],
+      presets: FLAT_AND_ROCK,
       bands: [{ value: 3, label: '100 Hz gain', caption: '100' }],
     })
-    expect((ofType(enabledTree, Button)[0].props as { disabled: boolean }).disabled).toBe(false)
+    for (const el of buttons(enabledTree)) {
+      expect((el.props as { disabled: boolean }).disabled).toBe(false)
+    }
     expect((ofType(enabledTree, Fader)[0].props as { disabled: boolean }).disabled).toBe(false)
   })
 
@@ -369,9 +533,10 @@ describe('EqualizerPanel', () => {
     // Checking only the element's prop would miss a change to Fader's
     // default; checking only Fader's rendered output would miss the panel
     // dropping the prop. So check both — the second by actually rendering
-    // Fader with the exact props the panel produced. Fader calls `useId()`,
-    // so it cannot be invoked as a plain function the way the top-level
-    // panels are; `renderToStaticMarkup` (SSR, no DOM) runs it for real.
+    // Fader with the exact props the panel produced. Fader calls `useId()`
+    // and `useState`, so it cannot be invoked as a plain function the way the
+    // top-level panels are; `renderToStaticMarkup` (SSR, no DOM) runs it for
+    // real.
     const withStep = EqualizerPanel({
       ...BASE,
       step: 1,

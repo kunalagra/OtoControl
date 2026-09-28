@@ -20,6 +20,7 @@
 
 import type { DeviceDriver, DriverSection } from '@/core/driver';
 import { soundcoreArtwork } from './assets';
+import { EQ_DB_RANGE, eqPresetName } from './commands';
 import { PROFILES } from '@/core/profiles';
 import { SoundcoreDevice } from './device';
 import type { SoundcoreState } from './device';
@@ -62,4 +63,18 @@ export const SOUNDCORE_DRIVER = {
   // The product code read off the serial wins over the advertised name —
   // see `./assets.ts`.
   artwork: (state: SoundcoreState) => soundcoreArtwork(state.info.model, state.info.productCode),
+  // The curve the earbuds are playing, from the same state the Sound page's
+  // faders read. Gains travel as signed tenths, hence the division; a Custom
+  // profile is reported as the name 'Custom' by `eqPresetName`, which is what
+  // the Sound page calls it too.
+  eqPreview: (state: SoundcoreState) =>
+    state.eq === null
+      ? null
+      : {
+          preset: eqPresetName(state.eq.profile),
+          // The left ear: the ears are edited together unless they differ, and
+          // a per-side curve has no single set of bars to draw.
+          gains: state.eq.left.map((tenths) => tenths / 10),
+          range: EQ_DB_RANGE,
+        },
 } as const satisfies DeviceDriver<SoundcoreDevice, SoundcoreState>;

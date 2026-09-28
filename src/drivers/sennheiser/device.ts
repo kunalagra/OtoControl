@@ -33,6 +33,7 @@ import {
   getTimer,
   getTransparencyLevel,
   getTransparentHearing,
+  EQ_NOTIFICATION,
   Timer,
   setAncEnabled,
   setAncMode,
@@ -125,6 +126,23 @@ export class MomentumDevice implements Persistable {
   readonly #session: DeviceSession<GaiaClient>;
   /** Guards against overlapping polls when refreshes are triggered rapidly. */
   #refreshing = false;
+  /**
+   * The last EQ curve the headphones confirmed — what a failed write rolls back
+   * to, spec §7.4. Mirrors HeyMelody's `#confirmedEq`.
+   *
+   * Rolling back to whatever was in state when the call *started* is wrong the
+   * moment two writes overlap: that value is usually another optimistic one, so
+   * the rollback would leave the UI showing a gain the device never took.
+   */
+  #confirmedEqGains: Array<number | undefined> = [];
+  /** Stamps every EQ write, so a superseded one knows it has been. */
+  #eqWriteSeq = 0;
+  /**
+   * The newest write per band, which is what makes that judgement per band. A
+   * curve write claims every band it covers, so this map is also how a preset
+   * supersedes the band writes it overlaps.
+   */
+  readonly #eqBandWrites = new Map<number, number>();
   /**
    * When we last asked to drop our own link, so the resulting transport close
    * is reported as a clean disconnect rather than an error.
@@ -267,7 +285,13 @@ export class MomentumDevice implements Persistable {
   }
 
   #onNotification(frame: GaiaFrame): void {
-    this.#replace(applyNotification(this.#store.state, frame));
+    const next = applyNotification(this.#store.state, frame);
+    // 0x1082 carries the whole curve, which is as confirmed as a read is — and
+    // the phone app changing the EQ is the answer to any write still in flight.
+    if (frame.command === EQ_NOTIFICATION && next !== this.#store.state) {
+      this.#confirmedEqGains = [...next.eq.gains];
+    }
+    this.#replace(next);
   }
 
   async #subscribe(): Promise<void> {
@@ -562,18 +586,61 @@ export class MomentumDevice implements Persistable {
       }
     }
     this.#patch({ eq: { ...this.#store.state.eq, gains } });
+    // Read straight from the headphones, so it is confirmed by definition.
+    this.#confirmedEqGains = [...gains];
   }
 
   async setEqBand(band: number, gain: number): Promise<void> {
-    const previous = this.#store.state.eq.gains;
-    const next = [...previous];
-    next[band] = gain;
-    await this.#write(
-      setEqBand,
-      { band, gain },
-      (s) => ({ ...s, eq: { ...s.eq, gains: next } }),
-      (s) => ({ ...s, eq: { ...s.eq, gains: previous } }),
-    );
+    const client = this.#session.client;
+    if (!client) return;
+
+    const write = this.#beginEqWrite(band);
+    this.#setBandGain(band, gain);
+
+    try {
+      await client.request(setEqBand, { band, gain });
+      if (this.#isCurrentEqWrite(band, write)) {
+        // The last confirmed curve plus this band — *not* the curve that was in
+        // state when the write started. That one carries its neighbours'
+        // optimistic gains, including any the device has since rejected, and
+        // this is the array every future rollback restores.
+        const confirmed = [...this.#confirmedEqGains];
+        confirmed[band] = gain;
+        this.#confirmedEqGains = confirmed;
+
+        // A failed write to another band rolls the whole curve back to the
+        // confirmed snapshot, and that rollback lands before this confirmation
+        // — so this band's gain can be missing from state even though the
+        // headphones took it. Re-applying it is a no-op when the optimistic
+        // patch survived.
+        if (this.#store.state.eq.gains[band] !== gain) {
+          this.#setBandGain(band, gain);
+        }
+      }
+    } catch (error) {
+      // A newer write to the same band is already showing its own optimistic
+      // value. Rolling this one back would put the value the user just moved
+      // past back under the pointer, which is the snap-back in spec §7.1.
+      //
+      // The confirmed curve is read *here*, not captured above: a write to
+      // another band may have been confirmed while this one was in flight, and
+      // its gain is part of what this rollback has to preserve.
+      if (this.#isCurrentEqWrite(band, write)) {
+        this.#replace({
+          ...this.#store.state,
+          eq: { ...this.#store.state.eq, gains: [...this.#confirmedEqGains] },
+        });
+      }
+      this.#patch({ error: describeError(error) });
+    }
+  }
+
+  /** Moves one band of the equaliser in state, leaving every other band alone. */
+  #setBandGain(band: number, gain: number): void {
+    const eq = this.#store.state.eq;
+    const gains = [...eq.gains];
+    gains[band] = gain;
+    this.#replace({ ...this.#store.state, eq: { ...eq, gains } });
   }
 
   /** Applies a whole preset, one band at a time — there is no bulk set. */
@@ -588,17 +655,55 @@ export class MomentumDevice implements Persistable {
     const client = this.#session.client;
     if (!client) return;
 
-    const previous = this.#store.state.eq.gains;
+    // A curve write covers every band, so it claims each one: any band write
+    // still in flight is now superseded and must neither confirm nor roll back.
+    const write = ++this.#eqWriteSeq;
+    for (let band = 0; band < gains.length; band += 1) {
+      this.#eqBandWrites.set(band, write);
+    }
     this.#replace({ ...this.#store.state, eq: { ...this.#store.state.eq, gains: [...gains] } });
 
     try {
       for (let band = 0; band < gains.length; band += 1) {
         await client.request(setEqBand, { band, gain: gains[band] });
       }
+      if (write === this.#eqWriteSeq) this.#confirmedEqGains = [...gains];
     } catch (error) {
-      this.#replace({ ...this.#store.state, eq: { ...this.#store.state.eq, gains: previous } });
+      // Read at failure time, for the same reason `setEqBand` does: a band
+      // write confirmed while this curve was being written is still a gain the
+      // headphones have, and the rollback must not drop it.
+      if (write === this.#eqWriteSeq) {
+        const confirmed = this.#confirmedEqGains;
+        this.#replace({ ...this.#store.state, eq: { ...this.#store.state.eq, gains: [...confirmed] } });
+      }
       this.#patch({ error: describeError(error) });
     }
+  }
+
+  /**
+   * Stamps a write to `band` and returns its token, for `#isCurrentEqWrite` to
+   * compare against. Two writes to the same band issued back to back — what a
+   * drag used to produce — must not let the older one decide the outcome.
+   */
+  #beginEqWrite(band: number): number {
+    const write = ++this.#eqWriteSeq;
+    this.#eqBandWrites.set(band, write);
+    return write;
+  }
+
+  /**
+   * Whether a band write is still the newest word on that band.
+   *
+   * Per band, and only per band: bands do not share a fate. A write to band 3
+   * says nothing about a write to band 2 that is still in flight, and letting
+   * it decide would throw away a gain the headphones have already taken — the
+   * next failure would then roll back to a curve that never had it.
+   *
+   * A curve write claims every band it covers (see `setEqGains`), so it
+   * supersedes in-flight band writes through the same map.
+   */
+  #isCurrentEqWrite(band: number, write: number): boolean {
+    return this.#eqBandWrites.get(band) === write;
   }
 
   // --- writes -------------------------------------------------------------

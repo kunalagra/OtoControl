@@ -329,6 +329,15 @@ export interface CustomEq {
   bands: EqBand[];
 }
 
+/**
+ * Gain range for a custom band, in dB either side of flat.
+ *
+ * A UI choice rather than a protocol limit — the wire carries a float — so it is
+ * one constant both the band sliders and the Home tile's bars read. A bar drawn
+ * against a different range would be lying about where flat sits.
+ */
+export const CUSTOM_EQ_RANGE = { min: -10, max: 10 };
+
 /** Bytes per band: type(1) + gain(4) + frequency(4) + Q(4). */
 const EQ_BAND_LENGTH = 13;
 /** Bytes before the first band: count(1) + total gain(4). */

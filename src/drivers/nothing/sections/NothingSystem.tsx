@@ -109,10 +109,7 @@ export function NothingSystem({ device, state }: Props) {
         ) : (
           <div className="flex flex-wrap gap-1.5">
             {NAMED_CAPABILITIES.filter(([id]) => state.capabilities.has(id)).map(([id, name]) => (
-              <span
-                key={id}
-                className="border-primary/40 bg-primary/10 rounded-full border px-2.5 py-1 text-xs"
-              >
+              <span key={id} className="bg-surface-raised rounded-full px-2.5 py-1 text-xs">
                 {name}
               </span>
             ))}

@@ -339,3 +339,126 @@ describe('MomentumDevice disconnect caching', () => {
     expect(device.state.info.model).toBeNull();
   });
 });
+
+/**
+ * The equaliser write path, spec §7.4.
+ *
+ * Both tests below need a *confirmed* baseline: the harness answers `getEqConfig`
+ * and every `getEqBand` with a flat curve, so `#confirmedEqGains` starts as five
+ * zeros rather than the empty array the UI ships with.
+ *
+ * `setEqBand` is the only GAIA write the app issues per pointer tick, which is
+ * exactly why its rollback is the one that has to be careful about ordering.
+ */
+const withFlatEq = (setEqBandReplies?: GaiaReply): GaiaReplies =>
+  new Map<number, GaiaReply>([
+    [0x1206, ascii('M4AEBT Black')],
+    [0x1000, [5, 100, 100]],                        // getEqConfig: 5 bands, ±10 dB
+    [0x1002, [0]],                                  // getEqBand: one bare gain, 0.0 dB
+    ...(setEqBandReplies === undefined ? [] : [[0x1001, setEqBandReplies] as const]),
+  ]);
+
+describe('MomentumDevice.setEqBand', () => {
+  it('leaves the newer value alone when an earlier overlapping write fails', async () => {
+    // The shape a drag used to produce, and the cause of the snap-back in
+    // spec §7.1: the second call is optimistic before the first one's failure
+    // comes back, and rolling back to what the *first* call saw would restore
+    // the pre-drag gain over the newer one.
+    const harness = gaiaHarness(withFlatEq((_payload, call) => (call === 1 ? undefined : [])));
+    const device = new MomentumDevice(harness.open);
+    await device.adoptPort(port);
+    expect(device.state.eq.gains).toEqual([0, 0, 0, 0, 0]);
+
+    // Issued together rather than awaited in turn, which is what "overlapping"
+    // means here — the GAIA client serialises the wire, not the optimistic
+    // patch, and the patch is the part the user can see.
+    const first = device.setEqBand(2, 3);
+    const second = device.setEqBand(2, -4);
+    await Promise.all([first, second]);
+
+    expect(device.state.eq.gains[2]).toBe(-4);
+  });
+
+  it('rolls a lone failed write back to the last gains the device confirmed', async () => {
+    // Not to the value that happened to be in state when the write was issued:
+    // after a successful write that value is itself optimistic, and rolling
+    // back to it would leave the UI showing a gain the headphones never took.
+    const harness = gaiaHarness(
+      withFlatEq((_payload, call) => (call === 2 ? undefined : [])),
+    );
+    const device = new MomentumDevice(harness.open);
+    await device.adoptPort(port);
+
+    await device.setEqBand(2, -4);
+    expect(device.state.eq.gains[2]).toBe(-4);
+
+    await device.setEqBand(2, 6);
+
+    expect(device.state.eq.gains[2]).toBe(-4);
+  });
+
+  it('keeps a successful write to one band when another band\'s write fails', async () => {
+    // Different bands are different writes. Band 3's failure must not take the
+    // gain band 2's write had already put on the headphones with it — the
+    // rollback target is the last *confirmed* curve, and band 2's success is
+    // part of it.
+    //
+    // Issued together, as a drag across two faders can be, because the client
+    // serialises the wire: the first write is still in flight when the second
+    // is issued, which is exactly when the first's confirmation used to be
+    // thrown away.
+    const harness = gaiaHarness(
+      withFlatEq((_payload, call) => (call === 2 ? undefined : [])),
+    );
+    const device = new MomentumDevice(harness.open);
+    await device.adoptPort(port);
+
+    const first = device.setEqBand(2, 7);
+    const second = device.setEqBand(3, -9);
+    await Promise.all([first, second]);
+
+    expect(device.state.eq.gains[2]).toBe(7);
+    // The failed write is the only one that rolls back.
+    expect(device.state.eq.gains[3]).toBe(0);
+  });
+
+  it('keeps a band that was written while another band\'s write failed', async () => {
+    // The mirror of the case above, and the other half of the same problem. A
+    // failed write rolls the *whole* curve back to the confirmed snapshot, and
+    // that rollback lands before the sibling's confirmation — so the sibling's
+    // gain is wiped from state even though the headphones took it.
+    const harness = gaiaHarness(
+      withFlatEq((_payload, call) => (call === 1 ? undefined : [])),
+    );
+    const device = new MomentumDevice(harness.open);
+    await device.adoptPort(port);
+
+    const first = device.setEqBand(2, 5);
+    const second = device.setEqBand(3, 7);
+    await Promise.all([first, second]);
+
+    expect(device.state.eq.gains[3]).toBe(7);
+  });
+
+  it('never folds a rejected band into the curve a later failure rolls back to', async () => {
+    // The confirmed curve is what every future rollback restores, so it has to
+    // hold gains the device *took* and nothing else. Building it from the curve
+    // that was in state when a write started sweeps in its neighbours'
+    // optimistic values — including a neighbour the device has just rejected.
+    const harness = gaiaHarness(
+      withFlatEq((_payload, call) => (call === 1 || call === 3 ? undefined : [])),
+    );
+    const device = new MomentumDevice(harness.open);
+    await device.adoptPort(port);
+
+    const rejected = device.setEqBand(2, 5);
+    const accepted = device.setEqBand(3, 7);
+    await Promise.all([rejected, accepted]);
+
+    // A third write that fails restores the confirmed curve. Band 2's 5 dB was
+    // refused, so it must not come back with it.
+    await device.setEqBand(4, 1);
+
+    expect(device.state.eq.gains).toEqual([0, 0, 0, 7, 0]);
+  });
+});

@@ -430,6 +430,15 @@ export const EQ_PRESETS: readonly EqPreset[] = [
 
 export const EQ_CUSTOM_ID = 0xfefe;
 
+/**
+ * The gain range a band can take, in dB.
+ *
+ * The wire clamps each band at −12.0…+6.0 dB and carries gains as signed
+ * tenths, so this is a protocol fact rather than a UI choice — and the Home
+ * tile's bars are drawn against it as well as the Sound page's faders.
+ */
+export const EQ_DB_RANGE = { min: -12, max: 6 };
+
 export const eqPresetName = (id: number | null): string | null =>
   id === null ? null : id === EQ_CUSTOM_ID ? 'Custom' : (EQ_PRESETS.find((p) => p.id === id)?.name ?? null);
 

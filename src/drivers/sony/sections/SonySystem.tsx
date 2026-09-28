@@ -12,6 +12,7 @@ import { AUTO_POWER_OFF_OPTIONS, autoPowerOffLabel } from '@/drivers/sony/mdr/se
 import { BUTTON_MODE_OPTIONS } from '@/drivers/sony/mdr/assignable'
 import { PowerOffButton } from './PowerOffButton'
 import { SystemTail } from '@/ui/sections/SystemTail'
+import { SegmentButton } from '@/ui/controls/SegmentButton'
 import { SettingRow } from '@/ui/controls/SettingRow'
 import { DeviceInfoPanel } from '@/ui/panels/DeviceInfoPanel'
 import { AutoPowerOffPanel } from '@/ui/panels/AutoPowerOffPanel'
@@ -111,10 +112,7 @@ export function SonySystem({ device, state }: Props) {
         ) : (
           <div className="flex flex-wrap gap-1.5">
             {NAMED_FUNCTIONS.filter(([id]) => state.capabilities.has(id)).map(([id, name]) => (
-              <span
-                key={id}
-                className="border-primary/40 bg-primary/10 rounded-full border px-2.5 py-1 text-xs"
-              >
+              <span key={id} className="bg-surface-raised rounded-full px-2.5 py-1 text-xs">
                 {name}
               </span>
             ))}
@@ -245,21 +243,16 @@ function VoiceGuidanceCard({ device, state }: Props) {
           <SettingRow label="Prompt volume" hint="How loud the spoken prompts are.">
             <div className="flex gap-1.5">
               {[-2, -1, 0, 1, 2].map((level) => (
-                <button
+                <SegmentButton
                   key={level}
-                  type="button"
+                  size="sm"
+                  pressed={guidance.volume === level}
                   disabled={state.status !== 'connected'}
-                  aria-pressed={guidance.volume === level}
-                  aria-label={`Prompt volume ${level > 0 ? `+${level}` : level}`}
-                  onClick={() => void device.setVoiceGuidanceVolume(level)}
-                  className={
-                    guidance.volume === level
-                      ? 'border-primary bg-primary/10 rounded-lg border px-2 py-1.5 text-xs font-medium tabular-nums'
-                      : 'border-border hover:border-muted-foreground/40 rounded-lg border px-2 py-1.5 text-xs font-medium tabular-nums'
-                  }
-                >
-                  {level > 0 ? `+${level}` : level}
-                </button>
+                  onSelect={() => void device.setVoiceGuidanceVolume(level)}
+                  label={level > 0 ? `+${level}` : String(level)}
+                  ariaLabel={`Prompt volume ${level > 0 ? `+${level}` : level}`}
+                  className="tabular-nums"
+                />
               ))}
             </div>
           </SettingRow>
@@ -284,20 +277,14 @@ function TouchAssignmentCard({ device, state }: Props) {
     <SettingRow label={label} hint={hint}>
       <div className="flex flex-wrap justify-end gap-1.5">
         {BUTTON_MODE_OPTIONS.map((option) => (
-          <button
+          <SegmentButton
             key={option.value}
-            type="button"
+            size="sm"
+            pressed={current === option.value}
             disabled={state.status !== 'connected'}
-            aria-pressed={current === option.value}
-            onClick={() => pick(option.value)}
-            className={
-              current === option.value
-                ? 'border-primary bg-primary/10 rounded-lg border px-2.5 py-1.5 text-xs font-medium'
-                : 'border-border hover:border-muted-foreground/40 rounded-lg border px-2.5 py-1.5 text-xs font-medium'
-            }
-          >
-            {option.label}
-          </button>
+            onSelect={() => pick(option.value)}
+            label={option.label}
+          />
         ))}
       </div>
     </SettingRow>

@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Slider } from '@/components/ui/slider'
-import { cn } from '@/lib/utils'
+import { SegmentButton } from '@/ui/controls/SegmentButton'
 import type { HeyMelodyDevice, HeyMelodyState } from '../device'
 import type { EqPreset } from '../protocol/eq'
 
@@ -54,22 +54,14 @@ export function HeyMelodySound({ device, state }: Props) {
           <div className="flex flex-col gap-1.5">
             {state.eqPresets.map((preset) => (
               <div key={preset.eqId} className="flex flex-col gap-2">
-                <button
-                  type="button"
+                <SegmentButton
+                  size="lg"
+                  pressed={selectedEqId === preset.eqId}
                   disabled={disabled}
-                  aria-pressed={selectedEqId === preset.eqId}
-                  onClick={() => void device.setEqPreset(preset.eqId)}
-                  className={cn(
-                    'rounded-lg border px-3 py-2 text-left text-sm transition-colors',
-                    'focus-visible:ring-ring outline-none focus-visible:ring-2',
-                    'disabled:cursor-default disabled:opacity-50',
-                    selectedEqId === preset.eqId
-                      ? 'border-primary bg-primary/10 font-medium'
-                      : 'border-border hover:border-muted-foreground/40',
-                  )}
-                >
-                  {preset.name}
-                </button>
+                  onSelect={() => void device.setEqPreset(preset.eqId)}
+                  label={preset.name}
+                  className="w-full justify-start py-2"
+                />
                 {editable && preset.bands.length > 0 && (
                   <CurveEditor
                     preset={preset}

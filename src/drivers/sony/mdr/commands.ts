@@ -313,6 +313,16 @@ export const codecName = (id: number): string => CODEC_NAMES[id] ?? `Codec 0x${i
  */
 export const EQ_MIDPOINT = 10;
 
+/**
+ * The gain range a band can take, in steps either side of flat.
+ *
+ * Not reported by the device — MDR's EQ is a fixed six-band graphic — so it is
+ * one constant beside the decoder rather than a per-view guess. Both the Sound
+ * page's faders and the Home tile's bars need it, and bars drawn against a
+ * different range would be lying about where flat sits.
+ */
+export const EQ_RANGE = { min: -10, max: 10 };
+
 export interface EqSettings {
   inquiryType: number;
   preset: number;

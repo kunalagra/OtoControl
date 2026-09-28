@@ -1,9 +1,9 @@
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { EqPreset, PRIOR_MODE_OPTIONS, SonyFunction, eqPresetName } from '@/drivers/sony/mdr/commands'
-import { cn } from '@/lib/utils'
+import { EqPreset, PRIOR_MODE_OPTIONS, SonyFunction, eqPresetName, EQ_RANGE } from '@/drivers/sony/mdr/commands'
 import type { SonyDevice, SonyState } from '@/drivers/sony/sony'
 import { EqualizerPanel } from '@/ui/panels/EqualizerPanel'
 import { TogglesPanel } from '@/ui/panels/TogglesPanel'
+import { SegmentButton } from '@/ui/controls/SegmentButton'
 
 interface Props {
   device: SonyDevice
@@ -11,11 +11,12 @@ interface Props {
 }
 
 /**
- * Sony's EQ is a 6-band graphic with a signed range around flat. Band centres
- * are not reported by the protocol, so bands are numbered rather than given
- * frequencies we would be inventing.
+ * Sony's EQ is a 6-band graphic with a signed range around flat, `EQ_RANGE` —
+ * which lives beside the decoder rather than here, because the Home tile draws
+ * its bars against the same numbers. Band centres are not reported by the
+ * protocol, so bands are numbered below rather than given frequencies we would
+ * be inventing.
  */
-const EQ_RANGE = { min: -10, max: 10 }
 
 /** Presets worth offering; the device accepts more than it uses. */
 const OFFERED_PRESETS = [
@@ -74,7 +75,7 @@ export function SonySound({ device, state }: Props) {
               : `${eq.gains.length} bands, ${EQ_RANGE.min} to +${EQ_RANGE.max} steps · preset ${eqPresetName(eq.preset)}`
           }
           onPresetSelect={(id) => void device.setEqPreset(Number(id))}
-          onBandChange={(band, next) => {
+          onBandCommit={(band, next) => {
             if (eq === null) return
             const gains = [...eq.gains]
             gains[band] = next
@@ -109,26 +110,16 @@ export function SonySound({ device, state }: Props) {
           <CardContent>
             <div className="grid grid-cols-2 gap-2">
               {PRIOR_MODE_OPTIONS.map(({ value, label, hint }) => (
-                <button
+                <SegmentButton
                   key={value}
-                  type="button"
+                  pressed={state.connectionMode === value}
                   disabled={disabled}
-                  aria-pressed={state.connectionMode === value}
-                  onClick={() => void device.setConnectionMode(value)}
-                  className={cn(
-                    'flex flex-col gap-0.5 rounded-lg border px-2.5 py-2 text-left transition-colors',
-                    'focus-visible:ring-ring outline-none focus-visible:ring-2',
-                    'disabled:cursor-default disabled:opacity-50',
-                    state.connectionMode === value
-                      ? 'border-primary bg-primary/10'
-                      : 'border-border hover:border-muted-foreground/40',
-                  )}
-                >
-                  <span className="text-sm font-medium">{label}</span>
-                  <span className="text-muted-foreground text-[11px] leading-tight">
-                    {hint}
-                  </span>
-                </button>
+                  onSelect={() => void device.setConnectionMode(value)}
+                  label={label}
+                  hint={hint}
+                  size="lg"
+                  className="px-2.5 py-2"
+                />
               ))}
             </div>
           </CardContent>

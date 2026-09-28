@@ -13,7 +13,7 @@ import type { DeviceDriver, DriverSection } from '@/core/driver';
 import { sonyArtwork } from './artwork';
 import { servicesFor } from '@/core/transport';
 import { PROFILES } from '@/core/profiles';
-import { codecName } from './mdr/commands';
+import { codecName, eqPresetName, EQ_RANGE } from './mdr/commands';
 import { SonyDevice } from './sony';
 import type { SonyState } from './sony';
 import { SonyNoise } from './sections/SonyNoise';
@@ -32,6 +32,17 @@ const SONY_SECTIONS: DriverSection[] = [
   { id: 'devices', label: 'Connections' },
   { id: 'system', label: 'System' },
 ];
+
+/**
+ * Whether the pairing list is something a person can act on: the device
+ * answered the query *and* named at least one device. A non-null but empty
+ * list (WF-C500) means the model has no list to manage, which is the same
+ * absence as never having answered as far as every consumer is concerned.
+ */
+function hasPairingList(state: SonyState): boolean {
+  const list = state.connections;
+  return list !== null && list.devices.length > 0;
+}
 
 /**
  * Which component renders each of the ids above — formerly
@@ -82,7 +93,7 @@ export const SONY_DRIVER = {
     // hiding a section that is about to appear.
     const known = state.capabilities.size > 0;
     const hasNoise = !known || state.noiseVariant !== null;
-    const hasPairing = !known || state.connections !== null;
+    const hasPairing = !known || hasPairingList(state);
     return SONY_SECTIONS.filter(
       (section) =>
         (section.id !== 'noise' || hasNoise) && (section.id !== 'devices' || hasPairing),
@@ -104,4 +115,28 @@ export const SONY_DRIVER = {
   // Catalog-only artwork; Sony's colour byte picks the render — see
   // `./artwork.ts`.
   artwork: (state: SonyState) => sonyArtwork(state.info.model, state.info.colour?.colour ?? null),
+  // The curve and the preset id the device last reported, which is what the
+  // Sound page already shows. A device with no EQ capability never fills `eq`,
+  // so the Home tile falls back to a link rather than drawing an empty curve.
+  eqPreview: (state: SonyState) =>
+    state.eq === null
+      ? null
+      : { preset: eqPresetName(state.eq.preset), gains: state.eq.gains, range: EQ_RANGE },
+  // The paired-device list `sections/SonyConnections.tsx` renders. Sony has no
+  // "own index" the way GAIA does: the entry the headphones are routing audio
+  // to is the one this app is talking through, and it is what the tile marks.
+  //
+  // An empty list reads as unsupported, not as "zero paired": entry-level
+  // models (WF-C500) answer the pairing query with no devices, and there is
+  // nothing to tab to, tile, or count. `sections()` above applies the same
+  // predicate, so the tab, the Home tile and the LINKS chip disappear together.
+  connections: (state: SonyState) => {
+    if (!hasPairingList(state)) return null;
+    const { devices, playbackMac } = state.connections!;
+    return devices.map((entry) => ({
+      name: entry.name || entry.mac,
+      connected: entry.connected,
+      isThisDevice: entry.mac === playbackMac,
+    }));
+  },
 } as const satisfies DeviceDriver<SonyDevice, SonyState>;

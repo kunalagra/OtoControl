@@ -1,19 +1,16 @@
-import { EQ_PRESETS, eqBandLabel } from '@/drivers/sennheiser/gaia/commands'
+import { EQ_PRESETS, eqBandLabel, eqPresetName } from '@/drivers/sennheiser/gaia/commands'
 import { togglesFor } from '@/drivers/sennheiser/state'
 import { EqualizerPanel } from '@/ui/panels/EqualizerPanel'
 import { TogglesPanel } from '@/ui/panels/TogglesPanel'
 import type { SectionProps } from './types'
 
-/** True when every band matches the preset, within rounding. */
-function matchesPreset(gains: Array<number | undefined>, preset: number[]): boolean {
-  if (gains.length !== preset.length) return false
-  return preset.every((value, index) => Math.abs((gains[index] ?? 0) - value) < 0.05)
-}
-
 export function Sound({ device, state }: SectionProps) {
   const { config, gains } = state.eq
   const disabled = state.status !== 'connected'
   const soundToggles = togglesFor(state.info.model).filter((toggle) => toggle.group === 'sound')
+  // Which preset this curve is, once — the driver's `eqPreview` asks the same
+  // question for the Home tile, through the same helper.
+  const active = eqPresetName(gains)
 
   return (
     <div className="flex flex-col gap-4">
@@ -30,7 +27,9 @@ export function Sound({ device, state }: SectionProps) {
             ? EQ_PRESETS.map((preset) => ({
                 id: preset.name,
                 name: preset.name,
-                active: matchesPreset(gains, preset.gains),
+                active: active === preset.name,
+                // The M4's curves are known here, so each row can show its shape.
+                gains: preset.gains,
               }))
             : []
         }
@@ -54,7 +53,7 @@ export function Sound({ device, state }: SectionProps) {
           const preset = EQ_PRESETS.find((p) => p.name === name)
           if (preset) void device.setEqGains(preset.gains)
         }}
-        onBandChange={(band, gain) => void device.setEqBand(band, gain)}
+        onBandCommit={(band, gain) => void device.setEqBand(band, gain)}
       />
 
       <TogglesPanel

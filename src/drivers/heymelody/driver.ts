@@ -54,4 +54,20 @@ export const HEYMELODY_DRIVER = {
   // True when wear is unknown, per the interface's own contract.
   worn: (state: HeyMelodyState) => state.wear.length === 0 || state.wear.some((cell) => cell.inEar),
   artwork: (state: HeyMelodyState) => heymelodyArtwork(state.info.productId, state.info.colourId),
+  /**
+   * The curve of whichever preset is playing, and the range that preset itself
+   * reports — this protocol's presets carry their own min/max, so nothing here
+   * is assumed. Null when the device has answered no preset list, which is what
+   * the Home tile falls back to a link for.
+   */
+  eqPreview: (state: HeyMelodyState) => {
+    const id = state.eqCurrentPreset ?? state.eqPresets.find((preset) => preset.isSelected)?.eqId ?? null;
+    const preset = id === null ? null : state.eqPresets.find((entry) => entry.eqId === id);
+    if (!preset || preset.bands.length === 0) return null;
+    return {
+      preset: preset.name,
+      gains: preset.bands.map((band) => band.dbValue),
+      range: { min: preset.minValue, max: preset.maxValue },
+    };
+  },
 } as const satisfies DeviceDriver<HeyMelodyDevice, HeyMelodyState>;

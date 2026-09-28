@@ -1,5 +1,5 @@
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { cn } from '@/lib/utils'
+import { SegmentButton } from '@/ui/controls/SegmentButton'
 import type { HeyMelodyDevice, HeyMelodyState } from '../device'
 import { ANC_LABEL, buildAncCapabilities } from '../ancModel'
 import type { AncKey, AncModeOption } from '../ancModel'
@@ -127,19 +127,13 @@ function ModeButton({
   small?: boolean
 }) {
   return (
-    <button
-      type="button"
+    <SegmentButton
+      size={small ? 'default' : 'lg'}
+      pressed={active}
       disabled={disabled}
-      aria-pressed={active}
-      onClick={() => onSelect(option.key)}
-      className={cn(
-        'flex items-center rounded-lg border px-2.5 py-2 text-left transition-colors',
-        'focus-visible:ring-ring outline-none focus-visible:ring-2',
-        'disabled:cursor-default disabled:opacity-50',
-        active ? 'border-primary bg-primary/10' : 'border-border hover:border-muted-foreground/40',
-      )}
-    >
-      <span className={cn('font-medium', small ? 'text-xs' : 'text-sm')}>{label(option.key)}</span>
-    </button>
+      onSelect={() => onSelect(option.key)}
+      label={label(option.key)}
+      className="px-2.5 py-2"
+    />
   )
 }

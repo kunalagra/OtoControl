@@ -2,9 +2,11 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Slider } from '@/components/ui/slider'
 import { Switch } from '@/components/ui/switch'
 import { cn } from '@/lib/utils'
-import { DiracPreset, DIRAC_PRESET_NAMES, EqPreset, EQ_PRESET_NAMES, ClarityLevel, eqBandLabel } from '@/drivers/nothing/commands'
+import { DiracPreset, DIRAC_PRESET_NAMES, EqPreset, EQ_PRESET_NAMES, ClarityLevel, CUSTOM_EQ_RANGE, eqBandLabel } from '@/drivers/nothing/commands'
 import type { NothingDevice, NothingState } from '@/drivers/nothing/device'
+import { SegmentButton } from '@/ui/controls/SegmentButton'
 import { SettingRow } from '@/ui/controls/SettingRow'
+import { useCommittedValue } from '@/ui/controls/useCommittedValue'
 
 interface Props {
   device: NothingDevice
@@ -22,13 +24,6 @@ const DIRAC_PRESETS = [
   DiracPreset.Electronic,
   DiracPreset.EnhanceVocals,
 ]
-
-/** ear-web's custom slider range, 0–10 per band. */
-/**
- * Gain range for a band slider. The wire carries a float, so this is a UI
- * choice rather than a protocol limit.
- */
-const CUSTOM_RANGE = { min: -10, max: 10 }
 
 /** `ClarityBoostEntity.Level`. */
 const CLARITY_LEVELS: Array<[number, string]> = [
@@ -67,23 +62,15 @@ export function NothingSound({ device, state }: Props) {
               <>
                 <div className="grid grid-cols-2 gap-2">
                   {PRESETS.map((preset) => (
-                    <button
+                    <SegmentButton
                       key={preset}
-                      type="button"
+                      pressed={eqActive && state.eqPreset === preset}
                       disabled={disabled}
-                      aria-pressed={eqActive && state.eqPreset === preset}
-                      onClick={() => void device.setEqPreset(preset)}
-                      className={cn(
-                        'rounded-lg border px-2.5 py-2 text-left text-sm font-medium transition-colors',
-                        'focus-visible:ring-ring outline-none focus-visible:ring-2',
-                        'disabled:cursor-default disabled:opacity-50',
-                        eqActive && state.eqPreset === preset
-                          ? 'border-primary bg-primary/10'
-                          : 'border-border hover:border-muted-foreground/40',
-                      )}
-                    >
-                      {EQ_PRESET_NAMES[preset]}
-                    </button>
+                      onSelect={() => void device.setEqPreset(preset)}
+                      label={EQ_PRESET_NAMES[preset]}
+                      size="lg"
+                      className="px-2.5 py-2 text-left justify-start"
+                    />
                   ))}
                 </div>
 
@@ -95,46 +82,33 @@ export function NothingSound({ device, state }: Props) {
                       state.eqPreset !== EqPreset.Custom && 'pointer-events-none opacity-40',
                     )}
                   >
-                    <button
-                      type="button"
+                    <SegmentButton
+                      pressed={state.eqPreset === EqPreset.Custom}
                       disabled={disabled}
-                      aria-pressed={state.eqPreset === EqPreset.Custom}
-                      onClick={() => void device.setEqPreset(EqPreset.Custom)}
-                      className={cn(
-                        'rounded-lg border px-2.5 py-2 text-left text-sm font-medium transition-colors',
-                        state.eqPreset === EqPreset.Custom
-                          ? 'border-primary bg-primary/10'
-                          : 'border-border hover:border-muted-foreground/40',
-                      )}
-                    >
-                      Custom
-                    </button>
+                      onSelect={() => void device.setEqPreset(EqPreset.Custom)}
+                      label="Custom"
+                      size="lg"
+                      className="w-full justify-start px-2.5 py-2 text-left"
+                    />
                     {state.customEq?.bands.map((band, index) => (
                       <SettingRow key={index} label={eqBandLabel(band)} hint={`${Math.round(band.frequency)} Hz`}>
-                        <div className="flex w-40 items-center gap-3">
-                          <Slider
-                            value={[band.gain]}
-                            min={CUSTOM_RANGE.min}
-                            max={CUSTOM_RANGE.max}
-                            step={1}
-                            disabled={disabled}
-                            aria-label={`${eqBandLabel(band)} gain`}
-                            onValueChange={(next) => {
-                              const eq = state.customEq
-                              if (!eq) return
-                              const gain = Array.isArray(next) ? next[0] : next
-                              // Rebuild the whole structure: the write carries
-                              // every band's frequency and Q as well.
-                              void device.setCustomEq({
-                                ...eq,
-                                bands: eq.bands.map((b, i) => (i === index ? { ...b, gain } : b)),
-                              })
-                            }}
-                          />
-                          <span className="text-muted-foreground w-6 text-right text-xs tabular-nums">
-                            {band.gain}
-                          </span>
-                        </div>
+                        <BandSlider
+                          value={band.gain}
+                          min={CUSTOM_EQ_RANGE.min}
+                          max={CUSTOM_EQ_RANGE.max}
+                          disabled={disabled}
+                          label={`${eqBandLabel(band)} gain`}
+                          onCommit={(gain) => {
+                            const eq = state.customEq
+                            if (!eq) return
+                            // Rebuild the whole structure: the write carries
+                            // every band's frequency and Q as well.
+                            void device.setCustomEq({
+                              ...eq,
+                              bands: eq.bands.map((b, i) => (i === index ? { ...b, gain } : b)),
+                            })
+                          }}
+                        />
                       </SettingRow>
                     ))}
                   </div>
@@ -184,25 +158,14 @@ export function NothingSound({ device, state }: Props) {
               )}
             >
               <SettingRow label="Strength">
-                <div className="flex w-40 items-center gap-3">
-                  <Slider
-                    value={[state.bassEnhance.level]}
-                    min={1}
-                    max={5}
-                    step={1}
-                    disabled={disabled}
-                    aria-label="Bass enhance strength"
-                    onValueChange={(next) =>
-                      void device.setBassEnhance(
-                        true,
-                        Array.isArray(next) ? next[0] : next,
-                      )
-                    }
-                  />
-                  <span className="text-muted-foreground w-6 text-right text-xs tabular-nums">
-                    {state.bassEnhance.level}
-                  </span>
-                </div>
+                <BandSlider
+                  value={state.bassEnhance.level}
+                  min={1}
+                  max={5}
+                  disabled={disabled}
+                  label="Bass enhance strength"
+                  onCommit={(level) => void device.setBassEnhance(true, level)}
+                />
               </SettingRow>
             </div>
           </CardContent>
@@ -228,23 +191,15 @@ export function NothingSound({ device, state }: Props) {
               <>
                 <div className="grid grid-cols-2 gap-2">
                   {DIRAC_PRESETS.map((preset) => (
-                    <button
+                    <SegmentButton
                       key={preset}
-                      type="button"
+                      pressed={state.diracEq === preset}
                       disabled={disabled}
-                      aria-pressed={state.diracEq === preset}
-                      onClick={() => void device.setDiracPreset(preset)}
-                      className={cn(
-                        'rounded-lg border px-2.5 py-2 text-left text-sm font-medium transition-colors',
-                        'focus-visible:ring-ring outline-none focus-visible:ring-2',
-                        'disabled:cursor-default disabled:opacity-50',
-                        state.diracEq === preset
-                          ? 'border-primary bg-primary/10'
-                          : 'border-border hover:border-muted-foreground/40',
-                      )}
-                    >
-                      {DIRAC_PRESET_NAMES[preset]}
-                    </button>
+                      onSelect={() => void device.setDiracPreset(preset)}
+                      label={DIRAC_PRESET_NAMES[preset]}
+                      size="lg"
+                      className="px-2.5 py-2 text-left justify-start"
+                    />
                   ))}
                 </div>
 
@@ -256,46 +211,33 @@ export function NothingSound({ device, state }: Props) {
                       state.diracEq !== DiracPreset.Custom && 'pointer-events-none opacity-40',
                     )}
                   >
-                    <button
-                      type="button"
+                    <SegmentButton
+                      pressed={state.diracEq === DiracPreset.Custom}
                       disabled={disabled}
-                      aria-pressed={state.diracEq === DiracPreset.Custom}
-                      onClick={() => void device.setDiracPreset(DiracPreset.Custom)}
-                      className={cn(
-                        'rounded-lg border px-2.5 py-2 text-left text-sm font-medium transition-colors',
-                        state.diracEq === DiracPreset.Custom
-                          ? 'border-primary bg-primary/10'
-                          : 'border-border hover:border-muted-foreground/40',
-                      )}
-                    >
-                      Custom
-                    </button>
+                      onSelect={() => void device.setDiracPreset(DiracPreset.Custom)}
+                      label="Custom"
+                      size="lg"
+                      className="w-full justify-start px-2.5 py-2 text-left"
+                    />
                     {state.customEq?.bands.map((band, index) => (
                       <SettingRow key={index} label={eqBandLabel(band)} hint={`${Math.round(band.frequency)} Hz`}>
-                        <div className="flex w-40 items-center gap-3">
-                          <Slider
-                            value={[band.gain]}
-                            min={CUSTOM_RANGE.min}
-                            max={CUSTOM_RANGE.max}
-                            step={1}
-                            disabled={disabled}
-                            aria-label={`${eqBandLabel(band)} gain`}
-                            onValueChange={(next) => {
-                              const eq = state.customEq
-                              if (!eq) return
-                              const gain = Array.isArray(next) ? next[0] : next
-                              // Rebuild the whole structure: the write carries
-                              // every band's frequency and Q as well.
-                              void device.setCustomEq({
-                                ...eq,
-                                bands: eq.bands.map((b, i) => (i === index ? { ...b, gain } : b)),
-                              })
-                            }}
-                          />
-                          <span className="text-muted-foreground w-6 text-right text-xs tabular-nums">
-                            {band.gain}
-                          </span>
-                        </div>
+                        <BandSlider
+                          value={band.gain}
+                          min={CUSTOM_EQ_RANGE.min}
+                          max={CUSTOM_EQ_RANGE.max}
+                          disabled={disabled}
+                          label={`${eqBandLabel(band)} gain`}
+                          onCommit={(gain) => {
+                            const eq = state.customEq
+                            if (!eq) return
+                            // Rebuild the whole structure: the write carries
+                            // every band's frequency and Q as well.
+                            void device.setCustomEq({
+                              ...eq,
+                              bands: eq.bands.map((b, i) => (i === index ? { ...b, gain } : b)),
+                            })
+                          }}
+                        />
                       </SettingRow>
                     ))}
                   </div>
@@ -359,28 +301,21 @@ export function NothingSound({ device, state }: Props) {
                 label={`${Math.round(band.frequency)} Hz`}
                 hint={eqBandLabel(band)}
               >
-                <div className="flex w-40 items-center gap-3">
-                  <Slider
-                    value={[band.gain]}
-                    min={CUSTOM_RANGE.min}
-                    max={CUSTOM_RANGE.max}
-                    step={1}
-                    disabled={disabled}
-                    aria-label={`${Math.round(band.frequency)} Hz gain`}
-                    onValueChange={(next) => {
-                      const eq = state.advancedEqBands
-                      if (!eq) return
-                      const gain = Array.isArray(next) ? next[0] : next
-                      void device.setAdvancedEqBands({
-                        ...eq,
-                        bands: eq.bands.map((b, i) => (i === index ? { ...b, gain } : b)),
-                      })
-                    }}
-                  />
-                  <span className="text-muted-foreground w-6 text-right text-xs tabular-nums">
-                    {band.gain}
-                  </span>
-                </div>
+                <BandSlider
+                  value={band.gain}
+                  min={CUSTOM_EQ_RANGE.min}
+                  max={CUSTOM_EQ_RANGE.max}
+                  disabled={disabled}
+                  label={`${Math.round(band.frequency)} Hz gain`}
+                  onCommit={(gain) => {
+                    const eq = state.advancedEqBands
+                    if (!eq) return
+                    void device.setAdvancedEqBands({
+                      ...eq,
+                      bands: eq.bands.map((b, i) => (i === index ? { ...b, gain } : b)),
+                    })
+                  }}
+                />
               </SettingRow>
             ))}
           </CardContent>
@@ -409,21 +344,14 @@ export function NothingSound({ device, state }: Props) {
               <SettingRow label="Amount">
                 <div className="flex gap-1.5">
                   {CLARITY_LEVELS.map(([level, name]) => (
-                    <button
+                    <SegmentButton
                       key={level}
-                      type="button"
+                      size="sm"
+                      pressed={state.clarityBoost?.level === level}
                       disabled={disabled}
-                      aria-pressed={state.clarityBoost?.level === level}
-                      onClick={() => void device.setClarityBoost(true, level)}
-                      className={cn(
-                        'rounded-lg border px-2.5 py-1.5 text-xs font-medium',
-                        state.clarityBoost?.level === level
-                          ? 'border-primary bg-primary/10'
-                          : 'border-border hover:border-muted-foreground/40',
-                      )}
-                    >
-                      {name}
-                    </button>
+                      onSelect={() => void device.setClarityBoost(true, level)}
+                      label={name}
+                    />
                   ))}
                 </div>
               </SettingRow>
@@ -473,6 +401,63 @@ export function NothingSound({ device, state }: Props) {
           </CardContent>
         </Card>
       )}
+    </div>
+  )
+}
+
+/** Base UI hands a single-value slider an array. */
+const settle = (value: number | readonly number[]): number =>
+  // `Array.isArray` cannot narrow a readonly array out of the union.
+  typeof value === 'number' ? value : value[0]
+
+/**
+ * One band, and the reason it is a component: the draft has to live above the
+ * slider.
+ *
+ * Every one of these writes carries the *whole* structure — frequencies and Q
+ * alongside the gains — so a per-tick write means re-sending the entire curve
+ * once per pixel of drag. The draft is local, so the drag is free and the
+ * curve is written once, on release, with the committed value rather than the
+ * one React has not re-rendered yet.
+ */
+function BandSlider({
+  value,
+  min,
+  max,
+  disabled,
+  label,
+  onCommit,
+}: {
+  value: number
+  min: number
+  max: number
+  disabled: boolean
+  label: string
+  onCommit(value: number): void
+}) {
+  const [gain, setDraftGain, commitGain] = useCommittedValue(value)
+
+  return (
+    <div className="flex w-40 items-center gap-3">
+      <Slider
+        value={[gain]}
+        min={min}
+        max={max}
+        step={1}
+        disabled={disabled}
+        aria-label={label}
+        onValueChange={(next) => setDraftGain(settle(next))}
+        onValueCommitted={(next) => {
+          // The committed value, not `gain`: a key press fires change and
+          // commit in one event, before React has re-rendered the draft.
+          const settled = settle(next)
+          commitGain(settled)
+          onCommit(settled)
+        }}
+      />
+      <span className="text-muted-foreground w-6 text-right text-xs tabular-nums">
+        {gain}
+      </span>
     </div>
   )
 }

@@ -25,7 +25,7 @@ export function Debug({ device, state }: SectionProps) {
     <Card data-size="sm">
       <CardHeader>
         <CardTitle>Debug</CardTitle>
-        <p className="text-destructive text-xs">
+        <p className="text-signal-strong text-xs">
           Sends raw frames straight to the headphones. Firmware-upgrade, factory-reset and
           paired-device-delete IDs are refused in code and never sent.
         </p>
@@ -119,7 +119,7 @@ function FrameLog({
               <span
                 className={cn(
                   'font-bold',
-                  line.direction === 'tx' ? 'text-primary' : 'text-emerald-500',
+                  line.direction === 'tx' ? 'text-signal-strong' : 'text-emerald-500',
                 )}
               >
                 {line.direction.toUpperCase()}
@@ -141,7 +141,7 @@ function FrameLog({
           onKeyDown={(event) => {
             if (event.key === 'Enter') void send()
           }}
-          className="border-input bg-background focus-visible:ring-ring min-w-0 flex-1 rounded-md border px-3 py-1.5 font-mono text-xs outline-none focus-visible:ring-2"
+          className="border-input bg-background focus-visible:ring-ring min-w-0 flex-1 rounded-md border px-3 py-1.5 font-mono text-xs outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-offset-background"
         />
         <Button size="sm" variant="outline" disabled={!connected} onClick={() => void send()}>
           Send
@@ -151,7 +151,7 @@ function FrameLog({
         </Button>
       </div>
 
-      {error && <p className="text-destructive text-xs">{error}</p>}
+      {error && <p className="text-signal-strong text-xs">{error}</p>}
     </div>
   )
 }

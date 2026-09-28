@@ -34,6 +34,18 @@ export function isThemePreference(value: unknown): value is ThemePreference {
   return value === 'light' || value === 'dark' || value === 'system'
 }
 
+/**
+ * Whether the system currently prefers dark.
+ *
+ * `matchMedia` is optional-called because a browser may not have it, but the
+ * `window` it hangs off is not optional at all — and `renderToStaticMarkup` in
+ * the node test environment has none. Guarding here rather than at each caller
+ * is what lets the shared UI tier be asserted against static markup, which is
+ * the pattern most of its tests use.
+ */
+const systemPrefersDark = (): boolean =>
+  typeof window === 'undefined' ? false : window.matchMedia?.('(prefers-color-scheme: dark)').matches ?? false
+
 function readStored(): ThemePreference {
   try {
     const stored = localStorage.getItem(STORAGE_KEY)
@@ -51,20 +63,19 @@ function applyTheme(resolved: ResolvedTheme): void {
 
 export function useTheme() {
   const [preference, setPreference] = useState<ThemePreference>(readStored)
-  const [systemPrefersDark, setSystemPrefersDark] = useState(
-    () => window.matchMedia?.('(prefers-color-scheme: dark)').matches ?? false,
-  )
+  const [prefersDark, setPrefersDark] = useState(systemPrefersDark)
 
   // Follow the system while the preference is 'system'.
   useEffect(() => {
-    const query = window.matchMedia?.('(prefers-color-scheme: dark)')
+    const query =
+      typeof window === 'undefined' ? undefined : window.matchMedia?.('(prefers-color-scheme: dark)')
     if (!query) return
-    const onChange = (event: MediaQueryListEvent) => setSystemPrefersDark(event.matches)
+    const onChange = (event: MediaQueryListEvent) => setPrefersDark(event.matches)
     query.addEventListener('change', onChange)
     return () => query.removeEventListener('change', onChange)
   }, [])
 
-  const resolved = resolveTheme(preference, systemPrefersDark)
+  const resolved = resolveTheme(preference, prefersDark)
 
   useEffect(() => {
     applyTheme(resolved)

@@ -1,6 +1,6 @@
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
-import { EQ_CUSTOM_ID, EQ_PRESETS } from '@/drivers/soundcore/commands'
+import { EQ_CUSTOM_ID, EQ_DB_RANGE, EQ_PRESETS } from '@/drivers/soundcore/commands'
 import type { SoundcoreDevice } from '@/drivers/soundcore/device'
 import type { SoundcoreState } from '@/drivers/soundcore/device'
 import { Fader } from '@/ui/controls/Fader'
@@ -9,9 +9,6 @@ interface Props {
   device: SoundcoreDevice
   state: SoundcoreState
 }
-
-/** The wire clamps each band at −12.0…+6.0 dB; gains travel as signed tenths. */
-const DB_RANGE = { min: -12, max: 6 }
 
 const REGULAR_PRESETS = EQ_PRESETS.filter((preset) => !preset.artist)
 const ARTIST_PRESETS = EQ_PRESETS.filter((preset) => preset.artist)
@@ -47,18 +44,17 @@ export function SoundcoreSound({ device, state }: Props) {
                   plays — its curve comes from the table, not from you — and
                   unlocked only under Custom. */}
               <div className="flex flex-col gap-1">
-                <div className="flex justify-between gap-1">
+                <div className="mono-dots-fader flex min-h-[220px] gap-1 rounded-[26px] p-3">
                   {eq.left.map((tenths, band) => (
                     <Fader
                       key={band}
                       value={tenths / 10}
-                      range={DB_RANGE}
+                      range={EQ_DB_RANGE}
                       step={0.5}
                       disabled={disabled || !custom || eq.left.length !== 8}
                       label={`Band ${band + 1} gain`}
                       caption={`${band + 1}`}
-                      height={104}
-                      onChange={(db) => {
+                      onCommit={(db) => {
                         const left = [...eq.left];
                         left[band] = Math.round(db * 10);
                         void device.setEqCustom(left, perSide ? eq.right : left);

@@ -8,7 +8,9 @@ import {
   SPEAK_TO_CHAT_TIMEOUT_OPTIONS,
 } from '@/drivers/sony/mdr/speakToChat'
 import type { SonyDevice, SonyState } from '@/drivers/sony/sony'
+import { SegmentButton } from '@/ui/controls/SegmentButton'
 import { SettingRow } from '@/ui/controls/SettingRow'
+import { useCommittedValue } from '@/ui/controls/useCommittedValue'
 
 interface Props {
   device: SonyDevice
@@ -24,9 +26,18 @@ const MODES = [
   { value: NcAsmMode.Ambient, label: 'Ambient sound', hint: 'Lets the room through' },
 ]
 
+/** Base UI hands a single-value slider an array. */
+const settle = (value: number | readonly number[]): number =>
+  // `Array.isArray` cannot narrow a readonly array out of the union.
+  typeof value === 'number' ? value : value[0]
+
 export function SonyNoise({ device, state }: Props) {
   const disabled = state.status !== 'connected'
   const { noise, noiseVariant } = state
+  // Drafted so a drag writes once, on release — see `useCommittedValue`.
+  const [ambientLevel, setDraftAmbient, commitAmbient] = useCommittedValue(
+    noise?.ambientLevel ?? 0,
+  )
 
   // A variant with no reading means the device has noise control we cannot
   // drive — worth saying, rather than showing an empty page. Speak-to-chat
@@ -72,24 +83,16 @@ export function SonyNoise({ device, state }: Props) {
             )}
           >
             {MODES.map(({ value, label, hint }) => (
-              <button
+              <SegmentButton
                 key={value}
-                type="button"
+                pressed={noise.mode === value}
                 disabled={disabled}
-                aria-pressed={noise.mode === value}
-                onClick={() => void device.setNoise({ mode: value })}
-                className={cn(
-                  'flex flex-col gap-0.5 rounded-lg border px-2.5 py-2 text-left transition-colors',
-                  'focus-visible:ring-ring outline-none focus-visible:ring-2',
-                  'disabled:cursor-default disabled:opacity-50',
-                  noise.mode === value
-                    ? 'border-primary bg-primary/10'
-                    : 'border-border hover:border-muted-foreground/40',
-                )}
-              >
-                <span className="text-sm font-medium">{label}</span>
-                <span className="text-muted-foreground text-[11px] leading-tight">{hint}</span>
-              </button>
+                onSelect={() => void device.setNoise({ mode: value })}
+                label={label}
+                hint={hint}
+                size="lg"
+                className="px-2.5 py-2"
+              />
             ))}
           </div>
 
@@ -105,20 +108,23 @@ export function SonyNoise({ device, state }: Props) {
               <SettingRow label="Ambient level" hint="How much of the room comes through.">
                 <div className="flex w-40 items-center gap-3">
                   <Slider
-                    value={[noise.ambientLevel]}
+                    value={[ambientLevel]}
                     min={0}
                     max={AMBIENT_LEVEL_MAX}
                     step={1}
                     disabled={disabled}
                     aria-label="Ambient sound level"
-                    onValueChange={(value) =>
-                      void device.setNoise({
-                        ambientLevel: Array.isArray(value) ? value[0] : value,
-                      })
-                    }
+                    onValueChange={(value) => setDraftAmbient(settle(value))}
+                    onValueCommitted={(value) => {
+                      // The committed value, not the draft: a key press fires
+                      // change and commit in one event, before React re-renders.
+                      const settled = settle(value)
+                      commitAmbient(settled)
+                      void device.setNoise({ ambientLevel: settled })
+                    }}
                   />
                   <span className="text-muted-foreground w-6 text-right text-xs tabular-nums">
-                    {noise.ambientLevel}
+                    {ambientLevel}
                   </span>
                 </div>
               </SettingRow>
@@ -158,23 +164,14 @@ function SpeakToChatCard({ device, state }: Props) {
     label: string,
     pick: () => void,
   ) => (
-    <button
+    <SegmentButton
       key={value}
-      type="button"
+      size="sm"
+      pressed={current === value}
       disabled={disabled}
-      aria-pressed={current === value}
-      onClick={pick}
-      className={cn(
-        'rounded-lg border px-2.5 py-1.5 text-xs font-medium transition-colors',
-        'focus-visible:ring-ring outline-none focus-visible:ring-2',
-        'disabled:cursor-default disabled:opacity-50',
-        current === value
-          ? 'border-primary bg-primary/10'
-          : 'border-border hover:border-muted-foreground/40',
-      )}
-    >
-      {label}
-    </button>
+      onSelect={pick}
+      label={label}
+    />
   )
 
   return (

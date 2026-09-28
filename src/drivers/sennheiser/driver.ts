@@ -17,7 +17,7 @@ import type { DeviceDriver, DriverSection } from '@/core/driver';
 import { sennheiserArtwork } from './assets';
 import { servicesFor } from '@/core/transport';
 import { PROFILES } from '@/core/profiles';
-import { WearState, codecName, wearStateName } from './gaia/commands';
+import { WearState, codecName, eqPresetName, wearStateName } from './gaia/commands';
 import { MomentumDevice } from './device';
 import type { DeviceState } from './state';
 import { Debug } from './sections/Debug';
@@ -89,6 +89,10 @@ export const SENNHEISER_DRIVER = {
   // line worth adding is the wear state.
   statusLine: (state: DeviceState) =>
     state.wearState === null ? null : wearStateName(state.wearState),
+  // The same words, under the name Home asks for them by. GAIA is the one driver
+  // that decodes a wear state at all, so it is the one that implements this.
+  wearCaption: (state: DeviceState) =>
+    state.wearState === null ? null : wearStateName(state.wearState),
   // Nothing reported yet counts as worn: the product render is dimmed to say
   // "off your head", and dimming it because the device has not answered yet
   // would be a claim we cannot make.
@@ -96,4 +100,29 @@ export const SENNHEISER_DRIVER = {
   // Renders resolve from the colour word in the model string itself —
   // see `./assets.ts`.
   artwork: (state: DeviceState) => sennheiserArtwork(state.info.model),
+  // GAIA reports the band count and the gain range with the curve, so the Home
+  // tile's bars mean the same thing on every Momentum: no guessed range, and no
+  // bars at all until the device has answered the config query.
+  eqPreview: (state: DeviceState) => {
+    const { config, gains } = state.eq;
+    if (config === null) return null;
+    return {
+      // Null for a hand-edited curve, which the tile shows as Custom — the same
+      // answer `Sound` gives its preset list, from the same helper.
+      preset: eqPresetName(gains),
+      gains: gains.map((gain) => gain ?? 0),
+      range: { min: config.minGain, max: config.maxGain },
+    };
+  },
+  // The paired-device list `sections/Devices.tsx` renders, flattened for the
+  // Home tile. `ownIndex` is the entry this machine is talking through, and the
+  // tile marks it "· this" rather than leaving four rows to choose between.
+  connections: (state: DeviceState) => {
+    const { devices, ownIndex } = state.connections;
+    return devices.map((entry) => ({
+      name: entry.name || `Device ${entry.index + 1}`,
+      connected: entry.connected,
+      isThisDevice: entry.index === ownIndex,
+    }));
+  },
 } as const satisfies DeviceDriver<MomentumDevice, DeviceState>;

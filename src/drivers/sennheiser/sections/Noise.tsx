@@ -7,9 +7,10 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { ANTI_WIND_OPTIONS, AncMode, AntiWind } from '@/drivers/sennheiser/gaia/commands'
-import { cn } from '@/lib/utils'
 import { Knob } from '@/ui/controls/Knob'
+import { SegmentButton } from '@/ui/controls/SegmentButton'
 import { SettingRow } from '@/ui/controls/SettingRow'
+import { useCommittedValue } from '@/ui/controls/useCommittedValue'
 import { Switch } from '@/components/ui/switch'
 import { NEUTRAL_LEVEL, describeLevel, noiseReadout } from '../noiseLevel'
 import type { SectionProps } from './types'
@@ -40,7 +41,10 @@ export function Noise({ device, state }: SectionProps) {
   const mode = currentMode(state)
   const { transparencyLevel, modes } = state.noise
   const disabled = state.status !== 'connected'
-  const level = transparencyLevel ?? NEUTRAL_LEVEL
+  // Drafted so a drag writes once, on release — see `useCommittedValue`.
+  const [level, setDraftLevel, commitLevel] = useCommittedValue(
+    transparencyLevel ?? NEUTRAL_LEVEL,
+  )
   const readout = noiseReadout(level)
 
   async function selectMode(next: NoiseMode) {
@@ -62,7 +66,11 @@ export function Noise({ device, state }: SectionProps) {
         <CardContent className="flex flex-col items-center gap-4">
           <Knob
             value={level}
-            onChange={(next) => void device.setTransparencyLevel(next)}
+            onChange={setDraftLevel}
+            onCommit={(next) => {
+              commitLevel(next)
+              void device.setTransparencyLevel(next)
+            }}
             detent={NEUTRAL_LEVEL}
             disabled={disabled || mode !== 'custom' || transparencyLevel === null}
             label="Noise control level, from cancelling to transparency"
@@ -87,24 +95,16 @@ export function Noise({ device, state }: SectionProps) {
 
           <div className="grid w-full grid-cols-3 gap-2">
             {MODES.map(({ id, label, hint }) => (
-              <button
+              <SegmentButton
                 key={id}
-                type="button"
+                pressed={mode === id}
                 disabled={disabled}
-                aria-pressed={mode === id}
-                onClick={() => void selectMode(id)}
-                className={cn(
-                  'flex flex-col gap-0.5 rounded-lg border px-2.5 py-2 text-left transition-colors',
-                  'focus-visible:ring-ring outline-none focus-visible:ring-2',
-                  'disabled:cursor-default disabled:opacity-50',
-                  mode === id
-                    ? 'border-primary bg-primary/10'
-                    : 'border-border hover:border-muted-foreground/40',
-                )}
-              >
-                <span className="text-sm font-medium">{label}</span>
-                <span className="text-muted-foreground text-[11px] leading-tight">{hint}</span>
-              </button>
+                onSelect={() => void selectMode(id)}
+                label={label}
+                hint={hint}
+                size="lg"
+                className="px-2.5 py-2"
+              />
             ))}
           </div>
         </CardContent>
