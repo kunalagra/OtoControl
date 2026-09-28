@@ -177,6 +177,40 @@ export interface ConnectionSummary {
 }
 
 /**
+ * One setting worth surfacing on Home: an on/off switch or a small choice.
+ *
+ * Built by the driver from the same state its own sections read and written
+ * through the same device methods, so Home adds a way in, never a second
+ * implementation. `value` is null when the device has not reported one, and
+ * the tile then shows the control without claiming a position. A choice has at
+ * most four options — anything wider belongs on its own tab.
+ */
+export type QuickSetting =
+  | { kind: 'toggle'; id: string; label: string; value: boolean | null; set(value: boolean): void }
+  | {
+      kind: 'choice';
+      id: string;
+      label: string;
+      value: string | null;
+      options: ReadonlyArray<{ value: string; label: string }>;
+      set(value: string): void;
+    };
+
+/** One EQ preset a Home chip can apply. */
+export interface EqPresetChoice {
+  /** Opaque to Home; handed straight back to `select`. */
+  id: string;
+  name: string;
+  active: boolean;
+}
+
+/** The presets a device offers and the way to apply one, as its Sound tab does. */
+export interface EqPresets {
+  presets: EqPresetChoice[];
+  select(id: string): void;
+}
+
+/**
  * A manufacturer, as one entry in `DRIVERS` rather than a subclass.
  *
  * `guard` is part of the contract in spec §3.2, but deliberately absent
@@ -296,6 +330,13 @@ export interface DeviceDriver<TDevice, TState> {
    * for it by name rather than guessing which of those `detail` happens to be.
    */
   wearCaption?(state: TState): string | null;
+  /**
+   * The device's most-used settings, most important first, gated the way its
+   * own sections gate them. Home shows the first few.
+   */
+  quickSettings?(device: TDevice, state: TState): QuickSetting[];
+  /** The EQ presets the Sound tab offers, or null when it offers none. */
+  eqPresets?(device: TDevice, state: TState): EqPresets | null;
 }
 
 /**

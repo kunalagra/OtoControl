@@ -18,9 +18,9 @@
  * end until someone shows any macOS program talking to an A3951 over it.
  */
 
-import type { DeviceDriver, DriverSection } from '@/core/driver';
+import type { DeviceDriver, DriverSection, EqPresets, QuickSetting } from '@/core/driver';
 import { soundcoreArtwork } from './assets';
-import { EQ_DB_RANGE, eqPresetName } from './commands';
+import { EQ_DB_RANGE, EQ_PRESETS, eqPresetName } from './commands';
 import { PROFILES } from '@/core/profiles';
 import { SoundcoreDevice } from './device';
 import type { SoundcoreState } from './device';
@@ -77,4 +77,49 @@ export const SOUNDCORE_DRIVER = {
           gains: state.eq.left.map((tenths) => tenths / 10),
           range: EQ_DB_RANGE,
         },
+  // The System tab's switches, none of them capability-gated there either.
+  quickSettings: (device: SoundcoreDevice, state: SoundcoreState): QuickSetting[] => [
+    {
+      kind: 'toggle',
+      id: 'wearDetection',
+      label: 'Wear detection',
+      value: state.wearDetection,
+      set: (value: boolean) => void device.setWearDetection(value),
+    },
+    {
+      kind: 'toggle',
+      id: 'ldac',
+      label: 'LDAC',
+      value: state.ldac,
+      set: (value: boolean) => void device.setLdac(value),
+    },
+    {
+      kind: 'toggle',
+      id: 'voicePrompt',
+      label: 'Voice prompts',
+      value: state.voicePrompt,
+      set: (value: boolean) => void device.setVoicePrompt(value),
+    },
+    {
+      kind: 'toggle',
+      id: 'touchTone',
+      label: 'Tap sound',
+      value: state.touchTone,
+      set: (value: boolean) => void device.setTouchTone(value),
+    },
+  ],
+  // The regular presets only: the artist ones are a long second list that
+  // belongs on the Sound tab rather than in a Home tile.
+  eqPresets: (device: SoundcoreDevice, state: SoundcoreState): EqPresets | null => {
+    const { eq } = state;
+    if (eq === null) return null;
+    return {
+      presets: EQ_PRESETS.filter((preset) => !preset.artist).map((preset) => ({
+        id: String(preset.id),
+        name: preset.name,
+        active: eq.profile === preset.id,
+      })),
+      select: (id: string) => void device.setEqPreset(Number(id)),
+    };
+  },
 } as const satisfies DeviceDriver<SoundcoreDevice, SoundcoreState>;

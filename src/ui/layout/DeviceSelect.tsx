@@ -11,13 +11,18 @@ import { M4_SERVICE_UUID } from '@/core/transport'
 interface Props {
   manager: DeviceManager
   active: ActiveDevice
+  /**
+   * `field` shows the current device's name in a box; `chevron` is only the
+   * arrow, for sitting beside a heading that already names the device.
+   */
+  variant?: 'field' | 'chevron'
 }
 
 /**
  * How many granted devices it takes before switching between them is a
  * question worth asking at all.
  *
- * A dropdown of one is not a dropdown, and a "Switch" pill beside the only
+ * A dropdown of one is not a dropdown, and a chevron beside the only
  * device name in the app is a control that cannot do anything — so the top bar
  * asks this before it offers one, and `DeviceSelect` asks it before it renders.
  * A constant rather than a helper so both sides name the same rule without
@@ -40,7 +45,7 @@ export const MIN_DEVICES_TO_SWITCH = 2
  * `available` to merge `grantedGattDevices()` and to key entries on something
  * other than a service UUID, since BLE has none.
  */
-export function DeviceSelect({ manager, active }: Props) {
+export function DeviceSelect({ manager, active, variant = 'field' }: Props) {
   const available = manager.available
   if (available.length < MIN_DEVICES_TO_SWITCH) return null
 
@@ -58,10 +63,22 @@ export function DeviceSelect({ manager, active }: Props) {
         if (uuid) void manager.select(uuid)
       }}
     >
-      <SelectTrigger size="sm" className="w-full">
-        <SelectValue />
-      </SelectTrigger>
-      <SelectContent>
+      {variant === 'chevron' ? (
+        <SelectTrigger
+          size="sm"
+          aria-label="Switch device"
+          // Just the arrow: the heading beside it is the name. The 44px floor
+          // is hit slop on a phone, not a bigger glyph.
+          className="min-h-11 min-w-11 justify-center bg-transparent px-1.5 text-muted-foreground hover:text-foreground md:min-h-8 md:min-w-8"
+        />
+      ) : (
+        <SelectTrigger size="sm" className="w-full">
+          <SelectValue />
+        </SelectTrigger>
+      )}
+      {/* Drops below the trigger rather than laying the current item over it,
+          so the list reads as a menu of devices under the name. */}
+      <SelectContent align="start" alignItemWithTrigger={false} className="min-w-56">
         {available.map(({ uuid, label }) => (
           <SelectItem key={uuid} value={uuid}>
             {label}

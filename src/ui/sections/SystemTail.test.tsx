@@ -29,7 +29,7 @@ const indexOfMarker = (kids: unknown[], name: string): number =>
   kids.findIndex((child) => child != null && (child as { __marker?: string }).__marker === name);
 
 describe('SystemTail', () => {
-  it('runs Advanced, then capabilities, then About', () => {
+  it('runs Advanced, then capabilities', () => {
     const kids = childrenOf(
       SystemTail({
         ...base,
@@ -39,31 +39,14 @@ describe('SystemTail', () => {
     );
 
     const advanced = indexOfMarker(kids, 'advanced');
-    const capabilities = indexOfMarker(kids, 'capabilities');
-    const about = kids.findIndex(isAbout);
-
     expect(advanced).toBeGreaterThanOrEqual(0);
-    expect(capabilities).toBeGreaterThan(advanced);
-    expect(about).toBeGreaterThan(capabilities);
+    expect(indexOfMarker(kids, 'capabilities')).toBeGreaterThan(advanced);
   });
 
-  it('keeps About last on a brand with no Advanced card', () => {
-    // Sony has no debug console, so the tail is capabilities then About.
-    const kids = childrenOf(
-      SystemTail({ ...base, capabilities: marker('capabilities') }) as ReactElement,
-    );
-
-    expect(indexOfMarker(kids, 'advanced')).toBe(-1);
-    expect(kids.findIndex(isAbout)).toBeGreaterThan(indexOfMarker(kids, 'capabilities'));
-  });
-
-  it('never places About above capabilities', () => {
-    for (const advanced of [marker('advanced'), undefined]) {
-      const kids = childrenOf(
-        SystemTail({ ...base, advanced, capabilities: marker('capabilities') }) as ReactElement,
-      );
-      expect(kids.findIndex(isAbout)).toBeGreaterThan(indexOfMarker(kids, 'capabilities'));
-    }
+  it('leaves About to the shell, which puts it after the app settings', () => {
+    // Inside a section it would sit above App, and under the idle dim.
+    const kids = childrenOf(SystemTail({ ...base, capabilities: marker('capabilities') }) as ReactElement);
+    expect(kids.findIndex(isAbout)).toBe(-1);
   });
 
   it('puts the not-supported list above everything, not in the tail', () => {
@@ -76,7 +59,6 @@ describe('SystemTail', () => {
       }) as ReactElement,
     );
 
-    expect(kids.findIndex(isAbout)).toBeGreaterThan(0);
     expect(indexOfMarker(kids, 'capabilities')).toBeGreaterThan(0);
   });
 });

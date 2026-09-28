@@ -75,6 +75,8 @@ export function Noise({ device, state }: SectionProps) {
             disabled={disabled || mode !== 'custom' || transparencyLevel === null}
             label="Noise control level, from cancelling to transparency"
             caption={describeLevel(level)}
+            minLabel="Cancelling"
+            maxLabel="Transparency"
           >
             {transparencyLevel === null ? (
               <span className="text-muted-foreground text-sm">Unknown</span>
@@ -87,11 +89,6 @@ export function Noise({ device, state }: SectionProps) {
               </>
             )}
           </Knob>
-
-          <div className="text-muted-foreground flex w-full max-w-xs justify-between text-[11px]">
-            <span>Cancelling</span>
-            <span>Transparency</span>
-          </div>
 
           <div className="grid w-full grid-cols-3 gap-2">
             {MODES.map(({ id, label, hint }) => (

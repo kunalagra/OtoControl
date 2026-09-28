@@ -27,6 +27,9 @@ interface KnobProps {
   caption?: string
   /** Rendered in the middle of the dial. */
   children?: React.ReactNode
+  /** Names for the two ends of the arc, set under each end in the ring's open gap. */
+  minLabel?: string
+  maxLabel?: string
   size?: number
   className?: string
 }
@@ -34,6 +37,17 @@ interface KnobProps {
 const RADIUS = 42
 const TRACK_WIDTH = 8
 const VIEWBOX = 112
+/** The detent mark's ends, as fractions of the radius: across the track, 1px in from each edge. */
+const DETENT_INNER = (RADIUS - TRACK_WIDTH / 2 + 1) / RADIUS
+const DETENT_OUTER = (RADIUS + TRACK_WIDTH / 2 - 1) / RADIUS
+/** The thumb: radius and ring stroke, in viewBox units. */
+const THUMB_RADIUS = 7
+const THUMB_STROKE = 3
+/**
+ * How far below an arc end its label starts, in viewBox units: past the
+ * thumb's lowest point when it sits on that end, plus a gap.
+ */
+const LABEL_DROP = THUMB_RADIUS + THUMB_STROKE / 2 + 3
 
 /**
  * Radial control, the way a hardware noise-control dial works.
@@ -54,6 +68,8 @@ export function Knob({
   label,
   caption,
   children,
+  minLabel,
+  maxLabel,
   size = 168,
   className,
 }: KnobProps) {
@@ -224,6 +240,22 @@ export function Knob({
             className="stroke-muted"
           />
 
+          {/* The neutral mark, across the track and painted before the level
+              arc: it shows on the bare track and the arc covers it where they
+              meet. Painted after, it sat on top of the red; outside the track,
+              it floated above the ring. */}
+          {detentPoint && (
+            <line
+              x1={detentPoint.x * DETENT_INNER}
+              y1={detentPoint.y * DETENT_INNER}
+              x2={detentPoint.x * DETENT_OUTER}
+              y2={detentPoint.y * DETENT_OUTER}
+              strokeWidth={1.5}
+              strokeLinecap="round"
+              className="stroke-muted-foreground/60"
+            />
+          )}
+
           {/* Filled from the detent when there is one, so the arc reads as a
               deviation from centre rather than an absolute amount. */}
           <path
@@ -234,23 +266,12 @@ export function Knob({
             className="stroke-primary"
           />
 
-          {detentPoint && (
-            <line
-              x1={detentPoint.x * 0.84}
-              y1={detentPoint.y * 0.84}
-              x2={detentPoint.x * 1.14}
-              y2={detentPoint.y * 1.14}
-              strokeWidth={1.5}
-              strokeLinecap="round"
-              className="stroke-muted-foreground/60"
-            />
-          )}
 
           <circle
             cx={thumb.x}
             cy={thumb.y}
-            r={7}
-            strokeWidth={3}
+            r={THUMB_RADIUS}
+            strokeWidth={THUMB_STROKE}
             className="fill-background stroke-primary"
           />
         </svg>
@@ -258,11 +279,37 @@ export function Knob({
         <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center gap-0.5 text-center">
           {children}
         </div>
+
+        {minLabel && <EndLabel slot="knob-min" text={minLabel} end={polar(valueToAngle(range.min, range), RADIUS)} />}
+        {maxLabel && <EndLabel slot="knob-max" text={maxLabel} end={polar(valueToAngle(range.max, range), RADIUS)} />}
       </div>
 
       <span id={labelId} className="sr-only">
         {label}
       </span>
     </div>
+  )
+}
+
+/**
+ * One end's name, set under the end of the arc: centred on the end
+ * horizontally, and starting below the thumb's lowest point when the thumb sits
+ * on that end — beside the end it collided with the thumb at the extremes. In
+ * the open quarter at the bottom of the ring, where it reads as that end's
+ * label. Positioned in percent of the dial from the same geometry the arc is
+ * drawn with. Hidden from assistive tech: the slider's value text already says
+ * where the level is.
+ */
+function EndLabel({ slot, text, end }: { slot: string; text: string; end: { x: number; y: number } }) {
+  const toPercent = (value: number) => Math.round((50 + (value / VIEWBOX) * 100) * 100) / 100
+  return (
+    <span
+      aria-hidden="true"
+      data-slot={slot}
+      className="text-muted-foreground pointer-events-none absolute -translate-x-1/2 whitespace-nowrap text-[11px] leading-none"
+      style={{ left: `${toPercent(end.x)}%`, top: `${toPercent(end.y + LABEL_DROP)}%` }}
+    >
+      {text}
+    </span>
   )
 }

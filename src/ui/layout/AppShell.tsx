@@ -1,12 +1,18 @@
 import { RiArrowLeftLine } from '@remixicon/react'
-import { useState } from 'react'
+import { addTransitionType, startTransition, useState } from 'react'
 
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 import type { ActiveDevice } from '@/core/manager'
 import { componentFor, navSections, sectionFor } from '../sections/registry'
+import { About } from '../sections/About'
+import { AppSettings } from '../sections/AppSettings'
+import { MORPH_TARGETS } from '../sections/homeTiles'
 import { NoDevice } from '../sections/NoDevice'
+import { TileMorph } from '../sections/TileMorph'
+import { useTheme } from '../theme'
 import { useDevices } from '../useDevice'
+import { ConnectionMenu } from './ConnectionMenu'
 import { Nav } from './Nav'
 import { TopBar } from './TopBar'
 
@@ -20,9 +26,21 @@ import { TopBar } from './TopBar'
  */
 export function AppShell() {
   const { manager, active } = useDevices()
+  // Kept mounted here so the page follows the OS theme on every tab; the
+  // control that changes it is on System (`AppSettings`).
+  useTheme()
   // Home is the landing tab, and it is the shell's own section rather than a
   // driver's, so the default is a constant rather than "whatever came first".
   const [activeId, setActiveId] = useState('home')
+
+  // Opening a tab from a Home tile runs as a transition, which is what lets the
+  // tile grow into the page (`TileMorph`). The nav's own taps stay plain state
+  // updates: lateral tab switches are instant by design.
+  const openFromTile = (id: string) =>
+    startTransition(() => {
+      addTransitionType('tile-open')
+      setActiveId(id)
+    })
 
   const nav = navSections(active)
   // Drivers do not share a section list, so a stale id must not survive a switch
@@ -53,6 +71,7 @@ export function AppShell() {
         sections={empty ? [] : nav}
         active={section.id}
         onSelect={setActiveId}
+        footer={empty ? null : <ConnectionMenu manager={manager} active={active} />}
       />
 
       <main className="flex min-w-0 flex-1 flex-col md:overflow-y-auto">
@@ -96,7 +115,12 @@ export function AppShell() {
             // padding, which never had a pill to clear.
             empty
               ? 'pb-[env(safe-area-inset-bottom)]'
-              : 'pb-[calc(56px+16px+env(safe-area-inset-bottom))] md:pb-5',
+              : 'pb-[calc(56px+16px+16px+env(safe-area-inset-bottom))] md:pb-5',
+            // Home fits the window on a desktop rather than scrolling: bounding
+            // the body is what tells its tiles how much room there is, so they
+            // shed low-priority rows instead of growing the page. Other tabs
+            // are pages of settings and scroll as usual.
+            section.id === 'home' && 'md:min-h-0',
           )}
         >
           {/* Hidden sections are not in the nav, so this is the only way out of
@@ -142,10 +166,15 @@ export function AppShell() {
             // its content. `min-h-0` alongside it so a section taller than the
             // window still overflows visibly and `main` scrolls, exactly as it
             // did when this was a block.
+            <MaybeMorph section={section.id}>
             <div
               data-slot="section-wrap"
               className={cn(
-                'md:flex md:min-h-0 md:flex-1 md:flex-col',
+                'md:flex md:min-h-0 md:flex-col',
+                // System is a page of settings with the App block and About
+                // after it; stretched to the window it pushed those two to the
+                // foot with a gap above them.
+                section.id !== 'system' && 'md:flex-1',
                 // …and the one link the chain was missing: a driver's section root
                 // is a flex item here, so its own `min-height: auto` made it
                 // refuse to shrink, and the definite height from `main` stopped
@@ -165,8 +194,22 @@ export function AppShell() {
                 idle && 'pointer-events-none opacity-50',
               )}
             >
-              <SectionBody active={active} sectionId={section.id} onNavigate={setActiveId} />
+              <SectionBody
+                active={active}
+                sectionId={section.id}
+                onNavigate={section.id === 'home' ? openFromTile : setActiveId}
+              />
             </div>
+            </MaybeMorph>
+          )}
+
+          {/* Outside the idle dim: app settings stay usable, and About readable,
+              while disconnected. The app's own settings come before About. */}
+          {!empty && section.id === 'system' && (
+            <>
+              <AppSettings />
+              <About />
+            </>
           )}
         </div>
       </main>
@@ -208,4 +251,9 @@ function SectionBody({ active, sectionId, onNavigate }: SectionBodyProps) {
       onNavigate={onNavigate}
     />
   )
+}
+
+/** The section body, paired with its Home tile when a tile can open it. */
+function MaybeMorph({ section, children }: { section: string; children: React.ReactNode }) {
+  return MORPH_TARGETS.has(section) ? <TileMorph section={section}>{children}</TileMorph> : <>{children}</>
 }

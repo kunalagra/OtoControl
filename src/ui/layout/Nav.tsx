@@ -1,9 +1,10 @@
 import { RiHeadphoneLine } from '@remixicon/react'
 
+import type { ReactNode } from 'react'
+
 import { cn } from '@/lib/utils'
 
 import type { Section } from '../sections/registry'
-import { ThemeToggle } from './ThemeToggle'
 
 interface NavProps {
   /**
@@ -15,6 +16,11 @@ interface NavProps {
   sections: Section[]
   active: string
   onSelect(id: string): void
+  /**
+   * What sits at the foot of the rail — the connection menu. Desktop only, and
+   * handed in rather than built here, so the nav needs no device manager.
+   */
+  footer?: ReactNode
 }
 
 /**
@@ -24,11 +30,11 @@ interface NavProps {
  * Two `<nav>`s with one hidden per breakpoint would read as two tab bars to a
  * screen reader and could disagree after a device switch, so the breakpoint
  * lives in the classes instead. That is also why the rail's furniture — the app
- * mark and the theme toggle, which spec §4.2 puts at the two ends of the column
+ * mark and the connection menu, which sit at the two ends of the column
  * — is inside the same element: it is one column at `md`, and below `md` both
  * are hidden and only the pills are left.
  */
-export function Nav({ sections, active, onSelect }: NavProps) {
+export function Nav({ sections, active, onSelect, footer }: NavProps) {
   const hasItems = sections.length > 0
 
   return (
@@ -76,12 +82,10 @@ export function Nav({ sections, active, onSelect }: NavProps) {
         />
       ))}
 
-      {/* Rail only: the mark and the toggle sit at the two ends of the column,
+      {/* Rail only: the mark and the footer sit at the two ends of the column,
           the tabs in between. */}
       <div aria-hidden className="hidden flex-1 md:block" />
-      <div className="hidden md:block">
-        <ThemeToggle compact />
-      </div>
+      {footer && <div className="hidden md:block">{footer}</div>}
     </nav>
   )
 }

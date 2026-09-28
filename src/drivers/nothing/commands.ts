@@ -1111,3 +1111,16 @@ export const GESTURE_OPERATION_NAMES: Record<number, string> = {
   [GestureOperation.PairMode]: 'Pairing mode',
   [GestureOperation.SwitchBluetooth]: 'Switch device',
 };
+
+/** The classic EQ presets, in the order the Sound tab and Home show them. */
+export const CLASSIC_EQ_PRESETS = [EqPreset.Balanced, EqPreset.Voice, EqPreset.Treble, EqPreset.Bass];
+
+/** ear-web's order for the Dirac Opteo row; Custom is offered separately. */
+export const DIRAC_EQ_PRESETS = [
+  DiracPreset.Opteo,
+  DiracPreset.Pop,
+  DiracPreset.Rock,
+  DiracPreset.Classical,
+  DiracPreset.Electronic,
+  DiracPreset.EnhanceVocals,
+];

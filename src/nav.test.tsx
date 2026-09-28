@@ -269,7 +269,7 @@ describe('Nav', () => {
   it('has nothing to navigate to, and no floating pill, with no device', () => {
     // Spec §3.2: with nothing granted there is no nav at all, rather than one
     // brand's section list guessed at. The rail column stays, because that is
-    // also where the app mark and the theme toggle live.
+    // also where the app mark and the connection menu live.
     const markup = render({ sections: [] })
     expect(tagsWith(markup, 'data-slot="nav-item"')).toHaveLength(0)
     expect(navTag(markup)).not.toContain('fixed')

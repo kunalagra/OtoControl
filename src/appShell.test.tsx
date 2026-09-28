@@ -25,7 +25,7 @@
  * branch: every section the nav offers must resolve to a component, or the body
  * would render nothing under a tab claiming to be on screen.
  */
-import { cleanup, render } from '@testing-library/react'
+import { cleanup, fireEvent, render } from '@testing-library/react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
@@ -331,6 +331,37 @@ describe('AppShell — the body column, with no device', () => {
     expect(tokens).toContain('md:gap-3.5')
   })
 
+  it('bounds the body on Home, so its tiles fit the window instead of scrolling it', () => {
+    // Without a bounded height the columns grow to their content and no tile
+    // ever learns it is out of room — measured: 121px of page scroll at
+    // 1280x720 with a Momentum's five tiles, before this class.
+    granted.on = true
+    const { container, unmount } = render(<AppShell />)
+    const tokens = container.querySelector<HTMLElement>('[data-slot="section-body"]')!.className.split(' ')
+    unmount()
+    granted.on = false
+    expect(tokens).toContain('md:min-h-0')
+  })
+
+  it('ends System with the App settings, then About, outside the idle dim', () => {
+    // App-level settings belong with the other things about this app, above the
+    // disclaimer rather than under it — and both stay readable and usable while
+    // the headphones are away.
+    granted.on = true
+    const view = render(<AppShell />)
+    fireEvent.click(view.getAllByRole('button', { name: /system/i })[0])
+    const app = view.container.querySelector('[data-slot="app-settings"]')!
+    const about = view.container.querySelector('[data-slot="about"]')!
+    granted.on = false
+    expect(app).toBeTruthy()
+    expect(about).toBeTruthy()
+    expect(app.compareDocumentPosition(about) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    const wrap = view.container.querySelector('[data-slot="section-wrap"]')!
+    expect(wrap.contains(app)).toBe(false)
+    expect(wrap.contains(about)).toBe(false)
+    view.unmount()
+  })
+
   it('clears the floating pill, and only when there is one', () => {
     // Spec §4.1: "Bottom padding = pill height + 16 px + safe-area-inset-bottom".
     // The pill *is* the nav bar, and with nothing granted there is no nav at all
@@ -351,16 +382,18 @@ describe('AppShell — the body column, with no device', () => {
     // No device: the hero's own bottom padding, and the inset.
     const withoutDevice = padding()
     expect(withoutDevice).toContain('pb-[env(safe-area-inset-bottom)]')
-    expect(withoutDevice).not.toContain('pb-[calc(56px+16px+env(safe-area-inset-bottom))]')
+    expect(withoutDevice.some((token) => token.startsWith('pb-[calc('))).toBe(false)
     // The desktop is unaffected either way: the pill is a phone-only layout, and
     // the desktop bar is in the flow, so there is nothing to clear from `md` up.
     expect(withoutDevice).not.toContain('md:pb-5')
 
-    // A device granted: the pill is on the page, so the 56 + 16 is reserved.
+    // A device granted: the pill is on the page. It floats 16px above the
+    // inset and is 56px tall, so 72px only reaches its top edge — the last
+    // block ended flush against it. Another 16px is the gap the spec meant.
     granted.on = true
     const withDevice = padding()
     granted.on = false
-    expect(withDevice).toContain('pb-[calc(56px+16px+env(safe-area-inset-bottom))]')
+    expect(withDevice).toContain('pb-[calc(56px+16px+16px+env(safe-area-inset-bottom))]')
     expect(withDevice).toContain('md:pb-5')
   })
 

@@ -24,7 +24,7 @@ import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import type { ConnectionSummary, EqPreview } from '@/core/driver'
+import type { ConnectionSummary, EqPresets, EqPreview, QuickSetting } from '@/core/driver'
 import type { ActiveDevice } from '@/core/manager'
 import type { DeviceSummary } from '@/ui/device/summary'
 import { BatteryTile, Home } from './Home'
@@ -56,6 +56,8 @@ interface FakeOptions {
   /** The driver's own words for where the headphones are, when it has any. */
   wearCaption?: string | null
   worn?: boolean
+  quickSettings?: QuickSetting[]
+  eqPresets?: EqPresets | null
 }
 
 interface FakeState {
@@ -91,6 +93,8 @@ const active = (options: FakeOptions = {}, state: Partial<FakeState> = {}, label
   if (options.eqPreview) driver.eqPreview = options.eqPreview
   if (options.connections) driver.connections = options.connections
   if (options.wearCaption) driver.wearCaption = () => options.wearCaption ?? null
+  if (options.quickSettings) driver.quickSettings = () => options.quickSettings
+  if (options.eqPresets !== undefined) driver.eqPresets = () => options.eqPresets
   return { id: 'test', driver, device: {}, state: merged } as unknown as ActiveDevice
 }
 
@@ -160,13 +164,19 @@ describe('Home — the EQ preview tile', () => {
     expect(all(tile!, 'eq-bar')).toHaveLength(5)
   })
 
-  it('maps each gain onto the reported range, and marks the peak', () => {
-    // Heights are the gain's position in `range`, so 0 dB sits halfway up a
-    // ±6 dB curve and the largest boost is the tallest bar.
+  it('draws each band from the 0 dB line, up for a boost and down for a cut', () => {
+    // The Sound page's faders fill from zero, and the preview reads the same
+    // way: on ±6 dB, +2.5 is a bar 20.83% of the height rising from the middle,
+    // −2 one 16.67% falling from it, and 0 dB a dot on the line — so a Flat
+    // curve is a row of dots, not six identical blocks.
     const { node } = renderHome({ eqPreview: () => preview })
     const bars = all(slot(node, 'home-eq')!, 'eq-bar')
-    expect(bars[0].style.height).toBe('50%')
-    expect(bars[4].style.height).toBe('33.33%')
+    expect(bars[0].dataset.flat).toBe('true')
+    expect(bars[2].style.bottom).toBe('50%')
+    expect(bars[2].style.height).toBe('20.83%')
+    expect(bars[4].style.top).toBe('50%')
+    expect(bars[4].style.height).toBe('16.67%')
+    expect(slot(node, 'eq-zero')!.style.top).toBe('50%')
     expect(bars.filter((bar) => bar.dataset.peak !== undefined)).toHaveLength(1)
     expect(bars[2].dataset.peak).toBe('true')
     expect(bars[2].className).toContain('bg-signal')
@@ -217,15 +227,65 @@ describe('Home — the EQ preview tile', () => {
     expect(text(tile)).not.toContain('Rock')
   })
 
-  it('is one button that opens Sound', () => {
-    const { node, onNavigate } = renderHome()
-    const tile = slot(node, 'home-eq')!
-    // The whole tile is the target, not a link in its corner — on a phone a
-    // corner link is a 20px target, and the point of a preview is the tap.
-    const button = tile.querySelector('button')!
-    expect(tile.querySelectorAll('button')).toHaveLength(1)
-    fireEvent.click(button)
+  it('opens Sound from its Open link', () => {
+    const { node, onNavigate } = renderHome({ eqPreview: () => preview })
+    fireEvent.click(slot(node, 'home-eq-open')!)
     expect(onNavigate).toHaveBeenCalledWith('sound')
+  })
+
+  it('opens Sound from the fallback too, so it is never a dead end', () => {
+    const { node, onNavigate } = renderHome()
+    fireEvent.click(slot(node, 'home-eq-open')!)
+    expect(onNavigate).toHaveBeenCalledWith('sound')
+  })
+
+  it('applies a preset from its chip, and marks the one playing', () => {
+    const select = vi.fn()
+    const presets: EqPresets = {
+      presets: [
+        { id: 'flat', name: 'Flat', active: false },
+        { id: 'rock', name: 'Rock', active: true },
+      ],
+      select,
+    }
+    const { node, onNavigate } = renderHome({ eqPreview: () => preview, eqPresets: presets })
+    const chips = all(slot(node, 'home-eq')!, 'eq-chip')
+    expect(chips.map(text)).toEqual(['Flat', 'Rock'])
+    expect(chips[1].getAttribute('aria-pressed')).toBe('true')
+    expect(chips[0].getAttribute('aria-pressed')).toBe('false')
+
+    fireEvent.click(chips[0])
+    expect(select).toHaveBeenCalledWith('flat')
+    // A chip applies a preset where it is; it does not leave the page.
+    expect(onNavigate).not.toHaveBeenCalled()
+  })
+
+  it('puts the curve under the preset name and the chips under the curve', () => {
+    // Name, then the shape, then the ways to change it — rather than chips at
+    // the top, bars at the foot and the tile's spare height between them.
+    const presets: EqPresets = { presets: [{ id: 'rock', name: 'Rock', active: true }], select: vi.fn() }
+    const { node } = renderHome({ eqPreview: () => preview, eqPresets: presets })
+    const tile = slot(node, 'home-eq')!
+    const order = Array.from(tile.querySelectorAll('[data-slot="eq-bars"], [data-slot="eq-chip"]')).map((element) =>
+      element.getAttribute('data-slot'),
+    )
+    expect(order).toEqual(['eq-bars', 'eq-chip'])
+  })
+
+  it('lets the curve take the leftover when the EQ ends its column, up to a cap', () => {
+    // Nothing's shape: battery and EQ in the middle, EQ last. The spare height
+    // goes to the curve, not to a gap under the chips — but only so far.
+    const { node } = renderHome({ sections: ['noise', 'sound', 'system'], eqPreview: () => preview })
+    const bars = slot(node, 'eq-bars')!.className.split(' ')
+    expect(bars).toContain('md:flex-1')
+    expect(bars).toContain('max-h-[240px]')
+  })
+
+  it('keeps the curve a 120px preview when another tile ends the column', () => {
+    const { node } = renderHome({ eqPreview: () => preview })
+    const bars = slot(node, 'eq-bars')!.className.split(' ')
+    expect(bars).toContain('h-[120px]')
+    expect(bars).not.toContain('md:flex-1')
   })
 })
 
@@ -340,7 +400,8 @@ describe('Home — the system tile', () => {
   /** Each row as "label value". */
   const rowsOf = (node: HTMLElement) =>
     all(slot(node, 'home-system')!, 'system-row').map(
-      (row) => `${text(row.querySelector('dt'))} ${text(row.querySelector('dd'))}`,
+      (row) =>
+        `${text(row.querySelector('[data-slot="system-row-label"]'))} ${text(row.querySelector('[data-slot="system-row-value"]'))}`,
     )
 
   it('lists the facts the device reported, and only those', () => {
@@ -362,12 +423,70 @@ describe('Home — the system tile', () => {
     expect(rowsOf(node)).toEqual(['Model Test Buds'])
   })
 
-  it('is one button that opens System', () => {
+  it('opens System from its Open link', () => {
     const { node, onNavigate } = renderHome()
-    const tile = slot(node, 'home-system')!
-    expect(tile.querySelectorAll('button')).toHaveLength(1)
-    fireEvent.click(tile.querySelector('button')!)
+    fireEvent.click(slot(node, 'home-system-open')!)
     expect(onNavigate).toHaveBeenCalledWith('system')
+  })
+
+  it('shows the first four quick settings, and a switch writes through the driver', () => {
+    const set = vi.fn()
+    const toggle = (id: string, value: boolean | null): QuickSetting => ({
+      kind: 'toggle',
+      id,
+      label: `Setting ${id}`,
+      value,
+      set: id === 'a' ? set : vi.fn(),
+    })
+    const { node } = renderHome({
+      quickSettings: [toggle('a', false), toggle('b', true), toggle('c', null), toggle('d', true), toggle('e', true)],
+    })
+    const rows = all(slot(node, 'home-system')!, 'quick-setting')
+    expect(rows.map((row) => text(row.querySelector('[data-slot="quick-setting-label"]')))).toEqual([
+      'Setting a',
+      'Setting b',
+      'Setting c',
+      'Setting d',
+    ])
+    fireEvent.click(rows[0].querySelector('[role="switch"]')!)
+    expect(set).toHaveBeenCalledWith(true)
+    // Not reported: the control is there, but claims no position.
+    expect(rows[2].querySelector('[role="switch"]')!.hasAttribute('data-disabled')).toBe(true)
+  })
+
+  it('draws a choice as a row of segments and writes the one tapped', () => {
+    const set = vi.fn()
+    const { node } = renderHome({
+      quickSettings: [
+        {
+          kind: 'choice',
+          id: 'power',
+          label: 'Auto power-off',
+          value: '900',
+          options: [
+            { value: '0', label: 'Never' },
+            { value: '900', label: '15 min' },
+          ],
+          set,
+        },
+      ],
+    })
+    const segments = Array.from(slot(node, 'quick-setting')!.querySelectorAll('button'))
+    expect(segments.map((segment) => segment.getAttribute('aria-pressed'))).toEqual(['false', 'true'])
+    fireEvent.click(segments[0])
+    expect(set).toHaveBeenCalledWith('0')
+  })
+
+  it('keeps the facts as a footer under the settings', () => {
+    const { node } = renderHome({
+      quickSettings: [{ kind: 'toggle', id: 'a', label: 'A', value: true, set: vi.fn() }],
+    })
+    const tile = slot(node, 'home-system')!
+    const order = Array.from(tile.querySelectorAll('[data-slot="quick-setting"], [data-slot="system-row"]')).map(
+      (element) => element.getAttribute('data-slot'),
+    )
+    expect(order[0]).toBe('quick-setting')
+    expect(order.at(-1)).toBe('system-row')
   })
 })
 
@@ -474,36 +593,32 @@ describe('Home — the layout', () => {
     }
   })
 
-  it('lets the last tile in each column fill it, and no other', () => {
+  it('ends every column on the hero’s line: the last tile takes the leftover, the rest stay content-height', () => {
+    // Columns that stop at their content end at three different heights beside
+    // a full-height hero. The leftover is small once a small set is one stack,
+    // so the last tile absorbs it rather than the page showing ragged ends.
     const { node } = renderHome()
     for (const name of ['home-col-middle', 'home-col-right']) {
       const tiles = Array.from(slot(node, name)!.children) as HTMLElement[]
-      expect(tiles.length).toBeGreaterThan(0)
       tiles.forEach((tile, index) => {
-        const fills = tile.className.split(' ').includes('md:flex-1')
-        expect(fills).toBe(index === tiles.length - 1)
+        expect(tile.className.split(' ').includes('md:flex-1')).toBe(index === tiles.length - 1)
       })
     }
   })
 
-  it('fills the column all the way down when the noise section is the last tile in it', () => {
-    // The wrapper growing is not enough: a driver's noise root is content-height,
-    // so the fill is handed down to it and to its last block.
-    const { node } = renderHome({ sections: ['noise', 'system'] })
-    const noise = slot(node, 'home-noise')!
-    const column = noise.parentElement!
-    expect(column.lastElementChild).toBe(noise)
-    const classes = noise.className.split(' ')
-    expect(classes).toContain('md:[&>*]:flex-1')
-    expect(classes).toContain('md:[&>*>*:last-child]:flex-1')
-  })
-
-  it('never leaves a column empty for a device with few features', () => {
-    // The WF-C500 shape: no noise control, no paired-device list. Battery, EQ
-    // and System still spread over both columns.
+  it('stacks a small set in one column and gives the hero the rest of the width', () => {
+    // The WF-C500 shape: battery, EQ and System. Spread over two columns each
+    // tile was a tall, mostly empty box; stacked, they are one column of
+    // content beside a wider render.
     const { node } = renderHome({ sections: ['sound', 'system'] })
-    expect(slot(node, 'home-col-middle')!.children.length).toBeGreaterThan(0)
-    expect(slot(node, 'home-col-right')!.children.length).toBeGreaterThan(0)
+    expect(slot(node, 'home-col-right')).toBeNull()
+    expect(Array.from(slot(node, 'home-col-middle')!.children).map((child) => child.getAttribute('data-slot'))).toEqual([
+      'home-battery',
+      'home-eq',
+      'home-system',
+    ])
+    expect(node.className).toContain('bento:grid-cols-[1.35fr_1fr]')
+    expect(slot(node, 'home-col-middle')!.className).toContain('md:col-span-2')
   })
 })
 
@@ -525,17 +640,17 @@ describe('placeTiles', () => {
     }
   })
 
-  it('puts something in both columns whenever there are two tiles or more', () => {
+  it('keeps a small set in one stack, and splits only a set too tall for one', () => {
     for (const ids of [
       ['battery', 'system'],
       ['battery', 'eq', 'system'],
       ['battery', 'noise', 'system'],
-      ['battery', 'devices', 'system'],
     ] as const) {
-      const { middle, right } = placeTiles([...ids])
-      expect(middle.length).toBeGreaterThan(0)
-      expect(right.length).toBeGreaterThan(0)
+      expect(placeTiles([...ids]).right).toEqual([])
     }
+    const nothing = placeTiles(['battery', 'noise', 'eq', 'system'])
+    expect(nothing.middle.length).toBeGreaterThan(0)
+    expect(nothing.right.length).toBeGreaterThan(0)
   })
 })
 
@@ -605,6 +720,15 @@ describe('Home — the idle dim', () => {
     expect(slot(node, 'home-hero')!.className).not.toContain('pointer-events-none')
   })
 
+  it('keeps each tile’s Open link clickable while dimmed: opening a tab is harmless offline', () => {
+    const { node, onNavigate } = renderHome({}, idle)
+    for (const name of ['home-eq-open', 'home-system-open']) {
+      expect(slot(node, name)!.className.split(' ')).toContain('pointer-events-auto')
+    }
+    fireEvent.click(slot(node, 'home-system-open')!)
+    expect(onNavigate).toHaveBeenCalledWith('system')
+  })
+
   it('dims nothing while connected', () => {
     const { node } = renderHome()
     expect(node.innerHTML).not.toContain('opacity-50')
@@ -644,6 +768,25 @@ describe('BatteryTile', () => {
     expect(slot(rows[1], 'segment-meter')!.querySelectorAll('[data-lit="true"]')).toHaveLength(5)
     // A single number would claim one level for a device that reports three.
     expect(slot(tile, 'battery-value')).toBeNull()
+  })
+
+  it('gives the rows the whole strip when there is no single number to show', () => {
+    // Two cells means no headline number, and the half of the strip that holds
+    // it was left in place, empty — pushing L and R to the right.
+    const { container } = render(
+      <BatteryTile
+        summary={summary({
+          cells: [
+            { label: 'L', level: 100, charging: false },
+            { label: 'R', level: 100, charging: false },
+          ],
+        })}
+        connected
+      />,
+    )
+    const lead = container.querySelector('[data-slot="battery-lead"]')!.className.split(' ')
+    expect(lead).toContain('md:hidden')
+    expect(lead).not.toContain('md:flex-1')
   })
 
   it('shows the bolt and the charging caption while charging', () => {

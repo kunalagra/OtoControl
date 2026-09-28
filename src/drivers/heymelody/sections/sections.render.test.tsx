@@ -39,6 +39,21 @@ describe('HeyMelody System section', () => {
     expect(renderSection(HeyMelodySystem, { capabilities: new Set(['battery']) })).not.toContain('Ring earbuds');
     expect(renderSection(HeyMelodySystem, { capabilities: new Set(['find']), finding: true })).toContain('Stop ringing');
   });
+
+  it('ends with the shared System tail, like every other brand', () => {
+    expect(renderSection(HeyMelodySystem, {})).toContain('Reported capabilities');
+  });
+
+  it('names each capability the device reported, and only those', () => {
+    const html = renderSection(HeyMelodySystem, { capabilities: new Set(['wear', 'eqCustom']) });
+    expect(html).toContain('Wear detection');
+    expect(html).toContain('Custom EQ');
+    expect(html).not.toContain('Noise control');
+  });
+
+  it('says so while nothing has been read yet', () => {
+    expect(renderSection(HeyMelodySystem, { capabilities: new Set() })).toContain('Connect to read');
+  });
 });
 
 describe('HeyMelody Sound section', () => {

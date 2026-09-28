@@ -2,7 +2,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Slider } from '@/components/ui/slider'
 import { Switch } from '@/components/ui/switch'
 import { cn } from '@/lib/utils'
-import { DiracPreset, DIRAC_PRESET_NAMES, EqPreset, EQ_PRESET_NAMES, ClarityLevel, CUSTOM_EQ_RANGE, eqBandLabel } from '@/drivers/nothing/commands'
+import { CLASSIC_EQ_PRESETS, DIRAC_EQ_PRESETS, DiracPreset, DIRAC_PRESET_NAMES, EqPreset, EQ_PRESET_NAMES, ClarityLevel, CUSTOM_EQ_RANGE, eqBandLabel } from '@/drivers/nothing/commands'
 import type { NothingDevice, NothingState } from '@/drivers/nothing/device'
 import { SegmentButton } from '@/ui/controls/SegmentButton'
 import { SettingRow } from '@/ui/controls/SettingRow'
@@ -13,17 +13,9 @@ interface Props {
   state: NothingState
 }
 
-const PRESETS = [EqPreset.Balanced, EqPreset.Voice, EqPreset.Treble, EqPreset.Bass]
+const PRESETS = CLASSIC_EQ_PRESETS
 
-/** ear-web's order for the Dirac Opteo row, custom last. */
-const DIRAC_PRESETS = [
-  DiracPreset.Opteo,
-  DiracPreset.Pop,
-  DiracPreset.Rock,
-  DiracPreset.Classical,
-  DiracPreset.Electronic,
-  DiracPreset.EnhanceVocals,
-]
+const DIRAC_PRESETS = DIRAC_EQ_PRESETS
 
 /** `ClarityBoostEntity.Level`. */
 const CLARITY_LEVELS: Array<[number, string]> = [

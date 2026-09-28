@@ -1,16 +1,15 @@
-import { RiArrowDownSLine, RiMore2Line, RiRefreshLine } from '@remixicon/react'
+import { RiMore2Line } from '@remixicon/react'
 
 import { Button } from '@/components/ui/button'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
-import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { cn } from '@/lib/utils'
 import type { ActiveDevice, DeviceManager } from '@/core/manager'
 
 import { summarise } from '../device/summary'
-import { ConnectionControls, DevicePickers } from './ConnectionControls'
+import { ConnectionControls } from './ConnectionControls'
 import { DeviceSelect, MIN_DEVICES_TO_SWITCH } from './DeviceSelect'
 import { StatusToken } from './StatusToken'
-import { ThemeToggle } from './ThemeToggle'
+import { useActionMenu } from './useActionMenu'
 
 interface TopBarProps {
   manager: DeviceManager
@@ -42,7 +41,11 @@ interface TopBarProps {
 export function TopBar({ manager, active }: TopBarProps) {
   const summary = summarise(active)
   const status = active.state.status
-  const connected = status === 'connected'
+  // The one action worth a button in the bar: a known device that has gone
+  // away. Everything else lives in the rail's connection menu (and, on a phone,
+  // behind ⋯).
+  const reconnectable = manager.hasDevice && status === 'disconnected'
+  const menu = useActionMenu()
 
   /**
    * The bar's own name, which is the device's when there is one.
@@ -84,100 +87,52 @@ export function TopBar({ manager, active }: TopBarProps) {
         {/* One device is a dropdown with one entry, so the switcher only
             appears when there is something to switch to. */}
         {manager.available.length >= MIN_DEVICES_TO_SWITCH && (
-          <Popover>
-            <PopoverTrigger
-              render={
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  aria-label="Switch device"
-                  // The 44px floor is the `min-*`, not a taller button
-                  // (DESIGN-GUIDE §5.2): the phone form is a 16px chevron, and
-                  // a 44px box around it would not fit a 52px bar beside
-                  // anything else.
-                  className="min-h-11 min-w-11 gap-0.5 px-1.5 text-muted-foreground md:min-h-0 md:min-w-0 md:gap-1 md:px-3"
-                >
-                  <RiArrowDownSLine className="size-4 md:hidden" />
-                  <span className="hidden md:inline">Switch</span>
-                </Button>
-              }
-            />
-            <PopoverContent align="start" className="w-64 p-3">
-              <DeviceSelect manager={manager} active={active} />
-            </PopoverContent>
-          </Popover>
+          <DeviceSelect manager={manager} active={active} variant="chevron" />
         )}
       </div>
 
       <div className="flex shrink-0 items-center gap-2 md:gap-3">
         <StatusToken status={status} hasDevice={manager.hasDevice} />
 
-        {/* Phone: everything else, behind one button. */}
-        <Popover>
-          <PopoverTrigger
-            render={
-              <Button
-                variant="ghost"
-                size="icon-sm"
-                aria-label="More actions"
-                // The 44px floor as hit slop around a 32px box, not a 44px box
-                // around a 44px glyph — see the switcher above.
-                className="text-muted-foreground min-h-11 min-w-11 md:hidden"
-              >
-                <RiMore2Line />
-              </Button>
-            }
+        {reconnectable && (
+          <ReconnectButton
+            manager={manager}
+            slot="top-bar-reconnect-phone"
+            // The 44px floor as an invisible hit area around a pill-sized
+            // button, like the ⋯ beside it — a 44px white block would outweigh
+            // the status token it sits next to.
+            className="relative after:absolute after:-inset-x-1 after:-inset-y-2 md:hidden"
           />
-          <PopoverContent align="end" className="w-60 p-2">
-            {/* The same rule as the desktop pills below, for the same reason:
-                with no device the empty state is already a full pair of connect
-                buttons on the page, so a menu offering them again says it
-                twice. The phone used to be the exception — its bar had nowhere
-                else to put them — and the empty state is what removed that
-                reason. */}
-            {manager.hasDevice ? (
-              /* A menu wants a column, which is what `ConnectionControls`
-                  already is — so the phone reuses it whole rather than restating
-                  which buttons each state gets. */
-              <ConnectionControls manager={manager} active={active} />
-            ) : null}
-            {/* Labelled here rather than the icon-only rail form: a menu row that
-                says which theme is active beats a glyph that has to be decoded.
-                It stays either way, because a phone has no rail to put it on. */}
-            <ThemeToggle />
-          </PopoverContent>
-        </Popover>
+        )}
 
-        {/* Desktop: the same set as pills, and nothing at all when there is no
-            device — the empty state below is one large pair of buttons, and
-            repeating them in a 52px bar would say the same thing twice. */}
+        {/* Phone: the connection set, behind one button. With no device the
+            empty state already holds both pickers, so there is no menu. */}
+        {manager.hasDevice && (
+          <Popover open={menu.open} onOpenChange={menu.onOpenChange}>
+            <PopoverTrigger
+              render={
+                <Button
+                  variant="ghost"
+                  size="icon-sm"
+                  aria-label="More actions"
+                  // The 44px floor as hit slop around a 32px box, not a 44px box
+                  // around a 44px glyph — see the switcher above.
+                  className="text-muted-foreground min-h-11 min-w-11 md:hidden"
+                >
+                  <RiMore2Line />
+                </Button>
+              }
+            />
+            <PopoverContent align="end" className="w-60 p-2" onClick={menu.closeOnAction}>
+              <ConnectionControls manager={manager} active={active} />
+            </PopoverContent>
+          </Popover>
+        )}
+
+        {/* Desktop: the status token and, while a known device is away, one
+            Reconnect. The rail's connection menu holds the rest. */}
         <div data-slot="top-bar-pills" className="hidden items-center gap-2 md:flex">
-          {!manager.hasDevice ? null : connected ? (
-            <>
-              <RefreshPill manager={manager} />
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => void manager.disconnect()}
-              >
-                Disconnect
-              </Button>
-              <Popover>
-                <PopoverTrigger
-                  render={
-                    <Button variant="outline" size="sm">
-                      Add device
-                    </Button>
-                  }
-                />
-                <PopoverContent align="end" className="w-64 p-3">
-                  <DevicePickers manager={manager} status={status} verb="Add" />
-                </PopoverContent>
-              </Popover>
-            </>
-          ) : (
-            <ConnectionPills manager={manager} status={status} />
-          )}
+          {reconnectable && <ReconnectButton manager={manager} />}
         </div>
       </div>
     </header>
@@ -185,42 +140,25 @@ export function TopBar({ manager, active }: TopBarProps) {
 }
 
 /**
- * Re-read everything, with the explanation it needs.
- *
- * A tooltip because a 11px "Refresh" says what the tap does and not why it
- * exists: most settings have no notification in firmware, so this is the only
- * way to pick up a change made in the phone app.
+ * Back to the device the app already knows, without a picker when it can be:
+ * `autoConnect` reopens the granted port it last used. When that finds nothing
+ * to reopen, the serial picker is the way back in.
  */
-function RefreshPill({ manager }: { manager: DeviceManager }) {
-  return (
-    <Tooltip>
-      <TooltipTrigger
-        render={
-          <Button variant="outline" size="sm" onClick={() => void manager.refresh()}>
-            <RiRefreshLine data-icon="inline-start" />
-            Refresh
-          </Button>
-        }
-      />
-      <TooltipContent>Re-read every setting. Needed for settings the device never announces.</TooltipContent>
-    </Tooltip>
-  )
-}
-
-/**
- * Nothing is connected, so the top bar's job is to offer a way in.
- *
- * Just the two pickers: `DevicePickers` is the same two buttons
- * `ConnectionControls` offers when disconnected, and a separate "Connect" here
- * would be a third control calling one of the same two methods. Being
- * disconnected is no reason to hide a picker, so both stay.
- */
-function ConnectionPills({
+function ReconnectButton({
   manager,
-  status,
+  slot,
+  className,
 }: {
   manager: DeviceManager
-  status: string
+  slot?: string
+  className?: string
 }) {
-  return <DevicePickers manager={manager} status={status} verb="Connect" />
+  const reconnect = async () => {
+    if (!(await manager.autoConnect())) await manager.connect()
+  }
+  return (
+    <Button size="sm" data-slot={slot} className={className} onClick={() => void reconnect()}>
+      Reconnect
+    </Button>
+  )
 }

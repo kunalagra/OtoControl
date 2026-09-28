@@ -9,11 +9,11 @@
  * Sennheiser descriptor for why that asymmetry matters.
  */
 
-import type { DeviceDriver, DriverSection } from '@/core/driver';
+import type { DeviceDriver, DriverSection, EqPresets, QuickSetting } from '@/core/driver';
 import { sonyArtwork } from './artwork';
 import { servicesFor } from '@/core/transport';
 import { PROFILES } from '@/core/profiles';
-import { codecName, eqPresetName, EQ_RANGE } from './mdr/commands';
+import { OFFERED_EQ_PRESETS, PRIOR_MODE_OPTIONS, SonyFunction, codecName, eqPresetName, EQ_RANGE } from './mdr/commands';
 import { SonyDevice } from './sony';
 import type { SonyState } from './sony';
 import { SonyNoise } from './sections/SonyNoise';
@@ -139,5 +139,70 @@ export const SONY_DRIVER = {
       connected: entry.connected,
       isThisDevice: false,
     }));
+  },
+  // Each gated the way its own section gates it: a capability the device
+  // reported, or a reading it answered. Nothing is offered on a guess.
+  quickSettings: (device: SonyDevice, state: SonyState): QuickSetting[] => {
+    const has = (id: number) => state.capabilities.has(id);
+    const settings: QuickSetting[] = [];
+    if (has(SonyFunction.PauseOnRemoval)) {
+      settings.push({
+        kind: 'toggle',
+        id: 'pauseOnRemoval',
+        label: 'Pause when removed',
+        value: state.pauseOnRemoval,
+        set: (value: boolean) => void device.setPauseOnRemoval(value),
+      });
+    }
+    if (state.speakToChat !== null) {
+      settings.push({
+        kind: 'toggle',
+        id: 'speakToChat',
+        label: 'Speak-to-chat',
+        value: state.speakToChat.enabled,
+        set: (value: boolean) => void device.setSpeakToChatEnabled(value),
+      });
+    }
+    if (has(SonyFunction.UpscalingAutoOff) || has(SonyFunction.UpscalingIndicator)) {
+      settings.push({
+        kind: 'toggle',
+        id: 'upscaling',
+        label: 'DSEE',
+        value: state.upscaling,
+        set: (value: boolean) => void device.setUpscaling(value),
+      });
+    }
+    if (state.voiceGuidance !== null) {
+      settings.push({
+        kind: 'toggle',
+        id: 'voiceGuidance',
+        label: 'Voice prompts',
+        value: state.voiceGuidance.enabled,
+        set: (value: boolean) => void device.setVoiceGuidance(value),
+      });
+    }
+    if (has(SonyFunction.ConnectionQualityMode)) {
+      settings.push({
+        kind: 'choice',
+        id: 'connectionMode',
+        label: 'Connection',
+        value: state.connectionMode === null ? null : String(state.connectionMode),
+        options: PRIOR_MODE_OPTIONS.map(({ value, label }) => ({ value: String(value), label })),
+        set: (value: string) => void device.setConnectionMode(Number(value)),
+      });
+    }
+    return settings;
+  },
+  eqPresets: (device: SonyDevice, state: SonyState): EqPresets | null => {
+    const { eq } = state;
+    if (!state.capabilities.has(SonyFunction.PresetEq) || eq === null) return null;
+    return {
+      presets: OFFERED_EQ_PRESETS.map((preset) => ({
+        id: String(preset),
+        name: eqPresetName(preset),
+        active: eq.preset === preset,
+      })),
+      select: (id: string) => void device.setEqPreset(Number(id)),
+    };
   },
 } as const satisfies DeviceDriver<SonyDevice, SonyState>;

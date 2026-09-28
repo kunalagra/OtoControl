@@ -213,6 +213,27 @@ the shell. The restyled `EqualizerPanel` (§7) provides the look:
 >   reported) and opens System.
 > - **EQ peak:** only a positive gain is painted red.
 >
+> **Amendment (2026-09-29).** Home tiles act as well as show:
+>
+> - **Quick settings.** Drivers may implement
+>   `quickSettings(device, state)`, which returns switches and choices of up to
+>   four options, most important first and gated the way the driver's own
+>   sections gate them. The System tile shows the first four, above a footer
+>   of facts.
+> - **EQ presets.** Drivers may implement `eqPresets(device, state)`. The EQ
+>   tile shows tappable preset chips, and its bars are held to a 120px
+>   preview. Both tiles open their tab through a header "Open ↗" link rather
+>   than making the whole tile a button.
+> - **Connection actions** move to a rail button at the foot of the nav, with a
+>   status dot and a popover. The top bar keeps the status token, plus a single
+>   Reconnect button while a known device is disconnected. Reconnect uses
+>   `autoConnect` and falls back to the serial picker.
+> - **Theme.** The rail no longer has a theme toggle. An "App" block with
+>   Appearance (Auto / Light / Dark) is rendered by the shell under System,
+>   outside the idle dim.
+> - **HeyMelody** now ends its System page with `SystemTail`, including a
+>   Reported capabilities card.
+
 > Items 1–5 below describe the tiles themselves and still apply, except where
 > this note overrides them.
 

@@ -8,7 +8,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
  */
 export function About() {
   return (
-    <Card data-size="sm">
+    <Card data-size="sm" data-slot="about">
       <CardHeader>
         <CardTitle>About</CardTitle>
       </CardHeader>

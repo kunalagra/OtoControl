@@ -6,7 +6,7 @@
  * toggling that class.
  */
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useSyncExternalStore } from 'react'
 
 export type ThemePreference = 'light' | 'dark' | 'system'
 export type ResolvedTheme = 'light' | 'dark'
@@ -61,8 +61,38 @@ function applyTheme(resolved: ResolvedTheme): void {
   document.documentElement.style.colorScheme = resolved
 }
 
+/**
+ * The preference, held once for the whole app.
+ *
+ * Every `useTheme` caller reads this one value. The control that changes it
+ * lives on the System tab, while the shell keeps a caller mounted so the page
+ * follows the OS on any tab; per-caller state would let those two disagree,
+ * and the shell's stale copy would repaint the page on the next OS change.
+ * Read from storage on first use, not at import, so a test that seeds storage
+ * before its first render sees what it seeded.
+ */
+let shared: ThemePreference | null = null
+const listeners = new Set<() => void>()
+
+const currentPreference = (): ThemePreference => (shared ??= readStored())
+
+function subscribe(listener: () => void): () => void {
+  listeners.add(listener)
+  return () => listeners.delete(listener)
+}
+
+function choose(next: ThemePreference): void {
+  shared = next
+  try {
+    localStorage.setItem(STORAGE_KEY, next)
+  } catch {
+    // Not being able to remember the choice is not worth failing over.
+  }
+  for (const listener of listeners) listener()
+}
+
 export function useTheme() {
-  const [preference, setPreference] = useState<ThemePreference>(readStored)
+  const preference = useSyncExternalStore(subscribe, currentPreference, currentPreference)
   const [prefersDark, setPrefersDark] = useState(systemPrefersDark)
 
   // Follow the system while the preference is 'system'.
@@ -80,15 +110,6 @@ export function useTheme() {
   useEffect(() => {
     applyTheme(resolved)
   }, [resolved])
-
-  function choose(next: ThemePreference) {
-    setPreference(next)
-    try {
-      localStorage.setItem(STORAGE_KEY, next)
-    } catch {
-      // Not being able to remember the choice is not worth failing over.
-    }
-  }
 
   return { preference, resolved, setTheme: choose, cycle: () => choose(nextTheme(preference)) }
 }

@@ -406,6 +406,22 @@ export const EqPreset = {
   Unspecified: 0xff,
 } as const;
 
+/**
+ * The presets worth offering, in the order the Sound tab and the Home tile
+ * both show them; the device accepts more than it uses.
+ */
+export const OFFERED_EQ_PRESETS = [
+  EqPreset.Off,
+  EqPreset.Bright,
+  EqPreset.Excited,
+  EqPreset.Mellow,
+  EqPreset.Relaxed,
+  EqPreset.Vocal,
+  EqPreset.TrebleBoost,
+  EqPreset.BassBoost,
+  EqPreset.Speech,
+]
+
 export const EQ_PRESET_NAMES: Record<number, string> = {
   [EqPreset.Off]: 'Off',
   [EqPreset.Rock]: 'Rock',

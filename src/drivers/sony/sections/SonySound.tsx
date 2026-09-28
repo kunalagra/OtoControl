@@ -1,5 +1,5 @@
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { EqPreset, PRIOR_MODE_OPTIONS, SonyFunction, eqPresetName, EQ_RANGE } from '@/drivers/sony/mdr/commands'
+import { OFFERED_EQ_PRESETS, PRIOR_MODE_OPTIONS, SonyFunction, eqPresetName, EQ_RANGE } from '@/drivers/sony/mdr/commands'
 import type { SonyDevice, SonyState } from '@/drivers/sony/sony'
 import { EqualizerPanel } from '@/ui/panels/EqualizerPanel'
 import { TogglesPanel } from '@/ui/panels/TogglesPanel'
@@ -18,18 +18,6 @@ interface Props {
  * be inventing.
  */
 
-/** Presets worth offering; the device accepts more than it uses. */
-const OFFERED_PRESETS = [
-  EqPreset.Off,
-  EqPreset.Bright,
-  EqPreset.Excited,
-  EqPreset.Mellow,
-  EqPreset.Relaxed,
-  EqPreset.Vocal,
-  EqPreset.TrebleBoost,
-  EqPreset.BassBoost,
-  EqPreset.Speech,
-]
 
 export function SonySound({ device, state }: Props) {
   const disabled = state.status !== 'connected'
@@ -52,7 +40,7 @@ export function SonySound({ device, state }: Props) {
                 : 'Connect to load the equaliser.'
               : null
           }
-          presets={OFFERED_PRESETS.map((preset) => ({
+          presets={OFFERED_EQ_PRESETS.map((preset) => ({
             id: String(preset),
             name: eqPresetName(preset),
             active: eq?.preset === preset,

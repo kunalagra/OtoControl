@@ -206,3 +206,54 @@
     @apply font-sans;
     }
 }
+/*
+ * Opening a tab from a Home tile grows the tile into the page (`TileMorph`).
+ * The group moves and resizes; the old and new snapshots cross-fade inside it.
+ * 250ms, eased out, so the page is readable almost at once.
+ */
+::view-transition-group(.tile-morph) {
+    animation-duration: 250ms;
+    animation-timing-function: cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+/* The box grows; what is inside it does not stretch. Both snapshots keep
+   their real size, pinned top-left and clipped to the moving box, so the tile's
+   text never balloons on its way to the page. The tile fades out early and the
+   page fades in over the whole move. */
+::view-transition-image-pair(.tile-morph) {
+    overflow: hidden;
+    border-radius: 26px;
+}
+::view-transition-old(.tile-morph),
+::view-transition-new(.tile-morph) {
+    width: auto;
+    height: auto;
+    object-fit: none;
+    object-position: top left;
+    inset: 0 auto auto 0;
+}
+::view-transition-old(.tile-morph) {
+    animation: 100ms ease-out both tile-morph-out;
+}
+::view-transition-new(.tile-morph) {
+    animation: 250ms ease-out both tile-morph-in;
+}
+@keyframes tile-morph-out {
+    to { opacity: 0; }
+}
+@keyframes tile-morph-in {
+    from { opacity: 0; }
+}
+/* Everything outside the tile (the rail, the top bar) does not change, so the
+   page-level cross-fade is turned off rather than left to flicker. */
+::view-transition-old(root),
+::view-transition-new(root) {
+    animation: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    ::view-transition-group(*),
+    ::view-transition-old(*),
+    ::view-transition-new(*) {
+        animation: none !important;
+    }
+}

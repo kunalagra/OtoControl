@@ -6,6 +6,9 @@ import type { ActiveDevice } from '@/core/manager'
 /** One manager per page — the headphones accept a single control connection. */
 const manager = new DeviceManager()
 
+/** Whether this page load has already tried the silent reconnect. */
+let autoConnectStarted = false
+
 /** A full poll is many round trips, so don't repeat it on every focus flicker. */
 const REFRESH_THROTTLE_MS = 3000
 
@@ -18,7 +21,11 @@ export function useDevices(): { manager: DeviceManager; active: ActiveDevice } {
   )
 
   useEffect(() => {
-    // Reconnect silently if a port was granted in a past session.
+    // Reconnect silently if a port was granted in a past session — once per
+    // page load. StrictMode mounts effects twice in development, and two
+    // concurrent attempts race to open the same serial port.
+    if (autoConnectStarted) return
+    autoConnectStarted = true
     void manager.autoConnect()
   }, [])
 

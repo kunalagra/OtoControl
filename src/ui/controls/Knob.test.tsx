@@ -177,3 +177,62 @@ describe('Knob commit', () => {
     expect(readout()).toBe('50')
   })
 })
+
+describe('Knob detent mark', () => {
+  it('sits inside the track and under the level arc, so the arc covers it where they meet', () => {
+    // Drawn on top of the arc it crossed the red; moved outside the track it
+    // floated above the ring. Inside the track and painted first, it marks
+    // neutral on the bare track and disappears under the arc.
+    const view = render(
+      <Knob value={70} onChange={() => undefined} range={RANGE} detent={50} label="Level" />,
+    )
+    const svg = view.container.querySelector('svg')!
+    const mark = svg.querySelector('line')!
+    const radius = (x: string | null, y: string | null) => Math.hypot(Number(x), Number(y))
+    const ends = [
+      radius(mark.getAttribute('x1'), mark.getAttribute('y1')),
+      radius(mark.getAttribute('x2'), mark.getAttribute('y2')),
+    ]
+    // The track is 8px wide on a 42px radius: 38 to 46 from the centre.
+    for (const end of ends) {
+      expect(end).toBeGreaterThanOrEqual(38)
+      expect(end).toBeLessThanOrEqual(46)
+    }
+    const paths = Array.from(svg.querySelectorAll('path'))
+    const levelArc = paths[1]
+    expect(mark.compareDocumentPosition(levelArc) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  })
+})
+
+describe('Knob end labels', () => {
+  it('names each end of the arc just under that end, in the ring’s open gap', () => {
+    const view = render(
+      <Knob
+        value={50}
+        onChange={() => undefined}
+        range={RANGE}
+        label="Level"
+        minLabel="Cancelling"
+        maxLabel="Transparency"
+      />,
+    )
+    const min = view.container.querySelector<HTMLElement>('[data-slot="knob-min"]')!
+    const max = view.container.querySelector<HTMLElement>('[data-slot="knob-max"]')!
+    expect(min.textContent).toBe('Cancelling')
+    expect(max.textContent).toBe('Transparency')
+    // Left end on the left, right end on the right, both in the lower half.
+    expect(parseFloat(min.style.left)).toBeLessThan(50)
+    expect(parseFloat(max.style.left)).toBeGreaterThan(50)
+    expect(parseFloat(min.style.top)).toBeGreaterThan(50)
+    // Below the thumb, not beside it: at either end of the range the thumb
+    // sits on the arc's end, and a label centred just past that end collided
+    // with it. The thumb's lowest point at the ends is 29.7 + 7 + 1.5 = 38.2
+    // viewBox units below centre, 84.1% of the dial.
+    for (const label of [min, max]) {
+      expect(parseFloat(label.style.top)).toBeGreaterThan(84.1)
+      expect(label.className).not.toContain('-translate-y-1/2')
+    }
+    // Decorative: the slider's own value text already says where it is.
+    expect(min.getAttribute('aria-hidden')).toBe('true')
+  })
+})

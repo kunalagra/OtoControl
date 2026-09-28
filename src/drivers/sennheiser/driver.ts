@@ -13,11 +13,13 @@
  * beside the `KNOWN_SERVICES` table it filters, for exactly that reason.
  */
 
-import type { DeviceDriver, DriverSection } from '@/core/driver';
+import type { DeviceDriver, DriverSection, EqPresets, QuickSetting } from '@/core/driver';
 import { sennheiserArtwork } from './assets';
 import { servicesFor } from '@/core/transport';
 import { PROFILES } from '@/core/profiles';
-import { WearState, codecName, eqPresetName, wearStateName } from './gaia/commands';
+import { EQ_PRESETS, POWER_OFF_PRESETS, WearState, codecName, eqPresetName, wearStateName } from './gaia/commands';
+import { togglesFor } from './state';
+import type { ToggleKey } from './state';
 import { MomentumDevice } from './device';
 import type { DeviceState } from './state';
 import { Debug } from './sections/Debug';
@@ -139,4 +141,59 @@ export const SENNHEISER_DRIVER = {
       isThisDevice: entry.index === ownIndex,
     }));
   },
+  // System's behaviour toggles and auto power-off, in the order people reach
+  // for them. `togglesFor` gates by the model's profile, as System does.
+  quickSettings: (device: MomentumDevice, state: DeviceState): QuickSetting[] => {
+    const toggles = togglesFor(state.info.model).filter((toggle) => toggle.group === 'behaviour');
+    const toggle = (key: ToggleKey): QuickSetting[] => {
+      const spec = toggles.find((entry) => entry.key === key);
+      return spec
+        ? [{
+            kind: 'toggle',
+            id: key,
+            label: spec.label,
+            value: state.toggles[key],
+            set: (value: boolean) => void device.setToggle(key, value),
+          }]
+        : [];
+    };
+    return [
+      ...toggle('smartPause'),
+      {
+        kind: 'choice',
+        id: 'autoPowerOff',
+        label: 'Auto power-off',
+        value: state.powerOffSeconds === null ? null : String(state.powerOffSeconds),
+        // Short labels: four segments share one tile row.
+        options: POWER_OFF_PRESETS.map(({ seconds }) => ({ value: String(seconds), label: shortDuration(seconds) })),
+        set: (value: string) => void device.setPowerOff(Number(value)),
+      },
+      ...toggle('lowLatency'),
+      ...toggle('touchControls'),
+      ...toggle('onHeadDetection'),
+      ...toggle('autoAnswer'),
+      ...toggle('comfortCall'),
+      ...toggle('bluetoothCompatibility'),
+    ];
+  },
+  // The Sound tab's presets, gated the same way: GAIA has no preset id on the
+  // wire, so a preset is a five-band curve, and only a five-band device gets it.
+  eqPresets: (device: MomentumDevice, state: DeviceState): EqPresets | null => {
+    const { config, gains } = state.eq;
+    if (config === null || config.bands !== EQ_PRESETS[0].gains.length) return null;
+    const active = eqPresetName(gains);
+    return {
+      presets: EQ_PRESETS.map((preset) => ({ id: preset.name, name: preset.name, active: active === preset.name })),
+      select: (id: string) => {
+        const preset = EQ_PRESETS.find((entry) => entry.name === id);
+        if (preset) void device.setEqGains(preset.gains);
+      },
+    };
+  },
 } as const satisfies DeviceDriver<MomentumDevice, DeviceState>;
+
+/** "15 min", "1 h", "Never" — a power-off preset as a segment label. */
+function shortDuration(seconds: number): string {
+  if (seconds === 0) return 'Never';
+  return seconds % 3600 === 0 ? `${seconds / 3600} h` : `${Math.round(seconds / 60)} min`;
+}

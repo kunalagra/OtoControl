@@ -5,7 +5,7 @@
  * Sony's live bitmap negotiation — see spec §3.5 for why.
  */
 
-import type { DeviceDriver, DriverSection } from '@/core/driver';
+import type { DeviceDriver, DriverSection, EqPresets } from '@/core/driver';
 import { servicesFor } from '@/core/transport';
 import { heymelodyArtwork } from './assets';
 import { HeyMelodyDevice } from './device';
@@ -68,6 +68,22 @@ export const HEYMELODY_DRIVER = {
       preset: preset.name,
       gains: preset.bands.map((band) => band.dbValue),
       range: { min: preset.minValue, max: preset.maxValue },
+    };
+  },
+  // The presets the device listed itself, gated as the Sound tab gates them.
+  // No `quickSettings`: HeyMelody's System tab has no switches to surface.
+  eqPresets: (device: HeyMelodyDevice, state: HeyMelodyState): EqPresets | null => {
+    const { capabilities } = state;
+    if (capabilities.size > 0 && !capabilities.has('eq') && !capabilities.has('eqCustom')) return null;
+    if (state.eqPresets.length === 0) return null;
+    const selected = state.eqCurrentPreset ?? state.eqPresets.find((preset) => preset.isSelected)?.eqId ?? null;
+    return {
+      presets: state.eqPresets.map((preset) => ({
+        id: String(preset.eqId),
+        name: preset.name,
+        active: selected === preset.eqId,
+      })),
+      select: (id: string) => void device.setEqPreset(Number(id)),
     };
   },
 } as const satisfies DeviceDriver<HeyMelodyDevice, HeyMelodyState>;

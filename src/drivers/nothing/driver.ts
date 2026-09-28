@@ -6,9 +6,9 @@
  * for why probing is this brand's equivalent of a capability query.
  */
 
-import type { DeviceDriver, DriverSection } from '@/core/driver';
+import type { DeviceDriver, DriverSection, EqPresetChoice, EqPresets, QuickSetting } from '@/core/driver';
 import { nothingArtwork } from './artwork';
-import { CUSTOM_EQ_RANGE, DiracPreset, EqPreset, isWorn } from './commands';
+import { CLASSIC_EQ_PRESETS, CUSTOM_EQ_RANGE, DIRAC_EQ_PRESETS, DIRAC_PRESET_NAMES, DiracPreset, EQ_PRESET_NAMES, EqPreset, isWorn } from './commands';
 import { servicesFor } from '@/core/transport';
 import { PROFILES } from '@/core/profiles';
 import { NothingDevice } from './device';
@@ -91,4 +91,73 @@ export const NOTHING_DRIVER = {
       range: CUSTOM_EQ_RANGE,
     };
   },
+  quickSettings: (device: NothingDevice, state: NothingState): QuickSetting[] => {
+    const has = (id: Parameters<NothingState['capabilities']['has']>[0]) => state.capabilities.has(id);
+    const settings: QuickSetting[] = [];
+    if (has('inEarDetection')) {
+      settings.push({
+        kind: 'toggle',
+        id: 'inEarDetection',
+        label: 'In-ear detection',
+        value: state.inEarDetection,
+        set: (value: boolean) => void device.setInEarDetection(value),
+      });
+    }
+    // Not capability-gated on the Sound tab either.
+    settings.push({
+      kind: 'toggle',
+      id: 'lowLatency',
+      label: 'Low latency',
+      value: state.lowLatency,
+      set: (value: boolean) => void device.setLowLatency(value),
+    });
+    if (has('multipoint')) {
+      settings.push({
+        kind: 'toggle',
+        id: 'multipoint',
+        label: 'Multipoint',
+        value: state.multipoint,
+        set: (value: boolean) => void device.setMultipoint(value),
+      });
+    }
+    if (has('spatialAudio') && state.spatialAudio !== null) {
+      settings.push({
+        kind: 'toggle',
+        id: 'spatialAudio',
+        label: 'Spatial audio',
+        value: state.spatialAudio.enabled,
+        set: (value: boolean) => void device.setSpatialAudio(value),
+      });
+    }
+    return settings;
+  },
+  // Dirac models have their own preset family; everything else has the four
+  // classic ones. Custom is offered when the model has a custom curve.
+  eqPresets: (device: NothingDevice, state: NothingState): EqPresets | null => {
+    const customEq = state.capabilities.has('customEq');
+    if (state.capabilities.has('diracEq') && state.diracEq !== null) {
+      const current = state.diracEq;
+      const presets: EqPresetChoice[] = DIRAC_EQ_PRESETS.map((preset) => ({
+        id: String(preset),
+        name: DIRAC_PRESET_NAMES[preset],
+        active: current === preset,
+      }));
+      if (customEq) {
+        presets.push({ id: String(DiracPreset.Custom), name: 'Custom', active: current === DiracPreset.Custom });
+      }
+      return { presets, select: (id: string) => void device.setDiracPreset(Number(id)) };
+    }
+    if (!state.capabilities.has('eq') || state.eqPreset === null) return null;
+    const current = state.advancedEq === true ? null : state.eqPreset;
+    const presets: EqPresetChoice[] = CLASSIC_EQ_PRESETS.map((preset) => ({
+      id: String(preset),
+      name: EQ_PRESET_NAMES[preset],
+      active: current === preset,
+    }));
+    if (customEq) {
+      presets.push({ id: String(EqPreset.Custom), name: 'Custom', active: state.eqPreset === EqPreset.Custom });
+    }
+    return { presets, select: (id: string) => void device.setEqPreset(Number(id)) };
+  },
 } as const satisfies DeviceDriver<NothingDevice, NothingState>;
+

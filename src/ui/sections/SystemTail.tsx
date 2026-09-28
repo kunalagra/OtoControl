@@ -3,7 +3,6 @@ import type { ReactNode } from 'react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { FEATURE_NAMES, unsupportedFeatures } from '@/core/profiles'
 import type { DeviceProfile } from '@/core/profiles'
-import { About } from './About'
 
 /**
  * Features the connected model has that this app cannot drive yet.
@@ -67,9 +66,11 @@ interface SystemTailProps {
  * The end of every System page, in one place.
  *
  * Order is deliberate and shared across brands: everything device-specific
- * comes first in the page body, then **Advanced, then Reported capabilities,
- * then About** — narrowing from "your headphones" to "this app". Each brand
- * page rendering its own tail let the order drift apart, so it lives here.
+ * comes first in the page body, then **Advanced, then Reported capabilities** —
+ * narrowing from "your headphones" toward "this app". Each brand page rendering
+ * its own tail let the order drift apart, so it lives here. The app's own
+ * settings and About come after, from the shell (`AppShell`), outside the dim
+ * a disconnected section wears.
  */
 export function SystemTail({ advanced, capabilities, profile }: SystemTailProps) {
   return (
@@ -77,7 +78,6 @@ export function SystemTail({ advanced, capabilities, profile }: SystemTailProps)
       <MissingFeatures profile={profile} />
       {advanced}
       {capabilities}
-      <About />
     </>
   )
 }

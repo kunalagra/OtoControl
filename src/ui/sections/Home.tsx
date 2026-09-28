@@ -1,10 +1,12 @@
 import { RiFlashlightLine } from '@remixicon/react'
 
 import { Card } from '@/components/ui/card'
+import { Switch } from '@/components/ui/switch'
 import { cn } from '@/lib/utils'
 import type { ConnectionStatus } from '@/core/connection'
-import type { ConnectionSummary, EqPreview } from '@/core/driver'
+import type { ConnectionSummary, EqPresets, EqPreview, QuickSetting } from '@/core/driver'
 import type { ActiveDevice } from '@/core/manager'
+import { useFitList } from '../controls/fitList'
 import { BATTERY_SEGMENTS, SegmentMeter } from '../controls/SegmentMeter'
 import { DeviceImage } from '../device/DeviceImage'
 import { summarise } from '../device/summary'
@@ -12,6 +14,7 @@ import type { BatteryCellSummary, DeviceSummary } from '../device/summary'
 import { placeTiles, TILE_PRIORITY } from './homeTiles'
 import type { TileId } from './homeTiles'
 import { componentFor, sectionsForDevice } from './registry'
+import { TileMorph } from './TileMorph'
 
 /**
  * Home, the landing tab. Props in `HomeProps`, below.
@@ -39,6 +42,8 @@ interface DriverReadouts {
   eqPreview?(state: unknown): EqPreview | null
   connections?(state: unknown): ConnectionSummary[] | null
   wearCaption?(state: unknown): string | null
+  quickSettings?(device: unknown, state: unknown): QuickSetting[]
+  eqPresets?(device: unknown, state: unknown): EqPresets | null
 }
 
 /**
@@ -64,6 +69,8 @@ export function Home({ active, onNavigate }: HomeProps) {
   const readouts: DriverReadouts = active.driver
   const eq = readouts.eqPreview?.(active.state) ?? null
   const connections = readouts.connections?.(active.state) ?? null
+  const presets = readouts.eqPresets?.(active.device, active.state) ?? null
+  const settings = readouts.quickSettings?.(active.device, active.state) ?? []
   // Which slots exist is the driver's *section list* saying so, never its
   // `components` map: a descriptor holds a component for every id it might
   // declare, and one driver gates `noise` on a capability it reads from the
@@ -106,6 +113,7 @@ export function Home({ active, onNavigate }: HomeProps) {
     return true
   })
   const columns = placeTiles(present)
+  const single = columns.right.length === 0
 
   const tile = (id: TileId, fills: boolean) => {
     const order = PHONE_ORDER[present.indexOf(id)]
@@ -119,27 +127,41 @@ export function Home({ active, onNavigate }: HomeProps) {
           <div
             key={id}
             data-slot="home-noise"
-            className={cn(fills ? cn(FILL.yes, FILL_THROUGH) : FILL.no, order, dim)}
+            className={cn(fills ? FILL.yes : FILL.no, order, dim)}
           >
             <Noise device={active.device} state={active.state} active={active} onNavigate={onNavigate} />
           </div>
         ) : null
       case 'eq':
-        return <EqPreviewTile key={id} className={cn(size, order, dim)} eq={eq} onOpen={() => onNavigate('sound')} />
+        return (
+          <TileMorph key={id} section="sound">
+          <EqPreviewTile
+            className={cn(size, order, dim)}
+            eq={eq}
+            fills={fills}
+            presets={presets}
+            disabled={!connected}
+            onOpen={() => onNavigate('sound')}
+          />
+          </TileMorph>
+        )
       case 'devices':
         return (
+          <TileMorph key={id} section="devices">
           <DevicesTile
-            key={id}
             className={cn(size, order, dim)}
             connections={connections}
             onOpen={() => onNavigate('devices')}
           />
+          </TileMorph>
         )
       case 'system':
         return (
+          <TileMorph key={id} section="system">
           <SystemTile
-            key={id}
             className={cn(size, order, dim)}
+            settings={settings}
+            disabled={!connected}
             facts={[
               { label: 'Model', value: summary.hasDevice ? summary.model : null },
               { label: 'Firmware', value: summary.firmware },
@@ -148,6 +170,7 @@ export function Home({ active, onNavigate }: HomeProps) {
             ]}
             onOpen={() => onNavigate('system')}
           />
+          </TileMorph>
         )
     }
   }
@@ -172,7 +195,8 @@ export function Home({ active, onNavigate }: HomeProps) {
         // of three columns. `bento:` sorts after `md:` in the built stylesheet.
         'md:grid md:flex-1 md:grid-cols-2 md:auto-rows-fr md:gap-3',
         'md:grid-rows-[auto_1fr] bento:grid-rows-1',
-        'bento:grid-cols-[1.35fr_1fr_1fr]',
+        // One stack beside the hero for a small set, two for a large one.
+        single ? 'bento:grid-cols-[1.35fr_1fr]' : 'bento:grid-cols-[1.35fr_1fr_1fr]',
       )}
     >
       <HeroTile
@@ -185,12 +209,14 @@ export function Home({ active, onNavigate }: HomeProps) {
 
       {/* `contents` on a phone, so the tiles are one column there and read in
           priority order through `PHONE_ORDER`; a flex column from `md`. */}
-      <div data-slot="home-col-middle" className={cn(COLUMN, SLOT.middle)}>
+      <div data-slot="home-col-middle" className={cn(COLUMN, single ? SLOT.only : SLOT.middle)}>
         {column(columns.middle)}
       </div>
-      <div data-slot="home-col-right" className={cn(COLUMN, SLOT.right)}>
-        {column(columns.right)}
-      </div>
+      {!single && (
+        <div data-slot="home-col-right" className={cn(COLUMN, SLOT.right)}>
+          {column(columns.right)}
+        </div>
+      )}
     </div>
   )
 }
@@ -220,9 +246,13 @@ function brandOf(label: string): string {
  */
 const SLOT = {
   /** Across the top on two columns, then the whole first column on three. */
-  hero: 'md:col-span-2 bento:col-span-1',
+  // Capped while it spans both columns (768–1100px): a full-width render is
+  // otherwise as tall as the window and leaves the tiles no room at all.
+  hero: 'md:col-span-2 md:max-h-[220px] bento:col-span-1 bento:max-h-none',
   /** §4.2 column 2: left of the two-column grid, middle of the three. */
   middle: 'md:col-start-1 md:row-start-2 bento:col-start-2 bento:row-start-1',
+  /** The one stack of a small set: under the hero on two columns, beside it from `bento:`. */
+  only: 'md:col-span-2 md:col-start-1 md:row-start-2 bento:col-span-1 bento:col-start-2 bento:row-start-1',
   /** §4.2 column 3: right of the two-column grid, rightmost of the three. */
   right: 'md:col-start-2 md:row-start-2 bento:col-start-3 bento:row-start-1',
 }
@@ -241,54 +271,19 @@ const SLOT = {
 const COLUMN = 'contents md:flex md:min-h-0 md:flex-col md:gap-3'
 
 /**
- * Whether a tile fills its column or stands at its own height.
- *
- * §4.2 is explicit about which is which — "compact battery strip (**auto
- * height**), then the EQ preview tile (**fills the rest**)" and the same for the
- * noise section and the devices tile — and in a flex column the two are one class
- * apart, with no row arithmetic anywhere.
+ * How a tile sits in its stack. Every tile but the last is its content's
+ * height. The last one takes whatever the column has left, so all three
+ * columns end on the hero's line: it grows by the leftover on a tall window
+ * (small, now that a small set is one stack — the EQ curve takes it when the
+ * EQ is last) and gives way on a short one (the System and Devices tiles shed
+ * rows; the EQ curve shrinks first).
  */
 const FILL = {
-  /** Auto height: the top of a column with something under it. */
+  /** Its own height, never less. */
   no: 'shrink-0',
-  /** Fills: the bottom of a column, and the whole of it when it is alone. */
-  yes: 'md:flex-1',
+  /** The column's leftover, more or less than its own height. */
+  yes: 'md:min-h-0 md:flex-1',
 } as const
-
-/**
- * `FILL.yes` is not enough for the noise slot, and the reason is a layer of box
- * that is not ours. The grown wrapper is this component's; the thing inside it is
- * the driver's own noise section, whose root is a `flex flex-col` div of its own
- * (or, for HeyMelody, a single `Card`) and is **content-height**. So the wrapper
- * filled the column and the page showed through below the last block — measured
- * in Chrome at 1280×800, before this: **526px** below Soundcore's single noise
- * card and **136.2px** below Nothing's third. Every driver without a `devices`
- * section lands here (Nothing, Soundcore, HeyMelody), which is every Home where
- * the case is reachable at all.
- *
- * Two descendant rules carry the height the last two links are missing:
- *
- * - `md:flex md:flex-col` turns the wrapper into the flex column its child can
- *   be *given* height in at all — a block's height is its content's;
- * - `md:[&>*]:flex-1` hands it to the driver's root, and
- *   `md:[&>*>*:last-child]:flex-1` hands the remainder to the last block inside
- *   that root, which is the edge the eye actually reaches the bottom of.
- *
- * The block that grows has its content at the top and space below it, which is
- * what the approved mockup draws (desktop.html:100 — a `flex:1` spacer inside the
- * block, and one inside the devices block below it).
- *
- * Applied only when there is no devices tile: with one below, §4.2 says this is
- * the auto-height half of the column and stretching would push the connections
- * tile off the bottom of a `md:min-h-0` column.
- *
- * Reached from here rather than through a `className` prop on the driver's
- * section for the reason `AppShell` carries `md:[&>*]:min-h-0` on seventeen
- * section roots: a prop puts a bento layout concern inside five driver files,
- * and the sixth driver gets it wrong.
- */
-const FILL_THROUGH =
-  'md:flex md:flex-col md:[&>*]:flex-1 md:[&>*>*:last-child]:flex-1'
 
 /**
  * The phone's reading order, by priority index. The column wrappers are
@@ -422,7 +417,9 @@ export function BatteryTile({ summary, connected, className }: BatteryTileProps)
         className,
       )}
     >
-      <div className="flex flex-col md:flex-1">
+      {/* The numeral's half of the desktop strip, only when there is a numeral:
+          with per-cell rows it was an empty half pushing L and R to the right. */}
+      <div data-slot="battery-lead" className={cn('flex flex-col', showNumber ? 'md:flex-1' : 'md:hidden')}>
         {/* Two captions, one per breakpoint: the desktop strip reads numeral,
             then caption over meter (spec §4.2), and the phone reads caption over
             numeral. Only one is ever displayed, which is also what keeps the
@@ -500,25 +497,30 @@ function CellRow({ cell }: { cell: BatteryCellSummary }) {
 
 interface EqPreviewTileProps {
   eq: EqPreview | null
+  /** Whether the tile ends its column, so its curve takes the leftover height. */
+  fills?: boolean
+  /** The presets the Sound tab offers, applied from chips here; null for none. */
+  presets: EqPresets | null
+  disabled: boolean
   onOpen(): void
   className?: string
 }
 
 /**
- * The EQ as a shape, and a way into it (spec §4.3).
+ * The EQ: what is playing, a way to change it, and a way into the full editor
+ * (spec §4.3, amended).
  *
- * Bar heights are each gain's *position in the reported range*, so flat sits
- * halfway up a signed curve and the tallest bar is the biggest boost — the same
- * arithmetic the approved mockup draws with, and the reason the range travels
- * with the gains. The peak band wears the signal colour: red means "the value
- * you are changing" (DESIGN-GUIDE §1.1), and on a five-band preview the peak is
- * the one worth pointing at.
+ * Preset chips apply a preset where they are, the same call the Sound tab
+ * makes; per-band editing stays on Sound, behind "Open". The bars are a small
+ * preview held to 120px, because the chips are the part worth the room. Bar
+ * heights are each gain's position in the reported range, so flat sits halfway
+ * up a signed curve, and the peak band wears the signal colour only when it is
+ * a boost.
  *
- * A driver with no `eqPreview`, or one that answers null — or with no bands to
- * draw — gets the caption and a link. Never an empty row of bars, and never a
- * preset name over nothing: both read as a tile that failed to load.
+ * With no curve to draw and no presets, the tile is its caption and the link,
+ * never an empty row of bars or a preset name over nothing.
  */
-export function EqPreviewTile({ eq, onOpen, className }: EqPreviewTileProps) {
+export function EqPreviewTile({ eq, fills = false, presets, disabled, onOpen, className }: EqPreviewTileProps) {
   const curve = eq !== null && eq.gains.length > 0 ? eq : null
   // The largest boost, which on a signed range is also the tallest bar — and
   // none at all when nothing is boosted: a flat or all-cut curve has no value
@@ -527,65 +529,152 @@ export function EqPreviewTile({ eq, onOpen, className }: EqPreviewTileProps) {
     curve === null
       ? -1
       : curve.gains.reduce((best, gain, index) => (gain > 0 && (best < 0 || gain > curve.gains[best]) ? index : best), -1)
+  const chips = presets !== null && presets.presets.length > 0 ? presets : null
+  const name = curve ? (curve.preset ?? 'Custom') : chips?.presets.find((preset) => preset.active)?.name
 
   return (
-    <Card variant="hero" data-slot="home-eq" className={cn('min-h-0 p-0', className)}>
-      <button
-        type="button"
-        onClick={onOpen}
-        className={cn(
-          'flex min-h-0 flex-1 cursor-pointer flex-col gap-2 p-[14px] text-left md:p-[18px]',
-          // The one place the focus ring is drawn *inside* the control, and the
-          // reason is geometric: the button is the whole tile, so a ring with a
-          // 2px offset would be drawn outside the tile's own box and clipped by
-          // the block's `overflow-hidden` — half a ring, on the two tiles where
-          // the whole point is that the tile is the button. A 2px inset ring is
-          // the same indicator, kept inside the thing it outlines. Everywhere
-          // else in the app the ring is offset; `a11y.test.ts` pins that this
-          // form is confined to this file.
-          'focus-visible:ring-ring focus-visible:ring-2 focus-visible:ring-inset outline-none',
-        )}
-      >
-        <div className="flex items-baseline justify-between gap-3">
-          <span className={CAPTION}>Equalizer</span>
-          {curve && <span className="text-muted-foreground text-[11px]">Open ↗</span>}
-        </div>
+    <Card variant="hero" data-slot="home-eq" className={cn('min-h-0 gap-2', className)}>
+      <TileHeader caption="Equalizer" slot="home-eq-open" onOpen={onOpen} />
 
-        {curve === null ? (
-          <span className="truncate text-[30px] font-extrabold tracking-[-.03em]">
-            Sound settings ↗
-          </span>
-        ) : (
-          <>
-            <span className="truncate text-[30px] font-extrabold tracking-[-.03em]">
-              {curve.preset ?? 'Custom'}
-            </span>
-            <div aria-hidden className="flex min-h-[64px] flex-1 items-end gap-2 pt-3">
-              {curve.gains.map((gain, index) => (
-                <span
-                  key={index}
-                  data-slot="eq-bar"
-                  data-peak={index === peak ? 'true' : undefined}
-                  className={cn('flex-1 rounded-[10px]', index === peak ? 'bg-signal' : 'bg-foreground')}
-                  style={{ height: `${barHeight(gain, curve.range)}%` }}
-                />
-              ))}
-            </div>
-          </>
-        )}
-      </button>
+      {name === undefined && chips === null ? (
+        <button
+          type="button"
+          onClick={onOpen}
+          className="pointer-events-auto self-start truncate text-left text-[30px] font-extrabold tracking-[-.03em] outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        >
+          Sound settings ↗
+        </button>
+      ) : (
+        name !== undefined && (
+          <span className="truncate text-[30px] font-extrabold tracking-[-.03em]">{name}</span>
+        )
+      )}
+
+      {curve && <EqCurve curve={curve} peak={peak} fills={fills} />}
+
+      {chips && (
+        <div className="flex flex-wrap gap-1.5">
+          {chips.presets.map((preset) => (
+            <button
+              key={preset.id}
+              type="button"
+              data-slot="eq-chip"
+              aria-pressed={preset.active}
+              disabled={disabled}
+              onClick={() => chips.select(preset.id)}
+              className={cn(
+                'min-h-9 rounded-full px-3 text-[12px] outline-none transition-colors duration-150 ease-out',
+                'focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-card',
+                preset.active
+                  ? 'bg-foreground font-bold text-background'
+                  : 'bg-surface-raised text-foreground hover:bg-accent',
+              )}
+            >
+              {preset.name}
+            </button>
+          ))}
+        </div>
+      )}
+
     </Card>
   )
 }
 
-/** How much of the range a gain sits at, as a share of the bar's height. */
-function barHeight(gain: number, range: { min: number; max: number }): number {
+/**
+ * A tile's caption with its "Open ↗" link. The link is its own button now that
+ * the tiles carry controls: a whole-tile button cannot hold a chip or a switch.
+ */
+function TileHeader({ caption, slot, onOpen }: { caption: string; slot: string; onOpen(): void }) {
+  return (
+    <div className="flex items-center justify-between gap-3">
+      <span className={CAPTION}>{caption}</span>
+      <button
+        type="button"
+        data-slot={slot}
+        onClick={onOpen}
+        aria-label={`Open ${caption}`}
+        className={cn(
+          // A 44px target around an 11px link, as hit slop rather than size.
+          // `pointer-events-auto` because the tile around it is dimmed and
+          // inert while disconnected, and opening a tab is harmless offline.
+          'pointer-events-auto -my-3 -mr-2 min-h-11 min-w-11 rounded-full px-2 text-[11px] text-muted-foreground outline-none',
+          'hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring',
+        )}
+      >
+        Open ↗
+      </button>
+    </div>
+  )
+}
+
+/**
+ * The curve as bars from the 0 dB line: up for a boost, down for a cut, and a
+ * dot on the line for a flat band — the way the Sound page's faders fill, so a
+ * Flat preset reads as a flat line rather than a row of identical blocks.
+ *
+ * 120px, and the first thing to give way (down to 40px) before the page would
+ * scroll.
+ */
+function EqCurve({ curve, peak, fills }: { curve: EqPreview; peak: number; fills: boolean }) {
+  const zero = share(0, curve.range)
+  return (
+    <div
+      aria-hidden
+      data-slot="eq-bars"
+      className={cn(
+        'relative flex min-h-10 shrink gap-2',
+        // Ending its column, the curve takes the leftover (to 240px) rather
+        // than leaving a gap under the chips; otherwise a 120px preview.
+        fills ? 'h-[120px] max-h-[240px] md:h-auto md:flex-1' : 'h-[120px] max-h-[120px]',
+      )}
+    >
+      <span
+        data-slot="eq-zero"
+        className="bg-foreground/30 absolute inset-x-0 h-px"
+        style={{ top: `${round(100 - zero)}%` }}
+      />
+      {curve.gains.map((gain, index) => {
+        const level = share(gain, curve.range)
+        const flat = Math.abs(level - zero) < 0.5
+        const tone = index === peak ? 'bg-signal' : 'bg-foreground'
+        return (
+          <span key={index} className="relative flex-1">
+            <span
+              data-slot="eq-bar"
+              data-peak={index === peak ? 'true' : undefined}
+              data-flat={flat ? 'true' : undefined}
+              className={cn(
+                'absolute left-1/2 -translate-x-1/2',
+                // A dot for flat; otherwise a bar with softened corners — fully
+                // rounded, a small gain drew as a blob rather than a level.
+                flat ? 'size-1.5 -translate-y-1/2 rounded-full' : 'w-full max-w-6 rounded-[5px]',
+                tone,
+              )}
+              style={
+                flat
+                  ? { top: `${round(100 - zero)}%` }
+                  : gain > 0
+                    ? { bottom: `${round(zero)}%`, height: `${round(level - zero)}%` }
+                    : { top: `${round(100 - zero)}%`, height: `${round(zero - level)}%` }
+              }
+            />
+          </span>
+        )
+      })}
+    </div>
+  )
+}
+
+/** Where a gain sits in the range, 0–100 from the bottom. */
+function share(gain: number, range: { min: number; max: number }): number {
   const span = range.max - range.min
   if (span <= 0) return 50
-  const share = Math.max(4, Math.min(100, ((gain - range.min) / span) * 100))
-  // Two decimals rather than the float's own tail: the same curve should draw
-  // the same markup every render, and a snapshot of it should be readable.
-  return Math.round(share * 100) / 100
+  return Math.max(0, Math.min(100, ((gain - range.min) / span) * 100))
+}
+
+/** Two decimals, so the same curve draws the same markup every render. */
+function round(value: number): number {
+  return Math.round(value * 100) / 100
 }
 
 interface DevicesTileProps {
@@ -604,6 +693,7 @@ interface DevicesTileProps {
  */
 export function DevicesTile({ connections, onOpen, className }: DevicesTileProps) {
   const rows = connections ?? []
+  const fit = useFitList<HTMLUListElement>()
 
   return (
     <Card data-slot="home-devices" className={cn('min-h-0 p-0', className)}>
@@ -611,7 +701,8 @@ export function DevicesTile({ connections, onOpen, className }: DevicesTileProps
         type="button"
         onClick={onOpen}
         className={cn(
-          'flex min-h-0 flex-1 cursor-pointer flex-col gap-2 p-[14px] text-left md:p-[18px]',
+          // Clickable while dimmed: it only navigates, and holds no controls.
+          'pointer-events-auto flex min-h-0 shrink cursor-pointer flex-col gap-2 p-[14px] text-left md:p-[18px]',
           'focus-visible:ring-ring focus-visible:ring-2 focus-visible:ring-inset outline-none',
         )}
       >
@@ -620,13 +711,13 @@ export function DevicesTile({ connections, onOpen, className }: DevicesTileProps
         {rows.length === 0 ? (
           <span className="text-[13px]">Connections ↗</span>
         ) : (
-          <ul className="flex flex-col">
+          <ul ref={fit} className="relative flex min-h-0 shrink flex-col overflow-hidden">
             {rows.map((entry, index) => (
               <li
                 key={`${entry.name}-${index}`}
                 data-slot="device-row"
                 className={cn(
-                  'flex items-center justify-between gap-3 border-b py-2 last:border-b-0',
+                  'flex shrink-0 items-center justify-between gap-3 border-b py-2 last:border-b-0',
                   entry.connected ? '' : 'text-muted-foreground',
                 )}
               >
@@ -658,51 +749,121 @@ export function DevicesTile({ connections, onOpen, className }: DevicesTileProps
 }
 
 interface SystemTileProps {
+  /** The driver's quick settings, most important first; the first four show. */
+  settings: QuickSetting[]
   facts: Array<{ label: string; value: string | null }>
+  disabled: boolean
   onOpen(): void
   className?: string
 }
 
+/** How many quick settings a tile holds before the rest belong on System. */
+const QUICK_SETTINGS_SHOWN = 4
+
 /**
- * What the device is: model, firmware, codec and links, and a way into System.
- * A fact the device has not reported is left out rather than shown as a dash,
- * and a tile with none left is the caption and a link.
+ * The device's most-used settings, then what it is (model, firmware, codec,
+ * links) as a footer, and a way into System.
+ *
+ * Each setting is the driver's own: its value read from state, its write the
+ * System tab's method. A value the device has not reported shows the control
+ * disabled rather than a guessed position. A fact it has not reported is left
+ * out, and a tile with neither settings nor facts is its caption and the link.
  */
-export function SystemTile({ facts, onOpen, className }: SystemTileProps) {
+export function SystemTile({ settings, facts, disabled, onOpen, className }: SystemTileProps) {
+  const shown = settings.slice(0, QUICK_SETTINGS_SHOWN)
   const rows = facts.filter((fact): fact is { label: string; value: string } => fact.value !== null)
+  // Settings, then facts, in one box that keeps as many as fit: on a short
+  // window the facts go first, then the lowest-priority settings, and the page
+  // never scrolls to make room. "Open" is always there for the rest. The box is
+  // content-sized and allowed to shrink — not `flex-1`: a zero-basis box in a
+  // content-sized tile collapses in Chrome, and the fit rule then saw room for
+  // one row.
+  const fit = useFitList<HTMLDivElement>()
 
   return (
-    <Card data-slot="home-system" className={cn('min-h-0 p-0', className)}>
-      <button
-        type="button"
-        onClick={onOpen}
-        className={cn(
-          'flex min-h-0 flex-1 cursor-pointer flex-col gap-2 p-[14px] text-left md:p-[18px]',
-          'focus-visible:ring-ring focus-visible:ring-2 focus-visible:ring-inset outline-none',
-        )}
-      >
-        <div className="flex items-baseline justify-between gap-3">
-          <span className={CAPTION}>System</span>
-          <span className="text-muted-foreground text-[11px]">Open ↗</span>
-        </div>
+    <Card data-slot="home-system" className={cn('min-h-0 gap-2', className)}>
+      <TileHeader caption="System" slot="home-system-open" onOpen={onOpen} />
 
-        {rows.length === 0 ? (
-          <span className="text-[13px]">System settings ↗</span>
-        ) : (
-          <dl className="flex flex-col">
-            {rows.map((fact) => (
-              <div
-                key={fact.label}
-                data-slot="system-row"
-                className="flex items-baseline justify-between gap-3 border-b py-2 last:border-b-0"
-              >
-                <dt className="text-muted-foreground text-[13px]">{fact.label}</dt>
-                <dd className="min-w-0 truncate text-[13px] font-bold tabular-nums">{fact.value}</dd>
-              </div>
-            ))}
-          </dl>
-        )}
-      </button>
+      {rows.length === 0 && shown.length === 0 ? (
+        <button
+          type="button"
+          onClick={onOpen}
+          className="pointer-events-auto self-start text-left text-[13px] outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        >
+          System settings ↗
+        </button>
+      ) : (
+        <div ref={fit} data-slot="system-rows" className="relative flex min-h-0 shrink flex-col overflow-hidden">
+          {shown.map((setting) => (
+            <QuickSettingRow key={setting.id} setting={setting} disabled={disabled} />
+          ))}
+          {rows.map((fact, index) => (
+            <div
+              key={fact.label}
+              data-slot="system-row"
+              className={cn(
+                'flex shrink-0 items-baseline justify-between gap-3 border-b py-2 last:border-b-0',
+                // The facts sit at the foot when there is room to spare.
+                index === 0 && shown.length > 0 && 'mt-auto',
+              )}
+            >
+              <span data-slot="system-row-label" className="text-muted-foreground text-[13px]">
+                {fact.label}
+              </span>
+              <span data-slot="system-row-value" className="min-w-0 truncate text-[13px] font-bold tabular-nums">
+                {fact.value}
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
     </Card>
+  )
+}
+
+/** One quick setting: a switch, or a row of up to four segments. */
+function QuickSettingRow({ setting, disabled }: { setting: QuickSetting; disabled: boolean }) {
+  const labelId = `quick-${setting.id}`
+  return (
+    <div
+      data-slot="quick-setting"
+      className={cn(
+        'flex shrink-0 gap-3 border-b py-2 last:border-b-0',
+        setting.kind === 'toggle' ? 'items-center justify-between' : 'flex-col',
+      )}
+    >
+      <span id={labelId} data-slot="quick-setting-label" className="text-[13px] font-bold">
+        {setting.label}
+      </span>
+      {setting.kind === 'toggle' ? (
+        <Switch
+          aria-labelledby={labelId}
+          checked={setting.value === true}
+          disabled={disabled || setting.value === null}
+          onCheckedChange={(checked) => setting.set(checked)}
+        />
+      ) : (
+        <div role="group" aria-labelledby={labelId} className="flex gap-1.5">
+          {setting.options.map((option) => (
+            <button
+              key={option.value}
+              type="button"
+              aria-pressed={setting.value === option.value}
+              disabled={disabled}
+              onClick={() => setting.set(option.value)}
+              className={cn(
+                'min-h-9 flex-1 rounded-[14px] px-2 text-[12px] outline-none transition-colors duration-150 ease-out',
+                'focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-card',
+                setting.value === option.value
+                  ? 'bg-signal font-bold text-black'
+                  : 'bg-surface-raised text-foreground hover:bg-accent',
+              )}
+            >
+              {option.label}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
   )
 }

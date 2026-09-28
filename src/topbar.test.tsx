@@ -36,6 +36,7 @@ const manager = (hasDevice = true): DeviceManager =>
     disconnect: vi.fn(async () => undefined),
     refresh: vi.fn(async () => undefined),
     select: vi.fn(async () => undefined),
+    autoConnect: vi.fn(async () => true),
   }) as unknown as DeviceManager
 
 /**
@@ -209,14 +210,19 @@ describe('TopBar (DESIGN-GUIDE 5.10)', () => {
     expect(menu.className).toContain('min-w-11')
 
     fireEvent.click(menu)
-    // The guide's list, plus the theme — a phone has no rail to put it on.
-    // Scoped to the open popover, because the desktop pills carry some of the
-    // same labels and are in the DOM at the same time.
+    // The connection set and nothing else: the theme lives on System now.
     const open = within(menuPanel())
     for (const label of ['Refresh', 'Disconnect', 'Add over serial', 'Add over Bluetooth']) {
       expect(open.getByText(label)).toBeTruthy()
     }
-    expect(open.getByLabelText(/^Theme: /)).toBeTruthy()
+    expect(open.queryByLabelText(/^Theme: /)).toBeNull()
+  })
+
+  it('closes the phone menu once an action is taken', () => {
+    const view = bar('connected')
+    fireEvent.click(view.getByLabelText('More actions'))
+    fireEvent.click(within(menuPanel()).getByText('Disconnect'))
+    expect(() => menuPanel()).toThrow()
   })
 
   it('gives both phone controls a 44px hit area without growing the glyph', () => {
@@ -241,19 +247,17 @@ describe('TopBar (DESIGN-GUIDE 5.10)', () => {
     expect(barWithSwitcher().getByLabelText('Switch device')).toBeTruthy()
   })
 
-  it('opens the switcher onto the current device, with the list one click away', () => {
-    // The popover holds the existing `DeviceSelect`, which is itself a select —
-    // so the popover shows the current device and the *options* live behind the
-    // select's own trigger. Asserting both names are visible in the popover
-    // would be wrong about how a select works, and would pass on a popover that
-    // happened to render a flat list instead.
+  it('switches devices from one chevron beside the name, with no Switch pill in between', () => {
+    // The chevron is the dropdown itself: one click shows every granted device,
+    // not a popover holding a second dropdown.
     const view = barWithSwitcher()
     const trigger = view.getByLabelText('Switch device')
-    expect(trigger.getAttribute('aria-haspopup')).toBe('dialog')
+    expect(trigger.getAttribute('role')).toBe('combobox')
+    expect(trigger.textContent).not.toContain('Switch')
     fireEvent.click(trigger)
-    const open = within(menuPanel())
-    expect(open.getByText('MOMENTUM 4')).toBeTruthy()
-    expect(open.getByRole('combobox')).toBeTruthy()
+    const list = within(document.querySelector('[role="listbox"]') as HTMLElement)
+    expect(list.getByText('MOMENTUM 4')).toBeTruthy()
+    expect(list.getByText('WH-1000XM5')).toBeTruthy()
   })
 
   it('offers a way back to a connection when nothing is connected', () => {
@@ -266,34 +270,38 @@ describe('TopBar (DESIGN-GUIDE 5.10)', () => {
     expect(open.getByText('Connect over Bluetooth')).toBeTruthy()
   })
 
-  it('lays the same actions out as pills above md, with Add device in a popover', () => {
-    const view = bar('connected')
-    for (const wanted of ['Refresh', 'Disconnect', 'Add device']) {
-      // One implementation, two layouts: the pills exist in the phone markup too
-      // and are hidden until md.
-      const pill = desktopPills(view).querySelectorAll('button')
-      expect([...pill].some((b) => b.textContent === wanted)).toBe(true)
-    }
+  it('keeps the desktop bar to a status and one Reconnect, leaving the rest to the rail', () => {
+    // Connected: the token says so, and every action is in the rail's menu.
+    expect(desktopPills(bar('connected')).querySelectorAll('button')).toHaveLength(0)
+    expect(desktopPills(bar('connecting')).querySelectorAll('button')).toHaveLength(0)
+
+    // A known device that has gone away: the one action worth a button.
+    const view = bar('disconnected')
+    const buttons = [...desktopPills(view).querySelectorAll('button')].map((b) => b.textContent)
+    expect(buttons).toEqual(['Reconnect'])
     expect(desktopPills(view).className).toContain('hidden')
     expect(desktopPills(view).className).toContain('md:flex')
-
-    // "Add device" is a popover, so the pickers are absent until it is opened.
-    const trigger = within(desktopPills(view)).getByText('Add device')
-    expect(trigger.getAttribute('aria-haspopup')).toBe('dialog')
-    expect(view.queryByText('Add over serial')).toBeNull()
-
-    fireEvent.click(trigger)
-    expect(within(menuPanel()).getByText('Add over serial')).toBeTruthy()
-    expect(within(menuPanel()).getByText('Add over Bluetooth')).toBeTruthy()
   })
 
-  it('disables the Bluetooth picker where the browser has no Web Bluetooth', () => {
-    // jsdom has no `navigator.bluetooth`, so this is the unsupported case the
-    // guide's hint exists for — a dead button, not a silent failure.
-    const view = bar('connected')
-    fireEvent.click(within(desktopPills(view)).getByText('Add device'))
-    const bluetooth = within(menuPanel()).getByText('Add over Bluetooth').closest('button')
-    expect(bluetooth?.disabled).toBe(true)
+  it('reconnects to the device it knows, and falls back to the picker when that fails', async () => {
+    const known = manager()
+    const view = render(<TopBar manager={known} active={device('disconnected')} />)
+    fireEvent.click(within(desktopPills(view)).getByText('Reconnect'))
+    await vi.waitFor(() => expect(known.autoConnect).toHaveBeenCalled())
+    expect(known.connect).not.toHaveBeenCalled()
+    cleanup()
+
+    const lost = { ...manager(), autoConnect: vi.fn(async () => false) } as unknown as DeviceManager
+    const again = render(<TopBar manager={lost} active={device('disconnected')} />)
+    fireEvent.click(within(desktopPills(again)).getByText('Reconnect'))
+    await vi.waitFor(() => expect(lost.connect).toHaveBeenCalled())
+  })
+
+  it('offers Reconnect on a phone too, beside the token', () => {
+    const view = bar('disconnected')
+    const phone = view.container.querySelector('[data-slot="top-bar-reconnect-phone"]')
+    expect(phone?.textContent).toBe('Reconnect')
+    expect(phone?.className).toContain('md:hidden')
   })
 
   it('says "no device" in the token, rather than guessing a brand', () => {
@@ -333,18 +341,10 @@ describe('TopBar (DESIGN-GUIDE 5.10)', () => {
     expect(desktopPills(view).querySelectorAll('button')).toHaveLength(0)
   })
 
-  it('leaves the two pickers to the empty state, and keeps the theme in the phone menu', () => {
-    // The same call as the desktop above, for the same reason, and it is Task 6
-    // that makes it: the phone used to be the one surface where the ⋯ menu was
-    // the *only* way in, but the empty state is now a full pair of connect
-    // buttons on the page behind it. A menu offering the two buttons that are
-    // already on screen is the duplicate, and the theme is the one thing a
-    // phone bar has nowhere else to put.
+  it('has no phone menu with no device: the empty state holds the pickers', () => {
+    // The theme left the menu for System, and the pickers are the empty state's
+    // own buttons, so a menu here would be empty or a duplicate.
     const view = bar('disconnected', false)
-    fireEvent.click(view.getByLabelText('More actions'))
-    const open = within(menuPanel())
-    expect(open.getByLabelText(/^Theme: /)).toBeTruthy()
-    expect(open.queryByText('Connect over serial')).toBeNull()
-    expect(open.queryByText('Connect over Bluetooth')).toBeNull()
+    expect(view.queryByLabelText('More actions')).toBeNull()
   })
 })
