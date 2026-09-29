@@ -621,14 +621,14 @@ describe('eqPreview and connections', () => {
   });
 
   it('leaves connections unimplemented for the drivers with no pairing table', () => {
-    // Three of five drivers read no paired-device list at all; the method being
+    // Two of five drivers read no paired-device list at all; the method being
     // absent is what makes the Home tile show a plain link rather than an empty
     // heading over nothing. Read through the interface, because each descriptor
     // is a literal whose own type has no such key to ask about.
     const asDriver = (descriptor: unknown) => descriptor as DeviceDriver<never, never>;
     expect(asDriver(NOTHING_DRIVER).connections).toBeUndefined();
     expect(asDriver(SOUNDCORE_DRIVER).connections).toBeUndefined();
-    expect(asDriver(HEYMELODY_DRIVER).connections).toBeUndefined();
+    expect(asDriver(HEYMELODY_DRIVER).connections).toBeTypeOf('function');
     expect(asDriver(SENNHEISER_DRIVER).connections).toBeTypeOf('function');
     expect(asDriver(SONY_DRIVER).connections).toBeTypeOf('function');
   });

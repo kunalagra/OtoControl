@@ -39,7 +39,7 @@ describe('HeyMelody curve editor', () => {
     renderToStaticMarkup(
       <HeyMelodySound
         device={device}
-        state={{ ...initialHeyMelodyState, status: 'connected', eqPresets: [preset], capabilities: new Set(['eq', 'eqCustom']) }}
+        state={{ ...initialHeyMelodyState, status: 'connected', eqCurrentPreset: 9, eqPresets: [preset], capabilities: new Set(['eq', 'eqCustom']) }}
       />,
     );
 

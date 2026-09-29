@@ -56,3 +56,13 @@ describe('OEM_BRAND_NAME', () => {
     expect(OEM_BRAND_NAME.oneplus).toBe('OnePlus');
   });
 });
+
+describe('catalog EQ modes', () => {
+  it('carries the built-in preset ids for OnePlus Buds 4', () => {
+    expect(catalogEntryFor('065414')?.equalizerMode).toEqual([
+      { protocolIndex: 0, modeType: 11 },
+      { protocolIndex: 1, modeType: 14 },
+      { protocolIndex: 2, modeType: 12 },
+    ]);
+  });
+});

@@ -37,4 +37,4 @@ export function encodeRegisterNotify(ids: number[]): number[] {
 }
 
 /** `0x0204` event ids (realme `NotificationCommandManager.k():184-226`). */
-export const PushEvent = { Battery: 0x01, Wear: 0x02, Anc: 0x03 } as const;
+export const PushEvent = { Battery: 0x01, Wear: 0x02, Anc: 0x03, Devices: 0x06 } as const;

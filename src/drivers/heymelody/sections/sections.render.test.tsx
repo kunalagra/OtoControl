@@ -2,8 +2,10 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import type { ComponentType } from 'react';
 import { describe, expect, it } from 'vitest';
 
+import { catalogEntryFor } from '../catalog';
 import { initialHeyMelodyState } from '../state';
 import type { HeyMelodyState } from '../state';
+import { HeyMelodyDevices } from './Devices';
 import { HeyMelodySound } from './Sound';
 import { HeyMelodySystem } from './System';
 
@@ -40,6 +42,25 @@ describe('HeyMelody System section', () => {
     expect(renderSection(HeyMelodySystem, { capabilities: new Set(['find']), finding: true })).toContain('Stop ringing');
   });
 
+  it('offers the switches the device reported, and only those', () => {
+    const html = renderSection(HeyMelodySystem, { features: new Map([[4, true], [40, false]]) });
+    expect(html).toContain('Auto play/pause');
+    expect(html).toContain('Game mode');
+    expect(html).not.toContain('Low latency');
+    expect(html).not.toContain('BassWave');
+    expect(renderSection(HeyMelodySystem, {})).not.toContain('Controls');
+  });
+
+  it('shows the BassWave and alert volume sliders when the device reported them', () => {
+    const html = renderSection(HeyMelodySystem, {
+      features: new Map([[29, true]]),
+      bassLevel: { min: -5, max: 5, level: 2 },
+      alertVolume: 8,
+    });
+    expect(html).toContain('BassWave');
+    expect(html).toContain('Alert volume');
+  });
+
   it('ends with the shared System tail, like every other brand', () => {
     expect(renderSection(HeyMelodySystem, {})).toContain('Reported capabilities');
   });
@@ -57,22 +78,100 @@ describe('HeyMelody System section', () => {
 });
 
 describe('HeyMelody Sound section', () => {
-  const preset = {
-    isSelected: true,
+  const custom = (eqId: number, name: string, isSelected = false) => ({
+    isSelected,
     minValue: -6,
     maxValue: 6,
-    eqId: 9,
-    name: 'C1',
+    eqId,
+    name,
     bands: [
       { frequency: 100, dbValue: 0 },
       { frequency: 4300, dbValue: 2 },
     ],
-  };
+  });
+  const buds4 = { ...initialHeyMelodyState.info, productId: '065414', catalog: catalogEntryFor('065414') };
 
-  it('shows a slider per band for custom EQs only when the device supports curve writes', () => {
-    const html = renderSection(HeyMelodySound, { eqPresets: [preset], capabilities: new Set(['eq', 'eqCustom']) });
-    expect(html).toContain('100 Hz');
-    expect(html).toContain('4.3 kHz');
-    expect(renderSection(HeyMelodySound, { eqPresets: [preset], capabilities: new Set(['eq']) })).not.toContain('100 Hz');
+  it('shows the model built-ins even when the device lists no custom presets', () => {
+    const html = renderSection(HeyMelodySound, { info: buds4, capabilities: new Set(['eq', 'eqCustom']) });
+    for (const name of ['Balanced', 'Clear vocals', 'Bass']) expect(html).toContain(name);
+    expect(html).toContain('No custom presets yet');
+    expect(html).toContain('New preset');
+  });
+
+  it('shows sliders for the selected custom preset only', () => {
+    const html = renderSection(HeyMelodySound, {
+      info: buds4,
+      eqCurrentPreset: 9,
+      eqPresets: [custom(9, 'Mine', true), custom(10, 'Other')],
+      capabilities: new Set(['eq', 'eqCustom']),
+    });
+    expect(html.match(/>100 Hz</g)).toHaveLength(1);
+    expect(html).toContain('Mine');
+    expect(html).toContain('Other');
+  });
+
+  it('shows no Custom card without curve writes', () => {
+    const html = renderSection(HeyMelodySound, { info: buds4, eqPresets: [custom(9, 'Mine', true)], capabilities: new Set(['eq']) });
+    expect(html).not.toContain('New preset');
+    expect(html).not.toContain('100 Hz');
+  });
+
+  it('disables New preset at the model cap and says why', () => {
+    const html = renderSection(HeyMelodySound, {
+      info: buds4,
+      eqPresets: [custom(9, 'A'), custom(10, 'B'), custom(11, 'C')],
+      capabilities: new Set(['eq', 'eqCustom']),
+    });
+    expect(html).toContain('Up to 3 custom presets');
+  });
+});
+
+describe('HeyMelody touch controls', () => {
+  it('lists the table by side once the device reported it', () => {
+    const html = renderSection(HeyMelodySystem, {
+      gestures: [
+        { deviceType: 1, button: 1, action: 2, fn: 1 },
+        { deviceType: 2, button: 1, action: 2, fn: 6 },
+      ],
+    });
+    expect(html).toContain('Touch controls');
+    expect(html).toContain('Left');
+    expect(html).toContain('Double tap');
+    expect(html).toContain('Play/pause');
+  });
+
+  it('shows nothing without a table', () => {
+    expect(renderSection(HeyMelodySystem, {})).not.toContain('Touch controls');
+  });
+});
+
+describe('HeyMelody Connections section', () => {
+  const peer = (name: string, patch: Partial<HeyMelodyState['peers'][number]> = {}) => ({
+    mac: '01:02:03:04:05:06',
+    name,
+    connected: true,
+    isThisDevice: false,
+    audioActive: false,
+    ...patch,
+  });
+
+  it('lists connected peers with their badges and hides the rest', () => {
+    const html = renderSection(HeyMelodyDevices, {
+      peers: [
+        peer('Phone', { isThisDevice: true }),
+        peer('Laptop', { audioActive: true }),
+        peer('Old tablet', { connected: false }),
+      ],
+    });
+    expect(html).toContain('Phone');
+    expect(html).toContain('This device');
+    expect(html).toContain('Laptop');
+    expect(html).toContain('Playing audio');
+    expect(html).not.toContain('Old tablet');
+    expect(html).toContain("Switching devices from here isn&#x27;t supported yet.");
+  });
+
+  it('says so when nothing is connected', () => {
+    expect(renderSection(HeyMelodyDevices, { peers: [] })).toContain('No other devices connected.');
   });
 });

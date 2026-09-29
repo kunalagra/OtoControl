@@ -12,14 +12,38 @@ import { decodeColourId, decodeProductId, decodeVersion } from './protocol/ident
 import { decodeBattery, decodeBatteryList } from './protocol/battery';
 import { decodeWear, decodeWearList } from './protocol/wear';
 import { decodeAncDirectQuery, encodeSetAncMode } from './protocol/anc';
-import { decodeEqAll, decodeEqCurrent, decodeEqList, decodeSetEqCurveAck, encodeSetEqCurve, encodeSetEqPreset } from './protocol/eq';
+import {
+  decodeEqAll,
+  decodeEqCurrent,
+  decodeEqCurrentPush,
+  decodeEqList,
+  decodeSetEqCurveAck,
+  EQ_ACTION,
+  encodeEqWrite,
+  encodeSetEqPreset,
+  newCustomPreset,
+} from './protocol/eq';
 import type { EqPreset } from './protocol/eq';
 import { PushEvent, decodeNotificationSupport, encodeRegisterNotify } from './protocol/notify';
 import { decodeCapabilities, featuresFromCommands } from './protocol/capability';
+import {
+  ALERT_VOLUME_RANGE,
+  QUERIED_FEATURES,
+  decodeAlertVolume,
+  decodeBassLevel,
+  decodeFeatures,
+  encodeBassLevel,
+  encodeQueryFeatures,
+  encodeSetFeature,
+} from './protocol/feature';
+import { decodeGestures, encodeGestures } from './protocol/gesture';
+import type { GestureRecord } from './protocol/gesture';
+import { decodePeerList, decodePeerReply } from './protocol/multiDevice';
 import { statusBody } from './protocol/status';
 import type { HeyMelodyFrame } from './sppFrame';
 import { HeyMelodyClient } from './client';
 import { catalogEntryFor } from './catalog';
+import { customEqCap } from './eqModes';
 import { buildAncCapabilities } from './ancModel';
 import {
   HEYMELODY_SNAPSHOT_VERSION,
@@ -161,6 +185,10 @@ export class HeyMelodyDevice implements Persistable {
     }
     try {
       await this.#session.connectTo(target, async () => {
+        // A connect that supersedes a live session skips onDrop, and these fields are only
+        // overwritten when the new pair answers — clear them so another pair's controls can't linger.
+        this.#confirmedEq.clear();
+        this.#patch({ features: new Map(), bassLevel: null, alertVolume: null, gestures: [], peers: [] });
         await this.#subscribe();
         await this.refresh();
       });
@@ -207,12 +235,17 @@ export class HeyMelodyDevice implements Persistable {
       try {
         if (event === PushEvent.Battery) this.#patch({ battery: decodeBatteryList(list) });
         else if (event === PushEvent.Wear) this.#patch({ wear: decodeWearList(list) });
+        else if (event === PushEvent.Devices) this.#patch({ peers: decodePeerList(list) });
         else this.#replace(applyAncEvent(this.#store.state, frame.payload));
       } catch (error) {
         console.debug('[heymelody] unreadable push', event, error);
       }
     } else if (frame.cmd === Cmd.PushEqCurrent && frame.payload.length > 0) {
-      this.#patch({ eqCurrentPreset: frame.payload[0] });
+      try {
+        this.#patch({ eqCurrentPreset: decodeEqCurrentPush(frame.payload) });
+      } catch (error) {
+        console.debug('[heymelody] unreadable EQ current push', error);
+      }
     } else if (frame.cmd === Cmd.PushEqCurves) {
       try {
         this.#setConfirmedEq(decodeEqList(frame.payload));
@@ -308,6 +341,22 @@ export class HeyMelodyDevice implements Persistable {
     await read('wear', () => this.#readWear(client));
     await read('anc', () => this.#readAnc(client));
     await read('eq', () => this.#readEq(client, commands));
+    await read('bassLevel', () => this.#readBassLevel(client));
+    await read('gestures', () => this.#readGestures(client));
+    await read('multiDevice', () => this.#readPeers(client));
+    // 0x010D is always allowed; a model that ignores it simply has no switches.
+    try {
+      await this.#readFeatures(client);
+    } catch (error) {
+      console.debug('[heymelody] feature switches did not read', error);
+    }
+    // No bitmap row carries 0x0130, so the alert volume is found by probing.
+    try {
+      await this.#readAlertVolume(client);
+      found.add('alertVolume');
+    } catch (error) {
+      console.debug('[heymelody] alertVolume unavailable', error);
+    }
     for (const passthrough of ['find', 'eqCustom'] as const) if (reported.has(passthrough)) found.add(passthrough);
     return found;
   }
@@ -326,6 +375,12 @@ export class HeyMelodyDevice implements Persistable {
     await probe('battery', () => this.#readBattery(client));
     await probe('anc', () => this.#readAnc(client));
     await probe('eq', () => this.#readEq(client, null));
+    try {
+      await this.#readFeatures(client);
+    } catch (error) {
+      console.debug('[heymelody] feature switches unavailable', error);
+    }
+    await probe('alertVolume', () => this.#readAlertVolume(client));
     return found;
   }
 
@@ -336,6 +391,37 @@ export class HeyMelodyDevice implements Persistable {
 
   async #readBattery(client: HeyMelodyClient): Promise<void> {
     this.#patch({ battery: decodeBattery(await client.request(Cmd.Battery, [], { timeoutMs: this.#probeTimeoutMs })) });
+  }
+
+  async #readFeatures(client: HeyMelodyClient): Promise<void> {
+    const features = decodeFeatures(
+      await client.request(Cmd.QueryFeatures, encodeQueryFeatures(QUERIED_FEATURES), { timeoutMs: this.#probeTimeoutMs }),
+    );
+    this.#patch({ features });
+  }
+
+  async #readBassLevel(client: HeyMelodyClient): Promise<void> {
+    this.#patch({ bassLevel: decodeBassLevel(await client.request(Cmd.QueryBassLevel, [], { timeoutMs: this.#probeTimeoutMs })) });
+  }
+
+  async #readAlertVolume(client: HeyMelodyClient): Promise<void> {
+    this.#patch({ alertVolume: decodeAlertVolume(await client.request(Cmd.QueryAlertVolume, [], { timeoutMs: this.#probeTimeoutMs })) });
+  }
+
+  async #readPeers(client: HeyMelodyClient): Promise<void> {
+    this.#patch({ peers: decodePeerReply(await client.request(Cmd.QueryDevices, [], { timeoutMs: this.#probeTimeoutMs })) });
+  }
+
+  /** `0x0108` empty, as both vendor apps send it; `02 03 01` once if refused. */
+  async #readGestures(client: HeyMelodyClient): Promise<void> {
+    const ask = async (payload: number[]) =>
+      decodeGestures(await client.request(Cmd.QueryGestures, payload, { timeoutMs: this.#probeTimeoutMs }));
+    try {
+      this.#patch({ gestures: await ask([]) });
+    } catch (error) {
+      console.debug('[heymelody] QueryGestures refused, retrying with 02 03 01', error);
+      this.#patch({ gestures: await ask([0x02, 0x03, 0x01]) });
+    }
   }
 
   async #readWear(client: HeyMelodyClient): Promise<void> {
@@ -374,14 +460,41 @@ export class HeyMelodyDevice implements Persistable {
     }
     if (commands === null || commands.has(Cmd.QueryEqAll)) {
       try {
-        // Empty payload, as both vendor apps send it (realme `PollCommandManager.d()`, HeyTap `i.java:182`).
-        this.#setConfirmedEq(decodeEqAll(await client.request(Cmd.QueryEqAll, [], { timeoutMs: this.#probeTimeoutMs })));
+        await this.#readEqList(client);
         answered = true;
       } catch (error) {
         console.debug('[heymelody] QueryEqAll failed', error);
       }
     }
     if (!answered) throw new Error('neither EQ read answered');
+  }
+
+  /** `0x0122` empty, as both vendor apps send it; `01 05` once if refused (OppoPods / OppoPodsManager send that form). */
+  async #readEqList(client: HeyMelodyClient): Promise<void> {
+    try {
+      this.#setConfirmedEq(decodeEqAll(await client.request(Cmd.QueryEqAll, [], { timeoutMs: this.#probeTimeoutMs })));
+    } catch (error) {
+      console.debug('[heymelody] QueryEqAll refused, retrying with 01 05', error);
+      this.#setConfirmedEq(decodeEqAll(await client.request(Cmd.QueryEqAll, [0x01, 0x05], { timeoutMs: this.#probeTimeoutMs })));
+    }
+  }
+
+  /** After a preset write ids can renumber and the buds choose the selection: re-read both. Failures are logged, not thrown. */
+  async #rereadEq(client: HeyMelodyClient): Promise<void> {
+    try {
+      const { status, presetId } = decodeEqCurrent(
+        await client.request(Cmd.QueryEqCurrent, [], { timeoutMs: this.#probeTimeoutMs }),
+      );
+      if (status !== 0) throw new Error(`QueryEqCurrent returned non-zero status ${status}`);
+      this.#patch({ eqCurrentPreset: presetId });
+    } catch (error) {
+      console.debug('[heymelody] EQ current re-read failed', error);
+    }
+    try {
+      await this.#readEqList(client);
+    } catch (error) {
+      console.debug('[heymelody] EQ list re-read failed', error);
+    }
   }
 
   // --- writes ----------------------------------------------------------------
@@ -420,6 +533,68 @@ export class HeyMelodyDevice implements Persistable {
     }
   }
 
+  /** `0x0403 [id][on]`; ack `0x8403 [status]`. Optimistic, rolled back on failure. */
+  async setFeature(id: number, on: boolean): Promise<void> {
+    const client = this.#session.client;
+    if (!client) return;
+    const previous = this.#store.state.features;
+    this.#patch({ features: new Map(previous).set(id, on) });
+    try {
+      statusBody(await client.request(Cmd.SetFeature, encodeSetFeature(id, on)), `feature ${id}`);
+    } catch (error) {
+      this.#patch({ features: previous, error: describeError(error) });
+    }
+  }
+
+  /** `0x041B [min][max][level]`, clamped to the range the device reported. Call on release, not per tick. */
+  async setBassLevel(level: number): Promise<void> {
+    const client = this.#session.client;
+    const previous = this.#store.state.bassLevel;
+    if (!client || !previous) return;
+    const next = { ...previous, level: Math.min(previous.max, Math.max(previous.min, Math.round(level))) };
+    this.#patch({ bassLevel: next });
+    try {
+      statusBody(await client.request(Cmd.SetBassLevel, encodeBassLevel(next)), 'BassWave level');
+    } catch (error) {
+      this.#patch({ bassLevel: previous, error: describeError(error) });
+    }
+  }
+
+  /** `0x0427 [level]`, clamped to 1-10. Call on release, not per tick. */
+  async setAlertVolume(level: number): Promise<void> {
+    const client = this.#session.client;
+    if (!client) return;
+    const previous = this.#store.state.alertVolume;
+    const next = Math.min(ALERT_VOLUME_RANGE.max, Math.max(ALERT_VOLUME_RANGE.min, Math.round(level)));
+    this.#patch({ alertVolume: next });
+    try {
+      statusBody(await client.request(Cmd.SetAlertVolume, [next]), 'alert volume');
+    } catch (error) {
+      this.#patch({ alertVolume: previous, error: describeError(error) });
+    }
+  }
+
+  /** `0x0401 [1][deviceType][button][action][fn]`; ack `0x8401 [status]`, then re-read the table. Optimistic, rolled back on failure. */
+  async setGesture(record: GestureRecord, fn: number): Promise<void> {
+    const client = this.#session.client;
+    if (!client) return;
+    const previous = this.#store.state.gestures;
+    const same = (other: GestureRecord) =>
+      other.deviceType === record.deviceType && other.button === record.button && other.action === record.action;
+    this.#patch({ gestures: previous.map((other) => (same(other) ? { ...other, fn } : other)) });
+    try {
+      statusBody(await client.request(Cmd.SetGestures, encodeGestures([{ ...record, fn }])), 'touch control');
+    } catch (error) {
+      this.#patch({ gestures: previous, error: describeError(error) });
+      return;
+    }
+    try {
+      await this.#readGestures(client);
+    } catch (error) {
+      console.debug('[heymelody] touch controls re-read failed', error);
+    }
+  }
+
   /** Writes a custom EQ's band gains (`0x0418` modify), clamped to its range; rolls back to the last confirmed curve on failure. */
   async setEqCurve(eqId: number, gains: number[]): Promise<void> {
     const client = this.#session.client;
@@ -432,23 +607,64 @@ export class HeyMelodyDevice implements Persistable {
       this.#store.state.eqPresets.map((candidate) => (candidate.eqId === eqId ? replacement : candidate));
     this.#patch({ eqPresets: swap(next) });
     try {
-      decodeSetEqCurveAck(await client.request(Cmd.SetEqCurve, encodeSetEqCurve(preset, clamped)));
+      decodeSetEqCurveAck(await client.request(Cmd.SetEqCurve, encodeEqWrite(EQ_ACTION.Modify, preset, clamped)));
       this.#confirmedEq.set(eqId, next);
     } catch (error) {
       this.#patch({ eqPresets: swap(this.#confirmedEq.get(eqId) ?? preset), error: describeError(error) });
     }
   }
 
+  /** Built-ins select with `0x0406`; a custom preset is selected by writing it with `0x0418` action 2, as the vendor app does. */
   async setEqPreset(eqId: number): Promise<void> {
     const client = this.#session.client;
     if (!client) return;
-    const previous = this.#store.state.eqCurrentPreset;
-    this.#patch({ eqCurrentPreset: eqId });
+    const custom = this.#store.state.eqPresets.find((preset) => preset.eqId === eqId);
+    const previous = { current: this.#store.state.eqCurrentPreset, presets: this.#store.state.eqPresets };
+    this.#patch({
+      eqCurrentPreset: eqId,
+      eqPresets: previous.presets.map((preset) => ({ ...preset, isSelected: preset.eqId === eqId })),
+    });
     try {
-      await client.request(Cmd.SetEqPreset, encodeSetEqPreset(eqId));
+      if (custom) {
+        decodeSetEqCurveAck(await client.request(Cmd.SetEqCurve, encodeEqWrite(EQ_ACTION.Modify, { ...custom, isSelected: true })));
+        await this.#rereadEq(client);
+      } else {
+        statusBody(await client.request(Cmd.SetEqPreset, encodeSetEqPreset(eqId)), 'EQ preset select');
+      }
     } catch (error) {
-      this.#patch({ eqCurrentPreset: previous, error: describeError(error) });
+      this.#patch({ eqCurrentPreset: previous.current, eqPresets: previous.presets, error: describeError(error) });
     }
+  }
+
+  /** `0x0418` action 1 with id 0 — the buds assign the id — then re-read, since ids can renumber. */
+  async createCustomPreset(name?: string): Promise<void> {
+    const client = this.#session.client;
+    if (!client) return;
+    const customs = this.#store.state.eqPresets;
+    if (customs.length >= customEqCap(this.#store.state.info.catalog)) return;
+    const taken = new Set(customs.map((preset) => preset.name));
+    let n = 1;
+    while (taken.has(`Custom ${n}`)) n += 1;
+    try {
+      decodeSetEqCurveAck(await client.request(Cmd.SetEqCurve, encodeEqWrite(EQ_ACTION.Add, newCustomPreset(name ?? `Custom ${n}`, customs[0] ?? null))));
+    } catch (error) {
+      this.#patch({ error: describeError(error) });
+    }
+    await this.#rereadEq(client);
+  }
+
+  /** `0x0418` action 3 with the whole preset, then re-read; the buds pick what becomes selected. */
+  async deleteCustomPreset(eqId: number): Promise<void> {
+    const client = this.#session.client;
+    if (!client) return;
+    const preset = this.#store.state.eqPresets.find((candidate) => candidate.eqId === eqId);
+    if (!preset) return;
+    try {
+      decodeSetEqCurveAck(await client.request(Cmd.SetEqCurve, encodeEqWrite(EQ_ACTION.Delete, preset)));
+    } catch (error) {
+      this.#patch({ error: describeError(error) });
+    }
+    await this.#rereadEq(client);
   }
 
   // --- teardown ----------------------------------------------------------

@@ -124,22 +124,34 @@ export function encodeSetEqPreset(eqId: number): number[] {
   return [eqId];
 }
 
-/** `0x0418` actions (realme `CustomEqViewModel.java:72,92,160`). */
+/** `0x0418` actions (realme `CustomEqViewModel.java:72,92,160`; HeyMelody `p085g9/j.java:496,615`). */
 export const EQ_ACTION = { Add: 1, Modify: 2, Delete: 3 } as const;
+
+export type EqAction = (typeof EQ_ACTION)[keyof typeof EQ_ACTION];
 
 const textEncoder = new TextEncoder();
 
+/** The vendor's default custom-EQ band centres, used when no custom preset exists to copy. */
+export const DEFAULT_CUSTOM_BANDS: readonly number[] = [62, 250, 1000, 4000, 8000, 16000];
+
 /**
- * `0x0418` modify write: `[action][min][max][eqId][nameLen][name UTF-8][bandCount][freq(2 LE), gain]…`
- * (realme `SetCommandManager.p():440-497`). Every `0x0122` entry is a custom EQ, so any preset is editable.
+ * `0x0418` write: `[action][min][max][eqId][nameLen][name UTF-8][bandCount][freq(2 LE), gain]…`
+ * (realme `SetCommandManager.p():440-497`, HeyMelody `HeadsetCoreService` `G0`). Create, modify
+ * (which also selects a custom preset) and delete all send the whole preset; only the action
+ * byte and, for modify, the gains differ. The preset's own range and band layout are echoed —
+ * models differ (±6 with 6 bands by default, ±10 with 10 bands on some).
  */
-export function encodeSetEqCurve(preset: EqPreset, gains: readonly number[]): number[] {
+export function encodeEqWrite(
+  action: EqAction,
+  preset: EqPreset,
+  gains: readonly number[] = preset.bands.map((band) => band.dbValue),
+): number[] {
   if (gains.length !== preset.bands.length) {
     throw new Error(`EQ curve has ${gains.length} gains for ${preset.bands.length} bands`);
   }
   const name = Array.from(textEncoder.encode(preset.name));
   return [
-    EQ_ACTION.Modify,
+    action,
     preset.minValue & 0xff,
     preset.maxValue & 0xff,
     preset.eqId,
@@ -148,6 +160,29 @@ export function encodeSetEqCurve(preset: EqPreset, gains: readonly number[]): nu
     preset.bands.length,
     ...preset.bands.flatMap((band, i) => [band.frequency & 0xff, (band.frequency >> 8) & 0xff, gains[i] & 0xff]),
   ];
+}
+
+/** What a create sends: id 0 (the buds assign one), zero gains, a template's range and bands. */
+export function newCustomPreset(name: string, template: EqPreset | null): EqPreset {
+  return {
+    isSelected: false,
+    minValue: template?.minValue ?? -6,
+    maxValue: template?.maxValue ?? 6,
+    eqId: 0,
+    name,
+    bands: (template?.bands.map((band) => band.frequency) ?? DEFAULT_CUSTOM_BANDS).map((frequency) => ({ frequency, dbValue: 0 })),
+  };
+}
+
+/**
+ * `0x0504` push: the bare current preset id (HeyMelody `HeadsetCoreService`, realme
+ * `RequestCommandManager`, QuickBuds capture). Some community apps expect a leading status
+ * byte, so a two-byte `[00][id]` is accepted too.
+ */
+export function decodeEqCurrentPush(payload: Uint8Array): number {
+  if (payload.length === 0) throw new Error('EQ current push is empty');
+  if (payload.length >= 2 && payload[0] === 0) return payload[1];
+  return payload[0];
 }
 
 /** `0x8418` ack: `[status][eqId]` (realme `SetCommandManager:234-250`). */

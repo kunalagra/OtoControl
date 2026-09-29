@@ -3,7 +3,7 @@
 import { Cmd } from './cmd';
 import { statusBody } from './status';
 
-export type HeyMelodyFeature = 'version' | 'battery' | 'wear' | 'find' | 'anc' | 'eq' | 'eqCustom';
+export type HeyMelodyFeature = 'version' | 'battery' | 'wear' | 'find' | 'anc' | 'eq' | 'eqCustom' | 'bassLevel' | 'alertVolume' | 'gestures' | 'multiDevice';
 
 /** Bit n of the `0x0100` bitmap enables row n (realme `Protocol.b2`, `Protocol.java:179`). */
 export const CAPABILITY_TABLE: readonly (readonly number[])[] = [
@@ -43,6 +43,11 @@ const FEATURE_COMMANDS: Record<HeyMelodyFeature, readonly number[]> = {
   anc: [Cmd.QueryAncDirect],
   eq: [Cmd.SetEqPreset, Cmd.QueryEqAll],
   eqCustom: [Cmd.SetEqCurve],
+  bassLevel: [Cmd.QueryBassLevel],
+  gestures: [Cmd.QueryGestures],
+  multiDevice: [Cmd.QueryDevices],
+  // No bitmap row carries 0x0130, so this is only ever found by the probe.
+  alertVolume: [],
 };
 
 export function featuresFromCommands(commands: ReadonlySet<number>): Set<HeyMelodyFeature> {

@@ -1,12 +1,17 @@
+import { useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Slider } from '@/components/ui/slider'
+import { ToggleRow } from '@/ui/controls/SettingRow'
 import { BatteryBar } from '@/ui/device/DeviceImage'
 import { SystemTail } from '@/ui/sections/SystemTail'
 import { OEM_BRAND_NAME } from '../catalog'
 import type { HeyMelodyDevice, HeyMelodyState } from '../device'
 import { BATTERY_LABEL } from '../protocol/battery'
+import { ALERT_VOLUME_RANGE, FeatureId, gameModeIds } from '../protocol/feature'
 import type { BatteryDevice } from '../protocol/battery'
 import type { HeyMelodyCapability } from '../state'
+import { TouchControls } from './TouchControls'
 
 interface Props {
   device: HeyMelodyDevice
@@ -43,6 +48,9 @@ export function HeyMelodySystem({ device, state }: Props) {
           )}
         </CardContent>
       </Card>
+
+      <Controls device={device} state={state} />
+      {state.gestures.length > 0 && <TouchControls device={device} state={state} />}
 
       {state.battery.length > 0 && (
         <Card data-size="sm">
@@ -88,6 +96,100 @@ export function HeyMelodySystem({ device, state }: Props) {
   )
 }
 
+/** The feature switches and levels the device reported; nothing is shown for one it did not. */
+function Controls({ device, state }: Props) {
+  const { features } = state
+  const game = gameModeIds(features)
+  const disabled = state.status !== 'connected'
+  const hasAutoPlay = features.has(FeatureId.AutoPlay)
+  const hasBass = features.has(FeatureId.BassWave)
+  if (!hasAutoPlay && game.main === null && !hasBass && state.alertVolume === null) return null
+
+  const toggle = (id: number, label: string, hint: string) => (
+    <ToggleRow
+      label={label}
+      hint={hint}
+      value={features.get(id) ?? null}
+      disabled={disabled}
+      onChange={(value) => void device.setFeature(id, value)}
+    />
+  )
+
+  return (
+    <Card data-size="sm">
+      <CardHeader>
+        <CardTitle>Controls</CardTitle>
+      </CardHeader>
+      <CardContent className="flex flex-col">
+        {hasAutoPlay && toggle(FeatureId.AutoPlay, 'Auto play/pause', 'Pauses when you take an earbud out.')}
+        {game.main !== null && toggle(game.main, 'Game mode', 'Lower audio delay for games.')}
+        {game.lowLatency !== null && toggle(game.lowLatency, 'Low latency', 'A second low-latency setting on this model.')}
+        {hasBass && toggle(FeatureId.BassWave, 'BassWave', 'Extra low end.')}
+        {hasBass && state.bassLevel && (
+          <LevelSlider
+            label="BassWave level"
+            min={state.bassLevel.min}
+            max={state.bassLevel.max}
+            value={state.bassLevel.level}
+            disabled={disabled}
+            onCommit={(level) => void device.setBassLevel(level)}
+          />
+        )}
+        {state.alertVolume !== null && (
+          <LevelSlider
+            label="Alert volume"
+            min={ALERT_VOLUME_RANGE.min}
+            max={ALERT_VOLUME_RANGE.max}
+            value={state.alertVolume}
+            disabled={disabled}
+            onCommit={(level) => void device.setAlertVolume(level)}
+          />
+        )}
+      </CardContent>
+    </Card>
+  )
+}
+
+/** A slider that holds a local draft while dragging and writes once, on release. */
+function LevelSlider({
+  label,
+  min,
+  max,
+  value,
+  disabled,
+  onCommit,
+}: {
+  label: string
+  min: number
+  max: number
+  value: number
+  disabled: boolean
+  onCommit: (level: number) => void
+}) {
+  const [draft, setDraft] = useState<number | null>(null)
+  const shown = draft ?? value
+  return (
+    <div className="border-border flex items-center gap-3 border-b py-2 last:border-b-0">
+      <span className="w-28 shrink-0 text-sm font-medium">{label}</span>
+      <Slider
+        value={[shown]}
+        min={min}
+        max={max}
+        step={1}
+        disabled={disabled}
+        aria-label={label}
+        onValueChange={(next) => setDraft(Array.isArray(next) ? next[0] : next)}
+        onValueCommitted={(committed) => {
+          // The committed value, not `draft`: keyboard input fires change and commit together.
+          onCommit(Array.isArray(committed) ? committed[0] : committed)
+          setDraft(null)
+        }}
+      />
+      <span className="w-8 shrink-0 text-right text-xs tabular-nums">{shown}</span>
+    </div>
+  )
+}
+
 /** What each capability is called, in the order the card lists them. */
 const CAPABILITY_NAMES: ReadonlyArray<[HeyMelodyCapability, string]> = [
   ['version', 'Firmware version'],
@@ -97,6 +199,9 @@ const CAPABILITY_NAMES: ReadonlyArray<[HeyMelodyCapability, string]> = [
   ['anc', 'Noise control'],
   ['eq', 'EQ presets'],
   ['eqCustom', 'Custom EQ'],
+  ['bassLevel', 'BassWave level'],
+  ['alertVolume', 'Alert volume'],
+  ['gestures', 'Touch controls'],
 ]
 
 /** The features the device's command table (0x0100) says it supports. */

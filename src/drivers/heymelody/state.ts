@@ -13,6 +13,9 @@ import { decodeAncNotification } from './protocol/anc';
 import type { BatteryCell } from './protocol/battery';
 import type { WearCell } from './protocol/wear';
 import type { EqPreset } from './protocol/eq';
+import type { GestureRecord } from './protocol/gesture';
+import type { PeerDevice } from './protocol/multiDevice';
+import type { BassLevel } from './protocol/feature';
 import type { HeyMelodyFeature } from './protocol/capability';
 import type { VersionEntry } from './protocol/identity';
 import type { HeyMelodyCatalogEntry } from './catalog.generated';
@@ -52,6 +55,16 @@ export interface HeyMelodyState {
   ancLevel: number | null;
   eqCurrentPreset: number | null;
   eqPresets: EqPreset[];
+  /** Feature switches by id, as the device reported them. Live-only: re-read on connect. */
+  features: Map<number, boolean>;
+  /** BassWave range and level. Live-only: re-read on connect. */
+  bassLevel: BassLevel | null;
+  /** Alert-sound volume. Live-only: re-read on connect. */
+  alertVolume: number | null;
+  /** The touch-control table. Live-only: re-read on connect. */
+  gestures: GestureRecord[];
+  /** Devices the earbuds are paired with. Live-only: re-read on connect. */
+  peers: PeerDevice[];
   /** Opportunistically probed — see spec §3.5 for why this replaces a bitmap parse. */
   capabilities: Set<HeyMelodyCapability>;
 }
@@ -67,6 +80,11 @@ export const initialHeyMelodyState: HeyMelodyState = {
   ancLevel: null,
   eqCurrentPreset: null,
   eqPresets: [],
+  features: new Map(),
+  bassLevel: null,
+  alertVolume: null,
+  gestures: [],
+  peers: [],
   capabilities: new Set(),
 };
 

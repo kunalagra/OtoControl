@@ -5,12 +5,15 @@
  * Sony's live bitmap negotiation — see spec §3.5 for why.
  */
 
-import type { DeviceDriver, DriverSection, EqPresets } from '@/core/driver';
+import type { DeviceDriver, DriverSection, EqPresets, QuickSetting } from '@/core/driver';
 import { servicesFor } from '@/core/transport';
 import { heymelodyArtwork } from './assets';
 import { HeyMelodyDevice } from './device';
+import { builtinPresets } from './eqModes';
 import type { HeyMelodyState } from './device';
 import { BATTERY_LABEL } from './protocol/battery';
+import { FeatureId, gameModeIds } from './protocol/feature';
+import { HeyMelodyDevices } from './sections/Devices';
 import { HeyMelodyNoise } from './sections/Noise';
 import { HeyMelodySound } from './sections/Sound';
 import { HeyMelodySystem } from './sections/System';
@@ -18,12 +21,14 @@ import { HeyMelodySystem } from './sections/System';
 const HEYMELODY_SECTIONS: DriverSection[] = [
   { id: 'noise', label: 'Noise control' },
   { id: 'sound', label: 'Sound' },
+  { id: 'devices', label: 'Connections' },
   { id: 'system', label: 'System' },
 ];
 
 const COMPONENTS = {
   noise: HeyMelodyNoise,
   sound: HeyMelodySound,
+  devices: HeyMelodyDevices,
   system: HeyMelodySystem,
 } as const;
 
@@ -40,10 +45,15 @@ export const HEYMELODY_DRIVER = {
     return HEYMELODY_SECTIONS.filter((section) => {
       if (section.id === 'noise') return !known || state.capabilities.has('anc');
       if (section.id === 'sound') return !known || state.capabilities.has('eq') || state.capabilities.has('eqCustom');
+      // Nothing to show without the list, so unlike the others this stays hidden until it is known.
+      if (section.id === 'devices') return state.capabilities.has('multiDevice');
       return true;
     });
   },
   components: COMPONENTS,
+  // Null until the list has been read, so Home shows its own empty state rather than an empty tile.
+  connections: (state: HeyMelodyState) =>
+    state.peers.length === 0 ? null : state.peers.map(({ name, connected, isThisDevice }) => ({ name, connected, isThisDevice })),
   codecName: (_state: HeyMelodyState) => null,
   statusLine: (state: HeyMelodyState) => {
     if (state.battery.length === 0) return null;
@@ -57,8 +67,8 @@ export const HEYMELODY_DRIVER = {
   /**
    * The curve of whichever preset is playing, and the range that preset itself
    * reports — this protocol's presets carry their own min/max, so nothing here
-   * is assumed. Null when the device has answered no preset list, which is what
-   * the Home tile falls back to a link for.
+   * is assumed. Null for a built-in preset (no curve on the wire) or when the
+   * device has answered no preset list; the Home tile then shows the active chip's name.
    */
   eqPreview: (state: HeyMelodyState) => {
     const id = state.eqCurrentPreset ?? state.eqPresets.find((preset) => preset.isSelected)?.eqId ?? null;
@@ -70,20 +80,36 @@ export const HEYMELODY_DRIVER = {
       range: { min: preset.minValue, max: preset.maxValue },
     };
   },
-  // The presets the device listed itself, gated as the Sound tab gates them.
-  // No `quickSettings`: HeyMelody's System tab has no switches to surface.
+  // The model's built-ins, then the custom presets the device listed — the same two groups the Sound tab shows.
   eqPresets: (device: HeyMelodyDevice, state: HeyMelodyState): EqPresets | null => {
     const { capabilities } = state;
-    if (capabilities.size > 0 && !capabilities.has('eq') && !capabilities.has('eqCustom')) return null;
-    if (state.eqPresets.length === 0) return null;
+    const known = capabilities.size > 0;
+    const hasBuiltins = !known || capabilities.has('eq');
+    if (!hasBuiltins && !capabilities.has('eqCustom')) return null;
     const selected = state.eqCurrentPreset ?? state.eqPresets.find((preset) => preset.isSelected)?.eqId ?? null;
-    return {
-      presets: state.eqPresets.map((preset) => ({
-        id: String(preset.eqId),
-        name: preset.name,
-        active: selected === preset.eqId,
-      })),
-      select: (id: string) => void device.setEqPreset(Number(id)),
-    };
+    const customIds = new Set(state.eqPresets.map((preset) => preset.eqId));
+    const builtins = hasBuiltins ? builtinPresets(state.info.catalog).filter((preset) => !customIds.has(preset.id)) : [];
+    const presets = [
+      ...builtins.map((preset) => ({ id: String(preset.id), name: preset.name, active: selected === preset.id })),
+      ...state.eqPresets.map((preset) => ({ id: String(preset.eqId), name: preset.name, active: selected === preset.eqId })),
+    ];
+    if (presets.length === 0) return null;
+    return { presets, select: (id: string) => void device.setEqPreset(Number(id)) };
+  },
+  // Game mode first, then the rest in the order the System tab lists them; each only when the model reported it.
+  quickSettings: (device: HeyMelodyDevice, state: HeyMelodyState): QuickSetting[] => {
+    const { features } = state;
+    const game = gameModeIds(features);
+    const entries: Array<[number | null, string]> = [
+      [game.main, 'Game mode'],
+      [features.has(FeatureId.AutoPlay) ? FeatureId.AutoPlay : null, 'Auto play/pause'],
+      [features.has(FeatureId.BassWave) ? FeatureId.BassWave : null, 'BassWave'],
+      [game.lowLatency, 'Low latency'],
+    ];
+    return entries.flatMap(([id, label]): QuickSetting[] =>
+      id === null
+        ? []
+        : [{ kind: 'toggle', id: `feature-${id}`, label, value: features.get(id) ?? null, set: (value) => void device.setFeature(id, value) }],
+    );
   },
 } as const satisfies DeviceDriver<HeyMelodyDevice, HeyMelodyState>;

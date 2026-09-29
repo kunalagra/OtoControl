@@ -26,4 +26,38 @@ describe('HEYMELODY_DRIVER.sections', () => {
   it('hides Noise and Sound once probing found neither', () => {
     expect(ids(['battery'])).toEqual(['system']);
   });
+
+  it('shows Connections, between Sound and System, only when multiDevice is known', () => {
+    expect(ids(['anc', 'eq', 'multiDevice'])).toEqual(['noise', 'sound', 'devices', 'system']);
+    expect(ids([])).not.toContain('devices');
+    expect(ids(['anc', 'eq'])).not.toContain('devices');
+  });
+});
+
+describe('HEYMELODY_DRIVER.eqPreview', () => {
+  it('has no curve for a built-in preset', () => {
+    expect(HEYMELODY_DRIVER.eqPreview({ ...initialHeyMelodyState, eqCurrentPreset: 1 })).toBeNull();
+  });
+});
+
+describe('HEYMELODY_DRIVER.connections', () => {
+  it('is null while no peers are known', () => {
+    expect(HEYMELODY_DRIVER.connections(initialHeyMelodyState)).toBeNull();
+  });
+
+  it('maps every peer, connected or not', () => {
+    const peer = { mac: '01:02:03:04:05:06', audioActive: false };
+    expect(
+      HEYMELODY_DRIVER.connections({
+        ...initialHeyMelodyState,
+        peers: [
+          { ...peer, name: 'Phone', connected: true, isThisDevice: true },
+          { ...peer, name: 'Old laptop', connected: false, isThisDevice: false },
+        ],
+      }),
+    ).toEqual([
+      { name: 'Phone', connected: true, isThisDevice: true },
+      { name: 'Old laptop', connected: false, isThisDevice: false },
+    ]);
+  });
 });

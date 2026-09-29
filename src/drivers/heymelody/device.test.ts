@@ -289,7 +289,7 @@ describe('HeyMelodyDevice writes', () => {
 
   it('setEqPreset applies optimistically and keeps the value once acknowledged', async () => {
     const replies = new Map(FULL_REPLIES);
-    replies.set(Cmd.SetEqPreset, []);
+    replies.set(Cmd.SetEqPreset, [0x00]);
     const device = new HeyMelodyDevice(heyMelodyOpener(replies), { timeoutMs: 50, probeTimeoutMs: 50 });
     await device.adoptPort(port);
 
@@ -591,6 +591,111 @@ describe('HeyMelodyDevice custom EQ', () => {
     transport.receive(encodeSppFrame(Cmd.PushEqCurves, 0x02, CUSTOM_EQ.slice(1).map((b, i) => (i === 11 ? 4 : b))));
     expect(gains(device)).toEqual([4, 0]);
   });
+
+  const decodeWrites = (transport: FakeTransport, cmd: number) => {
+    const decoder = new SppFrameCodec().createDecoder();
+    return transport.written.flatMap((bytes) => decoder.push(bytes)).filter((frame) => frame.cmd === cmd).map((frame) => Array.from(frame.payload));
+  };
+
+  it('selects a custom preset with 0x0418 action 2, never 0x0406', async () => {
+    let transport!: FakeTransport;
+    const device = new HeyMelodyDevice(scriptedOpener(
+        replies,
+        new Map([
+          [Cmd.SetEqCurve, [[0x00, 9]]],
+          [Cmd.QueryEqCurrent, [[0x00, 1], [0x00, 9]]], // the buds report the new selection on the re-read
+        ]),
+        (t) => (transport = t),
+      ),
+      { timeoutMs: 50, probeTimeoutMs: 50 },
+    );
+    await device.adoptPort(port);
+    await device.setEqPreset(9);
+    expect(decodeWrites(transport, Cmd.SetEqPreset)).toEqual([]);
+    expect(decodeWrites(transport, Cmd.SetEqCurve)[0][0]).toBe(0x02);
+    expect(device.state.eqCurrentPreset).toBe(9);
+  });
+
+  it('selects a built-in preset with 0x0406', async () => {
+    let transport!: FakeTransport;
+    const device = new HeyMelodyDevice(scriptedOpener(replies, new Map([[Cmd.SetEqPreset, [[0x00]]]]), (t) => (transport = t)), { timeoutMs: 50, probeTimeoutMs: 50 });
+    await device.adoptPort(port);
+    await device.setEqPreset(1);
+    expect(decodeWrites(transport, Cmd.SetEqPreset)).toEqual([[1]]);
+    expect(device.state.eqPresets.every((preset) => !preset.isSelected)).toBe(true);
+  });
+
+  it('creates a custom preset copying an existing one, then re-reads the current id and the list', async () => {
+    let transport!: FakeTransport;
+    const created = [...CUSTOM_EQ.slice(0, 1), 2, ...CUSTOM_EQ.slice(2), ...CUSTOM_EQ.slice(2).map((b, i) => (i === 3 ? 10 : b))];
+    const device = new HeyMelodyDevice(
+      scriptedOpener(replies, new Map([[Cmd.SetEqCurve, [[0x00, 10]]], [Cmd.QueryEqAll, [CUSTOM_EQ, created]]]), (t) => (transport = t)),
+      { timeoutMs: 50, probeTimeoutMs: 50 },
+    );
+    await device.adoptPort(port);
+    await device.createCustomPreset();
+    const [add] = decodeWrites(transport, Cmd.SetEqCurve);
+    expect(add[0]).toBe(0x01);
+    expect(add[3]).toBe(0x00);
+    expect(decodeWrites(transport, Cmd.QueryEqAll)).toHaveLength(2);
+    expect(decodeWrites(transport, Cmd.QueryEqCurrent)).toHaveLength(2);
+    expect(device.state.eqPresets.map((preset) => preset.eqId)).toEqual([9, 10]);
+  });
+
+  it('names a created preset after the lowest free slot number', async () => {
+    let transport!: FakeTransport;
+    const device = new HeyMelodyDevice(scriptedOpener(replies, new Map([[Cmd.SetEqCurve, [[0x00, 10]]]]), (t) => (transport = t)), { timeoutMs: 50, probeTimeoutMs: 50 });
+    await device.adoptPort(port);
+    await device.createCustomPreset();
+    const [add] = decodeWrites(transport, Cmd.SetEqCurve);
+    const name = new TextDecoder().decode(Uint8Array.from(add.slice(5, 5 + add[4])));
+    expect(name).toBe('Custom 1');
+  });
+
+  it('does not create beyond the model cap', async () => {
+    let transport!: FakeTransport;
+    const three = [0x00, 3, ...[9, 10, 11].flatMap((id) => [...CUSTOM_EQ.slice(2).map((b, i) => (i === 3 ? id : b))])];
+    const full = new Map(replies);
+    full.set(Cmd.QueryEqAll, three);
+    const device = new HeyMelodyDevice(scriptedOpener(full, new Map(), (t) => (transport = t)), { timeoutMs: 50, probeTimeoutMs: 50 });
+    await device.adoptPort(port);
+    expect(device.state.eqPresets).toHaveLength(3);
+    await device.createCustomPreset();
+    expect(decodeWrites(transport, Cmd.SetEqCurve)).toEqual([]);
+  });
+
+  it('deletes with the whole preset, then re-reads', async () => {
+    let transport!: FakeTransport;
+    const device = new HeyMelodyDevice(
+      scriptedOpener(replies, new Map([[Cmd.SetEqCurve, [[0x00, 9]]], [Cmd.QueryEqAll, [CUSTOM_EQ, [0x00, 0]]]]), (t) => (transport = t)),
+      { timeoutMs: 50, probeTimeoutMs: 50 },
+    );
+    await device.adoptPort(port);
+    await device.deleteCustomPreset(9);
+    const [del] = decodeWrites(transport, Cmd.SetEqCurve);
+    expect(del[0]).toBe(0x03);
+    expect(del[3]).toBe(9);
+    expect(device.state.eqPresets).toEqual([]);
+  });
+
+  it('rolls a failed custom select back to the previous selection', async () => {
+    // Select ack never arrives: the optimistic current id and isSelected flags return.
+    const device = new HeyMelodyDevice(scriptedOpener(replies, new Map([[Cmd.SetEqCurve, [undefined]]])), { timeoutMs: 20, probeTimeoutMs: 20 });
+    await device.adoptPort(port);
+    const before = { current: device.state.eqCurrentPreset, flags: device.state.eqPresets.map((preset) => preset.isSelected) };
+    await device.setEqPreset(9);
+    expect(device.state.eqCurrentPreset).toBe(before.current);
+    expect(device.state.eqPresets.map((preset) => preset.isSelected)).toEqual(before.flags);
+    expect(device.state.error).not.toBeNull();
+  });
+
+  it('retries the preset list with 01 05 when the empty request is refused', async () => {
+    let transport!: FakeTransport;
+    const device = new HeyMelodyDevice(scriptedOpener(replies, new Map([[Cmd.QueryEqAll, [[0x01], CUSTOM_EQ]]]), (t) => (transport = t)), { timeoutMs: 50, probeTimeoutMs: 50 });
+    await device.adoptPort(port);
+    expect(decodeWrites(transport, Cmd.QueryEqAll)).toEqual([[], [0x01, 0x05]]);
+    expect(device.state.eqPresets).toHaveLength(1);
+  });
 });
 
 describe('HeyMelodyDevice drop during connect', () => {
@@ -609,5 +714,229 @@ describe('HeyMelodyDevice drop during connect', () => {
     await device.adoptPort(port);
     expect(device.state.status).toBe('disconnected');
     expect(device.state.error).not.toBe('This does not look like a HeyMelody or realme device.');
+  });
+});
+
+describe('HeyMelodyDevice feature switches', () => {
+  const FEATURE_REPLIES = (): Map<number, number[]> => {
+    const replies = new Map(FULL_REPLIES);
+    replies.set(Cmd.QueryCapability, [0x00, 0x22, 0x05, 0x00, 0x00, 0x44]); // BITMAP_REPLY plus bit 38 (BassWave level)
+    replies.set(Cmd.QueryFeatures, [0x00, 2, 0x04, 0x01, 0x28, 0x00]);
+    replies.set(Cmd.QueryAlertVolume, [0x00, 0x08]);
+    replies.set(Cmd.QueryBassLevel, [0x00, 0xfb, 0x05, 0x02]);
+    return replies;
+  };
+
+  async function connect(replies: Map<number, number[]>) {
+    let transport!: FakeTransport;
+    const open: TransportOpener = async (p, handlers) => {
+      transport = (await heyMelodyOpener(replies)(p, handlers)) as FakeTransport;
+      return transport;
+    };
+    const device = new HeyMelodyDevice(open, { timeoutMs: 50, probeTimeoutMs: 50 });
+    await device.adoptPort(port);
+    const sent = (cmd: number) => {
+      const decoder = new SppFrameCodec().createDecoder();
+      return transport.written.flatMap((bytes) => decoder.push(bytes)).filter((frame) => frame.cmd === cmd).map((frame) => Array.from(frame.payload));
+    };
+    return { device, sent };
+  }
+
+  it('reads the switches, alert volume and BassWave level on connect', async () => {
+    const { device } = await connect(FEATURE_REPLIES());
+    expect(device.state.features).toEqual(new Map([[4, true], [40, false]]));
+    expect(device.state.alertVolume).toBe(8);
+    expect(device.state.bassLevel).toEqual({ min: -5, max: 5, level: 2 });
+  });
+
+  it('setFeature sends 0x0403 and keeps the value on ack', async () => {
+    const replies = FEATURE_REPLIES();
+    replies.set(Cmd.SetFeature, [0x00]);
+    const { device, sent } = await connect(replies);
+    await device.setFeature(40, true);
+    expect(sent(Cmd.SetFeature)).toEqual([[40, 1]]);
+    expect(device.state.features.get(40)).toBe(true);
+  });
+
+  it('rolls setFeature back and reports an error when the device does not answer', async () => {
+    const { device } = await connect(FEATURE_REPLIES());
+    await device.setFeature(40, true);
+    expect(device.state.features.get(40)).toBe(false);
+    expect(device.state.error).not.toBeNull();
+  });
+
+  it('setAlertVolume sends 0x0427 and keeps the level on ack', async () => {
+    const replies = FEATURE_REPLIES();
+    replies.set(Cmd.SetAlertVolume, [0x00, 3]);
+    const { device, sent } = await connect(replies);
+    await device.setAlertVolume(3);
+    expect(sent(Cmd.SetAlertVolume)).toEqual([[3]]);
+    expect(device.state.alertVolume).toBe(3);
+  });
+
+  it('clamps the alert volume to its range', async () => {
+    const replies = FEATURE_REPLIES();
+    replies.set(Cmd.SetAlertVolume, [0x00]);
+    const { device, sent } = await connect(replies);
+    await device.setAlertVolume(99);
+    expect(sent(Cmd.SetAlertVolume)).toEqual([[10]]);
+  });
+
+  it('setBassLevel writes the range back with the new level', async () => {
+    const replies = FEATURE_REPLIES();
+    replies.set(Cmd.SetBassLevel, [0x00]);
+    const { device, sent } = await connect(replies);
+    await device.setBassLevel(-1);
+    expect(sent(Cmd.SetBassLevel)).toEqual([[0xfb, 0x05, 0xff]]);
+    expect(device.state.bassLevel?.level).toBe(-1);
+  });
+
+  it('still connects, with no switches, when the device ignores 0x010D', async () => {
+    const { device } = await connect(new Map(FULL_REPLIES));
+    expect(device.state.status).toBe('connected');
+    expect(device.state.features.size).toBe(0);
+    expect(device.state.error).toBeNull();
+  });
+});
+
+describe('HeyMelodyDevice touch controls', () => {
+  const TABLE = [0x00, 2, 1, 1, 2, 1, 2, 1, 2, 6];
+  const GESTURE_REPLIES = (): Map<number, number[]> => {
+    const replies = new Map(FULL_REPLIES);
+    replies.set(Cmd.QueryCapability, [0x00, 0x22 | 0x08, 0x05, 0x00, 0x00, 0x04]);
+    replies.set(Cmd.QueryGestures, TABLE);
+    return replies;
+  };
+
+  async function connect(replies: Map<number, number[]>, scripted?: Map<number, number[][]>) {
+    let transport!: FakeTransport;
+    const open: TransportOpener = async (_p, handlers) => {
+      transport = new FakeTransport(handlers);
+      const decoder = new SppFrameCodec().createDecoder();
+      transport.onWrite = (bytes) => {
+        const [frame] = decoder.push(bytes);
+        if (!frame) return;
+        const reply = scripted?.get(frame.cmd)?.shift() ?? replies.get(frame.cmd);
+        if (reply === undefined) return;
+        queueMicrotask(() => transport.receive(encodeSppFrame(replyFor(frame.cmd), frame.seq, reply)));
+      };
+      return transport;
+    };
+    const device = new HeyMelodyDevice(open, { timeoutMs: 50, probeTimeoutMs: 50 });
+    await device.adoptPort(port);
+    const sent = (cmd: number) => {
+      const decoder = new SppFrameCodec().createDecoder();
+      return transport.written.flatMap((bytes) => decoder.push(bytes)).filter((frame) => frame.cmd === cmd).map((frame) => Array.from(frame.payload));
+    };
+    return { device, sent };
+  }
+
+  it('reads the table on connect and reports the capability', async () => {
+    const { device } = await connect(GESTURE_REPLIES());
+    expect(device.state.gestures).toEqual([
+      { deviceType: 1, button: 1, action: 2, fn: 1 },
+      { deviceType: 2, button: 1, action: 2, fn: 6 },
+    ]);
+    expect(device.state.capabilities.has('gestures')).toBe(true);
+  });
+
+  it('retries the read with 02 03 01 when the empty request is refused', async () => {
+    const { device, sent } = await connect(GESTURE_REPLIES(), new Map([[Cmd.QueryGestures, [[0x01], TABLE]]]));
+    expect(sent(Cmd.QueryGestures)).toEqual([[], [0x02, 0x03, 0x01]]);
+    expect(device.state.gestures).toHaveLength(2);
+  });
+
+  it('setGesture writes one record, re-reads, and never sends 0x0402', async () => {
+    const replies = GESTURE_REPLIES();
+    replies.set(Cmd.SetGestures, [0x00]);
+    const { device, sent } = await connect(replies);
+    await device.setGesture(device.state.gestures[0], 5);
+    expect(sent(Cmd.SetGestures)).toEqual([[1, 1, 1, 2, 5]]);
+    expect(sent(Cmd.QueryGestures)).toHaveLength(2);
+    expect(sent(0x0402)).toEqual([]);
+  });
+
+  it('rolls setGesture back when the write is refused', async () => {
+    const replies = GESTURE_REPLIES();
+    replies.set(Cmd.SetGestures, [0x01]);
+    const { device } = await connect(replies);
+    await device.setGesture(device.state.gestures[0], 5);
+    expect(device.state.gestures[0].fn).toBe(1);
+    expect(device.state.error).not.toBeNull();
+  });
+});
+
+describe('HeyMelodyDevice connected devices', () => {
+  // Bitmap bit 29 (0x0112) is byte 3, bit 5.
+  const ENTRY = [1, 2, 3, 4, 5, 6, 0x08, 0x02, 0x01, 5, ...Array.from('Phone', (c) => c.charCodeAt(0))];
+  const withOne = (): number[] => [1, ...ENTRY];
+  const REPLIES = (): Map<number, number[]> => {
+    const replies = new Map(FULL_REPLIES);
+    replies.set(Cmd.QueryCapability, [0x00, 0x00, 0x00, 0x00, 0x20]);
+    replies.set(Cmd.QueryDevices, [0x00, ...withOne()]);
+    return replies;
+  };
+  let transport!: FakeTransport;
+  const connect = async (replies: Map<number, number[]>) => {
+    const open: TransportOpener = async (_p, handlers) => {
+      transport = new FakeTransport(handlers);
+      const decoder = new SppFrameCodec().createDecoder();
+      transport.onWrite = (bytes) => {
+        const [frame] = decoder.push(bytes);
+        if (!frame) return;
+        const reply = replies.get(frame.cmd);
+        if (reply === undefined) return;
+        queueMicrotask(() => transport.receive(encodeSppFrame(replyFor(frame.cmd), frame.seq, reply)));
+      };
+      return transport;
+    };
+    const device = new HeyMelodyDevice(open, { timeoutMs: 50, probeTimeoutMs: 50 });
+    await device.adoptPort(port);
+    return device;
+  };
+
+  it('reads the peer list on connect and reports the capability', async () => {
+    const device = await connect(REPLIES());
+    expect(device.state.peers).toEqual([
+      { mac: '06:05:04:03:02:01', name: 'Phone', connected: true, isThisDevice: true, audioActive: false },
+    ]);
+    expect(device.state.capabilities.has('multiDevice')).toBe(true);
+  });
+
+  it('replaces peers on a 0x0204 push with event 6', async () => {
+    const replies = REPLIES();
+    replies.set(Cmd.QueryDevices, [0x00, 0]);
+    const device = await connect(replies);
+    expect(device.state.peers).toEqual([]);
+    transport.receive(encodeSppFrame(Cmd.ActiveReport, 0x20, [0x06, ...withOne()]));
+    expect(device.state.peers.map((p) => p.name)).toEqual(['Phone']);
+  });
+});
+
+describe('HeyMelodyDevice switching to another pair without a disconnect', () => {
+  it('drops the previous pair’s live-only readings before polling the new one', async () => {
+    const first = new Map(FULL_REPLIES);
+    first.set(Cmd.QueryCapability, [0x00, 0x22 | 0x08, 0x05, 0x00, 0x20, 0x44]); // gestures, multiDevice, BassWave level
+    first.set(Cmd.QueryGestures, [0x00, 1, 1, 1, 2, 1]);
+    first.set(Cmd.QueryFeatures, [0x00, 1, 0x28, 0x01]);
+    first.set(Cmd.QueryAlertVolume, [0x00, 0x08]);
+    first.set(Cmd.QueryBassLevel, [0x00, 0xfb, 0x05, 0x02]);
+    first.set(Cmd.QueryDevices, [0x00, 1, 0x66, 0x55, 0x44, 0x33, 0x22, 0x11, 0x07, 0x02, 0x01, 0x04, ...new TextEncoder().encode('Desk')]);
+    const pairs = [first, FULL_REPLIES];
+    let opened = 0;
+    const open: TransportOpener = (target, handlers) => heyMelodyOpener(pairs[opened++])(target, handlers);
+    const device = new HeyMelodyDevice(open, { timeoutMs: 50, probeTimeoutMs: 50 });
+
+    await device.adoptPort(port);
+    expect(device.state.gestures).toHaveLength(1);
+    expect(device.state.peers).toHaveLength(1);
+
+    await device.adoptPort(port);
+    expect(device.state.status).toBe('connected');
+    expect(device.state.gestures).toEqual([]);
+    expect(device.state.features.size).toBe(0);
+    expect(device.state.alertVolume).toBeNull();
+    expect(device.state.bassLevel).toBeNull();
+    expect(device.state.peers).toEqual([]);
   });
 });

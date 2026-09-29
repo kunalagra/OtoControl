@@ -1,8 +1,10 @@
 import { useState } from 'react'
+import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Slider } from '@/components/ui/slider'
 import { SegmentButton } from '@/ui/controls/SegmentButton'
 import type { HeyMelodyDevice, HeyMelodyState } from '../device'
+import { builtinPresets, customEqCap } from '../eqModes'
 import type { EqPreset } from '../protocol/eq'
 
 interface Props {
@@ -12,10 +14,8 @@ interface Props {
 
 export function HeyMelodySound({ device, state }: Props) {
   const disabled = state.status !== 'connected'
-
-  // Only assert absence once something has actually been probed — before that,
-  // fall through to the "Connect to load..." / "did not answer" messaging below.
-  if (state.capabilities.size > 0 && !state.capabilities.has('eq') && !state.capabilities.has('eqCustom')) {
+  const known = state.capabilities.size > 0
+  if (known && !state.capabilities.has('eq') && !state.capabilities.has('eqCustom')) {
     return (
       <Card data-size="sm">
         <CardContent>
@@ -25,56 +25,92 @@ export function HeyMelodySound({ device, state }: Props) {
     )
   }
 
-  // The optimistic write in `setEqPreset` patches `eqCurrentPreset`, not any
-  // preset's own `isSelected` — that flag only ever comes from the device's
-  // last `0x0122` reply. Preferring the optimistic field is what makes a click
-  // show up immediately; falling back to `isSelected` is what shows the
-  // device's own answer before any click has happened.
-  //
-  // Note: `0x010F` (QueryEqCurrent, `eqCurrentPreset`'s source) is documented
-  // as a "preset index", while `eqId` is a per-preset byte from `0x0122`
-  // (QueryEqAll). Comparing them assumes both share one namespace — an
-  // untested assumption, not confirmed by the spec.
-  const selectedEqId = state.eqCurrentPreset ?? state.eqPresets.find((p) => p.isSelected)?.eqId ?? null
-  const editable = state.capabilities.has('eqCustom')
+  const builtins = builtinPresets(state.info.catalog)
+  const customs = state.eqPresets
+  const cap = customEqCap(state.info.catalog)
+  const selectedId = state.eqCurrentPreset ?? customs.find((preset) => preset.isSelected)?.eqId ?? null
+  const selectedCustom = customs.find((preset) => preset.eqId === selectedId) ?? null
+  const showBuiltins = !known || state.capabilities.has('eq')
 
   return (
-    <Card data-size="sm">
-      <CardHeader>
-        <CardTitle>Equalizer</CardTitle>
-      </CardHeader>
-      <CardContent>
-        {state.eqPresets.length === 0 ? (
-          <p className="text-muted-foreground text-sm">
-            {state.status === 'connected'
-              ? 'The device did not return an EQ preset list.'
-              : 'Connect to load the equalizer.'}
-          </p>
-        ) : (
-          <div className="flex flex-col gap-1.5">
-            {state.eqPresets.map((preset) => (
-              <div key={preset.eqId} className="flex flex-col gap-2">
-                <SegmentButton
-                  size="lg"
-                  pressed={selectedEqId === preset.eqId}
-                  disabled={disabled}
-                  onSelect={() => void device.setEqPreset(preset.eqId)}
-                  label={preset.name}
-                  className="w-full justify-start py-2"
-                />
-                {editable && preset.bands.length > 0 && (
-                  <CurveEditor
-                    preset={preset}
-                    disabled={disabled}
-                    onCommit={(gains) => void device.setEqCurve(preset.eqId, gains)}
-                  />
-                )}
-              </div>
+    <div className="flex flex-col gap-4">
+      {showBuiltins && (
+        <Card data-size="sm">
+          <CardHeader>
+            <CardTitle>Equalizer</CardTitle>
+          </CardHeader>
+          <CardContent className="grid grid-cols-2 gap-1.5 sm:grid-cols-3">
+            {builtins.map((preset) => (
+              <SegmentButton
+                key={preset.id}
+                pressed={selectedId === preset.id && !selectedCustom}
+                disabled={disabled}
+                onSelect={() => void device.setEqPreset(preset.id)}
+                label={preset.name}
+              />
             ))}
-          </div>
-        )}
-      </CardContent>
-    </Card>
+          </CardContent>
+        </Card>
+      )}
+
+      {state.capabilities.has('eqCustom') && (
+        <Card data-size="sm">
+          <CardHeader>
+            <CardTitle>Custom</CardTitle>
+          </CardHeader>
+          <CardContent className="flex flex-col gap-3">
+            {customs.length === 0 ? (
+              <p className="text-muted-foreground text-sm">No custom presets yet.</p>
+            ) : (
+              <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-3">
+                {customs.map((preset) => (
+                  <SegmentButton
+                    key={preset.eqId}
+                    pressed={selectedCustom?.eqId === preset.eqId}
+                    disabled={disabled}
+                    onSelect={() => void device.setEqPreset(preset.eqId)}
+                    label={preset.name}
+                  />
+                ))}
+              </div>
+            )}
+            {selectedCustom && selectedCustom.bands.length > 0 && (
+              <CurveEditor
+                key={selectedCustom.eqId}
+                preset={selectedCustom}
+                disabled={disabled}
+                onCommit={(gains) => void device.setEqCurve(selectedCustom.eqId, gains)}
+              />
+            )}
+            <div className="flex flex-wrap items-center gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={disabled || customs.length >= cap}
+                onClick={() => void device.createCustomPreset()}
+              >
+                New preset
+              </Button>
+              {selectedCustom && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  disabled={disabled}
+                  onClick={() => {
+                    if (window.confirm(`Delete ${selectedCustom.name}?`)) void device.deleteCustomPreset(selectedCustom.eqId)
+                  }}
+                >
+                  Delete
+                </Button>
+              )}
+              {customs.length >= cap && (
+                <span className="text-muted-foreground text-xs">Up to {cap} custom presets</span>
+              )}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+    </div>
   )
 }
 

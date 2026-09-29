@@ -24,6 +24,7 @@ import { EqPreset as NothingEqPreset } from '@/drivers/nothing/commands'
 import { initialNothingState } from '@/drivers/nothing/device'
 import { EQ_PRESETS as SOUNDCORE_PRESETS } from '@/drivers/soundcore/commands'
 import { initialSoundcoreState } from '@/drivers/soundcore/device'
+import { catalogEntryFor } from '@/drivers/heymelody/catalog'
 import { initialHeyMelodyState } from '@/drivers/heymelody/state'
 
 /** A device whose every method is a spy, whatever its name. */
@@ -180,29 +181,51 @@ describe('Soundcore', () => {
 })
 
 describe('HeyMelody', () => {
-  it('has no quick settings to offer: its System tab has none', () => {
-    expect(HEYMELODY_DRIVER).not.toHaveProperty('quickSettings')
+  it('offers game mode and auto play/pause from the reported switches', () => {
+    const { device, call } = spyDevice()
+    const state = { ...initialHeyMelodyState, features: new Map([[4, true], [40, false]]) }
+    const settings = HEYMELODY_DRIVER.quickSettings!(device, state)
+    expect(settings.map((setting) => setting.label)).toEqual(['Game mode', 'Auto play/pause'])
+    const [game] = settings
+    if (game.kind !== 'toggle') throw new Error('expected a toggle')
+    game.set(true)
+    expect(call('setFeature')).toHaveBeenCalledWith(40, true)
   })
 
-  it('offers the presets the device itself listed', () => {
-    const { device, call } = spyDevice()
-    expect(HEYMELODY_DRIVER.eqPresets!(device, initialHeyMelodyState)).toBeNull()
+  it('offers no quick settings before the device has reported any switch', () => {
+    const { device } = spyDevice()
+    expect(HEYMELODY_DRIVER.quickSettings!(device, initialHeyMelodyState)).toEqual([])
+  })
 
-    const preset = (eqId: number, name: string) => ({
-      eqId,
-      name,
-      isSelected: false,
-      minValue: -6,
-      maxValue: 6,
-      bands: [],
-    })
-    const state = { ...initialHeyMelodyState, eqPresets: [preset(1, 'Balanced'), preset(2, 'Bass')], eqCurrentPreset: 2 }
+  it('returns nothing when the device has no EQ capability', () => {
+    const { device } = spyDevice()
+    expect(HEYMELODY_DRIVER.eqPresets!(device, { ...initialHeyMelodyState, capabilities: new Set(['battery'] as const) })).toBeNull()
+  })
+
+  it('offers the model built-ins and the device custom presets together', () => {
+    const { device, call } = spyDevice()
+    const custom = { eqId: 9, name: 'Mine', isSelected: true, minValue: -6, maxValue: 6, bands: [] }
+    const state = {
+      ...initialHeyMelodyState,
+      info: { ...initialHeyMelodyState.info, productId: '065414', catalog: catalogEntryFor('065414') },
+      capabilities: new Set(['eq', 'eqCustom'] as const),
+      eqPresets: [custom],
+      eqCurrentPreset: 9,
+    }
     const presets = HEYMELODY_DRIVER.eqPresets!(device, state)!
     expect(presets.presets).toEqual([
-      { id: '1', name: 'Balanced', active: false },
-      { id: '2', name: 'Bass', active: true },
+      { id: '0', name: 'Balanced', active: false },
+      { id: '1', name: 'Clear vocals', active: false },
+      { id: '2', name: 'Bass', active: false },
+      { id: '9', name: 'Mine', active: true },
     ])
     presets.select('1')
     expect(call('setEqPreset')).toHaveBeenCalledWith(1)
+  })
+
+  it('keeps the built-in chips for a device with no custom presets', () => {
+    const { device } = spyDevice()
+    const state = { ...initialHeyMelodyState, capabilities: new Set(['eq'] as const), eqCurrentPreset: 0 }
+    expect(HEYMELODY_DRIVER.eqPresets!(device, state)!.presets.map((preset) => preset.active)).toEqual([true, false, false])
   })
 })

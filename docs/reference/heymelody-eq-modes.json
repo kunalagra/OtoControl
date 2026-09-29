@@ -1,0 +1,1319 @@
+{
+  "source": "HeyMelody 116.9.0 bundled whitelist (res/raw/heymelody_app_whitelist, compatWhiteList): per-model built-in EQ presets (function.equalizerMode + equalizerModeCompat, protocolIndex = wire id) and customEqMax. Ids and mode types only; no vendor strings.",
+  "devices": [
+    {
+      "productId": "050C10",
+      "equalizerMode": [
+        {
+          "protocolIndex": 0,
+          "modeType": 1
+        },
+        {
+          "protocolIndex": 1,
+          "modeType": 2
+        },
+        {
+          "protocolIndex": 2,
+          "modeType": 13
+        },
+        {
+          "protocolIndex": 3,
+          "modeType": 3
+        }
+      ]
+    },
+    {
+      "productId": "050C14",
+      "equalizerMode": [
+        {
+          "protocolIndex": 0,
+          "modeType": 11
+        },
+        {
+          "protocolIndex": 1,
+          "modeType": 12
+        },
+        {
+          "protocolIndex": 2,
+          "modeType": 13
+        },
+        {
+          "protocolIndex": 3,
+          "modeType": 14
+        }
+      ],
+      "customEqMax": 3
+    },
+    {
+      "productId": "051014",
+      "equalizerMode": [
+        {
+          "protocolIndex": 0,
+          "modeType": 11
+        },
+        {
+          "protocolIndex": 1,
+          "modeType": 12
+        },
+        {
+          "protocolIndex": 2,
+          "modeType": 13
+        },
+        {
+          "protocolIndex": 3,
+          "modeType": 14
+        }
+      ],
+      "customEqMax": 3
+    },
+    {
+      "productId": "060C14",
+      "equalizerMode": [
+        {
+          "protocolIndex": 0,
+          "modeType": 11
+        },
+        {
+          "protocolIndex": 1,
+          "modeType": 12
+        },
+        {
+          "protocolIndex": 2,
+          "modeType": 14
+        },
+        {
+          "protocolIndex": 3,
+          "modeType": 13
+        }
+      ]
+    },
+    {
+      "productId": "061014",
+      "equalizerMode": [
+        {
+          "protocolIndex": 0,
+          "modeType": 11
+        },
+        {
+          "protocolIndex": 1,
+          "modeType": 12
+        },
+        {
+          "protocolIndex": 2,
+          "modeType": 14
+        },
+        {
+          "protocolIndex": 3,
+          "modeType": 13
+        }
+      ]
+    },
+    {
+      "productId": "061410",
+      "equalizerMode": [
+        {
+          "protocolIndex": 0,
+          "modeType": 5
+        },
+        {
+          "protocolIndex": 1,
+          "modeType": 6
+        },
+        {
+          "protocolIndex": 2,
+          "modeType": 7
+        }
+      ]
+    },
+    {
+      "productId": "061414",
+      "equalizerMode": [
+        {
+          "protocolIndex": 0,
+          "modeType": 11
+        },
+        {
+          "protocolIndex": 1,
+          "modeType": 12
+        },
+        {
+          "protocolIndex": 2,
+          "modeType": 14
+        },
+        {
+          "protocolIndex": 3,
+          "modeType": 13
+        }
+      ]
+    },
+    {
+      "productId": "061814",
+      "equalizerMode": [
+        {
+          "protocolIndex": 0,
+          "modeType": 11
+        },
+        {
+          "protocolIndex": 1,
+          "modeType": 12
+        },
+        {
+          "protocolIndex": 2,
+          "modeType": 14
+        },
+        {
+          "protocolIndex": 3,
+          "modeType": 13
+        }
+      ]
+    },
+    {
+      "productId": "061C14",
+      "equalizerMode": [
+        {
+          "protocolIndex": 0,
+          "modeType": 17
+        },
+        {
+          "protocolIndex": 1,
+          "modeType": 12
+        },
+        {
+          "protocolIndex": 2,
+          "modeType": 14
+        },
+        {
+          "protocolIndex": 3,
+          "modeType": 15
+        }
+      ]
+    },
+    {
+      "productId": "062010",
+      "equalizerMode": [
+        {
+          "protocolIndex": 0,
+          "modeType": 1
+        },
+        {
+          "protocolIndex": 1,
+          "modeType": 2
+        },
+        {
+          "protocolIndex": 2,
+          "modeType": 3
+        },
+        {
+          "protocolIndex": 3,
+          "modeType": 4
+        }
+      ]
+    },
+    {
+      "productId": "062014",
+      "equalizerMode": [
+        {
+          "protocolIndex": 0,
+          "modeType": 11
+        },
+        {
+          "protocolIndex": 1,
+          "modeType": 12
+        },
+        {
+          "protocolIndex": 2,
+          "modeType": 14
+        },
+        {
+          "protocolIndex": 3,
+          "modeType": 13
+        },
+        {
+          "protocolIndex": 7,
+          "modeType": 19
+        }
+      ]
+    },
+    {
+      "productId": "062414",
+      "equalizerMode": [
+        {
+          "protocolIndex": 0,
+          "modeType": 11
+        },
+        {
+          "protocolIndex": 1,
+          "modeType": 12
+        },
+        {
+          "protocolIndex": 2,
+          "modeType": 13
+        },
+        {
+          "protocolIndex": 3,
+          "modeType": 14
+        }
+      ],
+      "customEqMax": 2
+    },
+    {
+      "productId": "062814",
+      "equalizerMode": [
+        {
+          "protocolIndex": 0,
+          "modeType": 11
+        },
+        {
+          "protocolIndex": 1,
+          "modeType": 12
+        },
+        {
+          "protocolIndex": 2,
+          "modeType": 13
+        }
+      ],
+      "customEqMax": 2
+    },
+    {
+      "productId": "062C14",
+      "equalizerMode": [
+        {
+          "protocolIndex": 0,
+          "modeType": 11
+        },
+        {
+          "protocolIndex": 1,
+          "modeType": 13
+        },
+        {
+          "protocolIndex": 2,
+          "modeType": 12
+        }
+      ]
+    },
+    {
+      "productId": "063010",
+      "equalizerMode": [
+        {
+          "protocolIndex": 0,
+          "modeType": 1
+        },
+        {
+          "protocolIndex": 1,
+          "modeType": 2
+        },
+        {
+          "protocolIndex": 2,
+          "modeType": 3
+        },
+        {
+          "protocolIndex": 3,
+          "modeType": 4
+        }
+      ]
+    },
+    {
+      "productId": "063014",
+      "equalizerMode": [
+        {
+          "protocolIndex": 0,
+          "modeType": 11
+        },
+        {
+          "protocolIndex": 1,
+          "modeType": 12
+        },
+        {
+          "protocolIndex": 2,
+          "modeType": 14
+        },
+        {
+          "protocolIndex": 3,
+          "modeType": 13
+        },
+        {
+          "protocolIndex": 7,
+          "modeType": 19
+        }
+      ]
+    },
+    {
+      "productId": "063410",
+      "equalizerMode": [
+        {
+          "protocolIndex": 0,
+          "modeType": 1
+        },
+        {
+          "protocolIndex": 1,
+          "modeType": 2
+        },
+        {
+          "protocolIndex": 2,
+          "modeType": 3
+        }
+      ]
+    },
+    {
+      "productId": "063414",
+      "equalizerMode": [
+        {
+          "protocolIndex": 0,
+          "modeType": 11
+        },
+        {
+          "protocolIndex": 1,
+          "modeType": 12
+        },
+        {
+          "protocolIndex": 2,
+          "modeType": 14
+        },
+        {
+          "protocolIndex": 3,
+          "modeType": 13
+        },
+        {
+          "protocolIndex": 7,
+          "modeType": 19
+        }
+      ]
+    },
+    {
+      "productId": "063810",
+      "equalizerMode": [
+        {
+          "protocolIndex": 0,
+          "modeType": 1
+        },
+        {
+          "protocolIndex": 1,
+          "modeType": 2
+        },
+        {
+          "protocolIndex": 2,
+          "modeType": 3
+        }
+      ]
+    },
+    {
+      "productId": "063C10",
+      "equalizerMode": [
+        {
+          "protocolIndex": 0,
+          "modeType": 9
+        },
+        {
+          "protocolIndex": 1,
+          "modeType": 6
+        },
+        {
+          "protocolIndex": 2,
+          "modeType": 8
+        },
+        {
+          "protocolIndex": 4,
+          "modeType": 16
+        }
+      ]
+    },
+    {
+      "productId": "063C14",
+      "equalizerMode": [
+        {
+          "protocolIndex": 0,
+          "modeType": 11
+        },
+        {
+          "protocolIndex": 1,
+          "modeType": 12
+        },
+        {
+          "protocolIndex": 2,
+          "modeType": 14
+        },
+        {
+          "protocolIndex": 3,
+          "modeType": 13
+        }
+      ]
+    },
+    {
+      "productId": "064010",
+      "equalizerMode": [
+        {
+          "protocolIndex": 0,
+          "modeType": 1
+        },
+        {
+          "protocolIndex": 1,
+          "modeType": 2
+        },
+        {
+          "protocolIndex": 2,
+          "modeType": 3
+        },
+        {
+          "protocolIndex": 3,
+          "modeType": 4
+        }
+      ]
+    },
+    {
+      "productId": "064014",
+      "equalizerMode": [
+        {
+          "protocolIndex": 0,
+          "modeType": 11
+        },
+        {
+          "protocolIndex": 1,
+          "modeType": 13
+        },
+        {
+          "protocolIndex": 2,
+          "modeType": 14
+        },
+        {
+          "protocolIndex": 3,
+          "modeType": 12
+        },
+        {
+          "protocolIndex": 7,
+          "modeType": 30
+        }
+      ]
+    },
+    {
+      "productId": "064410",
+      "equalizerMode": [
+        {
+          "protocolIndex": 0,
+          "modeType": 1
+        },
+        {
+          "protocolIndex": 1,
+          "modeType": 2
+        },
+        {
+          "protocolIndex": 2,
+          "modeType": 3
+        }
+      ]
+    },
+    {
+      "productId": "064414",
+      "equalizerMode": [
+        {
+          "protocolIndex": 3,
+          "modeType": 11
+        },
+        {
+          "protocolIndex": 4,
+          "modeType": 14
+        },
+        {
+          "protocolIndex": 5,
+          "modeType": 12
+        }
+      ]
+    },
+    {
+      "productId": "064810",
+      "equalizerMode": [
+        {
+          "protocolIndex": 0,
+          "modeType": 1
+        },
+        {
+          "protocolIndex": 1,
+          "modeType": 2
+        },
+        {
+          "protocolIndex": 2,
+          "modeType": 3
+        }
+      ]
+    },
+    {
+      "productId": "064814",
+      "equalizerMode": [
+        {
+          "protocolIndex": 0,
+          "modeType": 11
+        },
+        {
+          "protocolIndex": 1,
+          "modeType": 13
+        },
+        {
+          "protocolIndex": 2,
+          "modeType": 12
+        }
+      ]
+    },
+    {
+      "productId": "064C10",
+      "equalizerMode": [
+        {
+          "protocolIndex": 0,
+          "modeType": 1
+        },
+        {
+          "protocolIndex": 1,
+          "modeType": 2
+        },
+        {
+          "protocolIndex": 2,
+          "modeType": 3
+        }
+      ]
+    },
+    {
+      "productId": "064C14",
+      "equalizerMode": [
+        {
+          "protocolIndex": 3,
+          "modeType": 11
+        },
+        {
+          "protocolIndex": 4,
+          "modeType": 14
+        },
+        {
+          "protocolIndex": 5,
+          "modeType": 12
+        }
+      ]
+    },
+    {
+      "productId": "065010",
+      "equalizerMode": [
+        {
+          "protocolIndex": 0,
+          "modeType": 18
+        },
+        {
+          "protocolIndex": 1,
+          "modeType": 2
+        },
+        {
+          "protocolIndex": 2,
+          "modeType": 3
+        }
+      ]
+    },
+    {
+      "productId": "065014",
+      "equalizerMode": [
+        {
+          "protocolIndex": 3,
+          "modeType": 11
+        },
+        {
+          "protocolIndex": 4,
+          "modeType": 14
+        },
+        {
+          "protocolIndex": 5,
+          "modeType": 12
+        }
+      ]
+    },
+    {
+      "productId": "065414",
+      "equalizerMode": [
+        {
+          "protocolIndex": 0,
+          "modeType": 11
+        },
+        {
+          "protocolIndex": 1,
+          "modeType": 14
+        },
+        {
+          "protocolIndex": 2,
+          "modeType": 12
+        }
+      ]
+    },
+    {
+      "productId": "065810",
+      "equalizerMode": [
+        {
+          "protocolIndex": 0,
+          "modeType": 21
+        },
+        {
+          "protocolIndex": 1,
+          "modeType": 2
+        },
+        {
+          "protocolIndex": 2,
+          "modeType": 3
+        }
+      ]
+    },
+    {
+      "productId": "065854",
+      "equalizerMode": [
+        {
+          "protocolIndex": 0,
+          "modeType": 11
+        },
+        {
+          "protocolIndex": 1,
+          "modeType": 12
+        },
+        {
+          "protocolIndex": 2,
+          "modeType": 14
+        }
+      ]
+    },
+    {
+      "productId": "065C10",
+      "equalizerMode": [
+        {
+          "protocolIndex": 0,
+          "modeType": 1
+        },
+        {
+          "protocolIndex": 1,
+          "modeType": 2
+        },
+        {
+          "protocolIndex": 2,
+          "modeType": 20
+        }
+      ]
+    },
+    {
+      "productId": "066010",
+      "equalizerMode": [
+        {
+          "protocolIndex": 0,
+          "modeType": 1
+        },
+        {
+          "protocolIndex": 1,
+          "modeType": 2
+        },
+        {
+          "protocolIndex": 2,
+          "modeType": 20
+        }
+      ]
+    },
+    {
+      "productId": "066054",
+      "equalizerMode": [
+        {
+          "protocolIndex": 0,
+          "modeType": 11
+        },
+        {
+          "protocolIndex": 1,
+          "modeType": 12
+        },
+        {
+          "protocolIndex": 2,
+          "modeType": 14
+        }
+      ]
+    },
+    {
+      "productId": "066414",
+      "equalizerMode": [
+        {
+          "protocolIndex": 0,
+          "modeType": 11
+        },
+        {
+          "protocolIndex": 1,
+          "modeType": 12
+        },
+        {
+          "protocolIndex": 2,
+          "modeType": 14
+        }
+      ]
+    },
+    {
+      "productId": "066810",
+      "equalizerMode": [
+        {
+          "protocolIndex": 0,
+          "modeType": 1
+        },
+        {
+          "protocolIndex": 1,
+          "modeType": 2
+        },
+        {
+          "protocolIndex": 2,
+          "modeType": 3
+        },
+        {
+          "protocolIndex": 3,
+          "modeType": 13
+        }
+      ]
+    },
+    {
+      "productId": "066814",
+      "equalizerMode": [
+        {
+          "protocolIndex": 0,
+          "modeType": 11
+        },
+        {
+          "protocolIndex": 1,
+          "modeType": 12
+        },
+        {
+          "protocolIndex": 2,
+          "modeType": 14
+        }
+      ]
+    },
+    {
+      "productId": "066C10",
+      "equalizerMode": [
+        {
+          "protocolIndex": 0,
+          "modeType": 1
+        },
+        {
+          "protocolIndex": 1,
+          "modeType": 2
+        },
+        {
+          "protocolIndex": 2,
+          "modeType": 3
+        }
+      ]
+    },
+    {
+      "productId": "067010",
+      "equalizerMode": [
+        {
+          "protocolIndex": 0,
+          "modeType": 1
+        },
+        {
+          "protocolIndex": 1,
+          "modeType": 2
+        },
+        {
+          "protocolIndex": 2,
+          "modeType": 3
+        }
+      ]
+    },
+    {
+      "productId": "067014",
+      "equalizerMode": [
+        {
+          "protocolIndex": 0,
+          "modeType": 11
+        },
+        {
+          "protocolIndex": 1,
+          "modeType": 14
+        },
+        {
+          "protocolIndex": 2,
+          "modeType": 12
+        }
+      ]
+    },
+    {
+      "productId": "067410",
+      "equalizerMode": [
+        {
+          "protocolIndex": 0,
+          "modeType": 26
+        },
+        {
+          "protocolIndex": 1,
+          "modeType": 27
+        },
+        {
+          "protocolIndex": 2,
+          "modeType": 28
+        },
+        {
+          "protocolIndex": 3,
+          "modeType": 29
+        },
+        {
+          "protocolIndex": 7,
+          "modeType": 30
+        }
+      ]
+    },
+    {
+      "productId": "067414",
+      "equalizerMode": [
+        {
+          "protocolIndex": 0,
+          "modeType": 11
+        },
+        {
+          "protocolIndex": 1,
+          "modeType": 12
+        },
+        {
+          "protocolIndex": 2,
+          "modeType": 14
+        }
+      ]
+    },
+    {
+      "productId": "067810",
+      "equalizerMode": [
+        {
+          "protocolIndex": 0,
+          "modeType": 1
+        },
+        {
+          "protocolIndex": 1,
+          "modeType": 2
+        },
+        {
+          "protocolIndex": 2,
+          "modeType": 3
+        }
+      ]
+    },
+    {
+      "productId": "067C10",
+      "equalizerMode": [
+        {
+          "protocolIndex": 0,
+          "modeType": 1
+        },
+        {
+          "protocolIndex": 1,
+          "modeType": 2
+        },
+        {
+          "protocolIndex": 2,
+          "modeType": 3
+        }
+      ]
+    },
+    {
+      "productId": "068010",
+      "equalizerMode": [
+        {
+          "protocolIndex": 0,
+          "modeType": 11
+        },
+        {
+          "protocolIndex": 1,
+          "modeType": 13
+        },
+        {
+          "protocolIndex": 2,
+          "modeType": 12
+        }
+      ]
+    },
+    {
+      "productId": "068410",
+      "equalizerMode": [
+        {
+          "protocolIndex": 0,
+          "modeType": 25
+        },
+        {
+          "protocolIndex": 1,
+          "modeType": 2
+        },
+        {
+          "protocolIndex": 2,
+          "modeType": 3
+        }
+      ]
+    },
+    {
+      "productId": "068810",
+      "equalizerMode": [
+        {
+          "protocolIndex": 0,
+          "modeType": 1
+        },
+        {
+          "protocolIndex": 1,
+          "modeType": 2
+        },
+        {
+          "protocolIndex": 2,
+          "modeType": 3
+        }
+      ]
+    },
+    {
+      "productId": "068C10",
+      "equalizerMode": [
+        {
+          "protocolIndex": 0,
+          "modeType": 26
+        },
+        {
+          "protocolIndex": 1,
+          "modeType": 28
+        },
+        {
+          "protocolIndex": 2,
+          "modeType": 29
+        },
+        {
+          "protocolIndex": 7,
+          "modeType": 34
+        }
+      ]
+    },
+    {
+      "productId": "069010",
+      "equalizerMode": [
+        {
+          "protocolIndex": 0,
+          "modeType": 1
+        },
+        {
+          "protocolIndex": 1,
+          "modeType": 2
+        },
+        {
+          "protocolIndex": 2,
+          "modeType": 3
+        }
+      ]
+    },
+    {
+      "productId": "069850",
+      "equalizerMode": [
+        {
+          "protocolIndex": 0,
+          "modeType": 22
+        },
+        {
+          "protocolIndex": 1,
+          "modeType": 32
+        },
+        {
+          "protocolIndex": 2,
+          "modeType": 31
+        }
+      ]
+    },
+    {
+      "productId": "069C10",
+      "equalizerMode": [
+        {
+          "protocolIndex": 0,
+          "modeType": 33
+        },
+        {
+          "protocolIndex": 1,
+          "modeType": 2
+        },
+        {
+          "protocolIndex": 2,
+          "modeType": 3
+        }
+      ]
+    },
+    {
+      "productId": "06A010",
+      "equalizerMode": [
+        {
+          "protocolIndex": 0,
+          "modeType": 1
+        },
+        {
+          "protocolIndex": 1,
+          "modeType": 2
+        },
+        {
+          "protocolIndex": 2,
+          "modeType": 3
+        }
+      ]
+    },
+    {
+      "productId": "06A450",
+      "equalizerMode": [
+        {
+          "protocolIndex": 0,
+          "modeType": 22
+        },
+        {
+          "protocolIndex": 1,
+          "modeType": 32
+        },
+        {
+          "protocolIndex": 2,
+          "modeType": 31
+        }
+      ]
+    },
+    {
+      "productId": "06A850",
+      "equalizerMode": [
+        {
+          "protocolIndex": 0,
+          "modeType": 22
+        },
+        {
+          "protocolIndex": 1,
+          "modeType": 32
+        },
+        {
+          "protocolIndex": 2,
+          "modeType": 31
+        }
+      ]
+    },
+    {
+      "productId": "06AC50",
+      "equalizerMode": [
+        {
+          "protocolIndex": 0,
+          "modeType": 22
+        },
+        {
+          "protocolIndex": 1,
+          "modeType": 32
+        },
+        {
+          "protocolIndex": 2,
+          "modeType": 31
+        }
+      ]
+    },
+    {
+      "productId": "06B050",
+      "equalizerMode": [
+        {
+          "protocolIndex": 0,
+          "modeType": 22
+        },
+        {
+          "protocolIndex": 1,
+          "modeType": 32
+        },
+        {
+          "protocolIndex": 2,
+          "modeType": 31
+        }
+      ]
+    },
+    {
+      "productId": "06B450",
+      "equalizerMode": [
+        {
+          "protocolIndex": 0,
+          "modeType": 22
+        },
+        {
+          "protocolIndex": 1,
+          "modeType": 32
+        },
+        {
+          "protocolIndex": 2,
+          "modeType": 31
+        }
+      ]
+    },
+    {
+      "productId": "06B810",
+      "equalizerMode": [
+        {
+          "protocolIndex": 0,
+          "modeType": 35
+        },
+        {
+          "protocolIndex": 1,
+          "modeType": 34
+        },
+        {
+          "protocolIndex": 2,
+          "modeType": 28
+        }
+      ]
+    },
+    {
+      "productId": "06BC10",
+      "equalizerMode": [
+        {
+          "protocolIndex": 0,
+          "modeType": 26
+        },
+        {
+          "protocolIndex": 1,
+          "modeType": 28
+        },
+        {
+          "protocolIndex": 2,
+          "modeType": 29
+        },
+        {
+          "protocolIndex": 3,
+          "modeType": 30
+        }
+      ]
+    },
+    {
+      "productId": "06C010",
+      "equalizerMode": [
+        {
+          "protocolIndex": 0,
+          "modeType": 26
+        },
+        {
+          "protocolIndex": 1,
+          "modeType": 28
+        },
+        {
+          "protocolIndex": 2,
+          "modeType": 29
+        },
+        {
+          "protocolIndex": 3,
+          "modeType": 30
+        },
+        {
+          "protocolIndex": 7,
+          "modeType": 34
+        }
+      ]
+    },
+    {
+      "productId": "06C410",
+      "equalizerMode": [
+        {
+          "protocolIndex": 0,
+          "modeType": 26
+        },
+        {
+          "protocolIndex": 1,
+          "modeType": 29
+        },
+        {
+          "protocolIndex": 2,
+          "modeType": 28
+        }
+      ]
+    },
+    {
+      "productId": "06C810",
+      "equalizerMode": [
+        {
+          "protocolIndex": 0,
+          "modeType": 26
+        },
+        {
+          "protocolIndex": 1,
+          "modeType": 29
+        },
+        {
+          "protocolIndex": 2,
+          "modeType": 28
+        }
+      ]
+    },
+    {
+      "productId": "06D810",
+      "equalizerMode": [
+        {
+          "protocolIndex": 0,
+          "modeType": 26
+        },
+        {
+          "protocolIndex": 1,
+          "modeType": 28
+        },
+        {
+          "protocolIndex": 2,
+          "modeType": 29
+        }
+      ]
+    },
+    {
+      "productId": "06E010",
+      "equalizerMode": [
+        {
+          "protocolIndex": 0,
+          "modeType": 26
+        },
+        {
+          "protocolIndex": 2,
+          "modeType": 28
+        },
+        {
+          "protocolIndex": 3,
+          "modeType": 34
+        },
+        {
+          "protocolIndex": 4,
+          "modeType": 30
+        }
+      ]
+    },
+    {
+      "productId": "06E810",
+      "equalizerMode": [
+        {
+          "protocolIndex": 0,
+          "modeType": 26
+        },
+        {
+          "protocolIndex": 1,
+          "modeType": 29
+        },
+        {
+          "protocolIndex": 2,
+          "modeType": 28
+        }
+      ]
+    },
+    {
+      "productId": "06F010",
+      "equalizerMode": [
+        {
+          "protocolIndex": 0,
+          "modeType": 1
+        },
+        {
+          "protocolIndex": 1,
+          "modeType": 2
+        },
+        {
+          "protocolIndex": 2,
+          "modeType": 3
+        }
+      ]
+    },
+    {
+      "productId": "06F450",
+      "equalizerMode": [
+        {
+          "protocolIndex": 0,
+          "modeType": 26
+        },
+        {
+          "protocolIndex": 1,
+          "modeType": 29
+        },
+        {
+          "protocolIndex": 2,
+          "modeType": 28
+        }
+      ]
+    }
+  ]
+}
