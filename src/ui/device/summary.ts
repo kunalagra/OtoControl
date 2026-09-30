@@ -168,6 +168,28 @@ export function summarise(active: ActiveDevice): DeviceSummary {
     }
   }
 
+  if (active.id === 'boat-bluetrum') {
+    const { driver, state } = active
+    // Raw 0–127 levels, not percent-guaranteed — shown as reported.
+    const cells = [
+      ...cell('L', state.battery?.left),
+      ...cell('R', state.battery?.right),
+      ...cell('Case', state.battery?.case),
+    ]
+    return {
+      model: state.info.model ?? fallbackName(state.status, 'Boat earbuds'),
+      hasDevice: state.info.model !== null,
+      battery: lowest(cells),
+      charging: cells.some((entry) => entry.charging),
+      codec: driver.codecName(state),
+      detail: driver.statusLine(state),
+      artwork: driver.artwork(state),
+      worn: driver.worn(state),
+      firmware: state.info.firmware,
+      cells,
+    }
+  }
+
   if (active.id === 'sony-mdr') {
     const { driver, state } = active
     // Labelled by the field each cell arrived in, never by position in a filtered

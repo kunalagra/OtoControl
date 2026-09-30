@@ -89,7 +89,7 @@ describe('KNOWN_SERVICES', () => {
 
   it('maps every service to a brand that has artwork', () => {
     for (const { brand } of KNOWN_SERVICES) {
-      expect(['sennheiser', 'sony', 'nothing', 'heymelody']).toContain(brand);
+      expect(['sennheiser', 'sony', 'nothing', 'heymelody', 'boat']).toContain(brand);
     }
   });
 

@@ -616,6 +616,10 @@ export const IMPLEMENTED: Record<Brand, readonly FeatureId[]> = {
     // carries the feature, so listing it here would silently claim support.
   ],
   heymelody: [F.Anc, F.Equalizer],
+  // Boat speaks ANC and EQ on the Bluetrum stack today; transparency rides
+  // the same cmd-53 mode byte but has no dedicated UI yet, same as multipoint
+  // (cmd 51) — listed once the sections exist for them.
+  boat: [F.Anc, F.Equalizer],
 };
 
 /** The profile for a reported model string, or null when we know of no such model. */

@@ -15,6 +15,7 @@ import {
   NOTHING_DRIVER,
   SOUNDCORE_DRIVER,
   HEYMELODY_DRIVER,
+  BOAT_DRIVER,
   driverForService,
 } from '@/core/driver';
 import type { DriverId } from '@/core/driver';
@@ -23,6 +24,8 @@ import { NothingDevice } from '@/drivers/nothing/device';
 import { SoundcoreDevice } from '@/drivers/soundcore/device';
 import { HeyMelodyDevice } from '@/drivers/heymelody/device';
 import type { HeyMelodyState } from '@/drivers/heymelody/device';
+import { BoatDevice } from '@/drivers/boat/device';
+import type { BoatState } from '@/drivers/boat/device';
 import type { DeviceState } from '@/drivers/sennheiser/state';
 import type { SonyState } from '@/drivers/sony/sony';
 import type { NothingState } from '@/drivers/nothing/device';
@@ -104,7 +107,8 @@ export type ActiveDevice =
   | { id: Extract<DriverId, 'sony-mdr'>; driver: typeof SONY_DRIVER; device: SonyDevice; state: SonyState }
   | { id: Extract<DriverId, 'nothing-spp'>; driver: typeof NOTHING_DRIVER; device: NothingDevice; state: NothingState }
   | { id: Extract<DriverId, 'soundcore-gatt'>; driver: typeof SOUNDCORE_DRIVER; device: SoundcoreDevice; state: SoundcoreState }
-  | { id: Extract<DriverId, 'heymelody'>; driver: typeof HEYMELODY_DRIVER; device: HeyMelodyDevice; state: HeyMelodyState };
+  | { id: Extract<DriverId, 'heymelody'>; driver: typeof HEYMELODY_DRIVER; device: HeyMelodyDevice; state: HeyMelodyState }
+  | { id: Extract<DriverId, 'boat-bluetrum'>; driver: typeof BOAT_DRIVER; device: BoatDevice; state: BoatState };
 
 /**
  * Whether the app knows of any device.
@@ -157,6 +161,7 @@ export class DeviceManager {
   readonly #nothing = this.#devices[NOTHING_DRIVER.id] as NothingDevice;
   readonly #soundcore = this.#devices[SOUNDCORE_DRIVER.id] as SoundcoreDevice;
   readonly #heymelody = this.#devices[HEYMELODY_DRIVER.id] as HeyMelodyDevice;
+  readonly #boat = this.#devices[BOAT_DRIVER.id] as BoatDevice;
 
   /**
    * Which driver's device the UI should render, keyed by driver id, or null
@@ -367,6 +372,14 @@ export class DeviceManager {
         driver: HEYMELODY_DRIVER,
         device: this.#heymelody,
         state: this.#heymelody.state,
+      };
+    }
+    if (driverId === BOAT_DRIVER.id) {
+      return {
+        id: BOAT_DRIVER.id,
+        driver: BOAT_DRIVER,
+        device: this.#boat,
+        state: this.#boat.state,
       };
     }
     return {

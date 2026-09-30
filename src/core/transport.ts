@@ -63,7 +63,17 @@ export const HEYMELODY_SPP_UUID = '0000079a-d102-11e1-9b23-00025b00a5a5';
  */
 export const STANDARD_SPP_UUID = '00001101-0000-1000-8000-00805f9b34fb';
 
-export type ProtocolGeneration = 'gaia' | 'mdr-v1' | 'mdr-v2' | 'nothing-v1' | 'heymelody';
+/**
+ * Bluetrum's custom SPP service (`ABEarbuds.java:44`,
+ * `B6632277-0642-458B-A7A0-23FB1DC92C93`). Which of the two UUIDs a pair
+ * uses is beacon-selected (V2 bit 4, `DeviceBeaconV2.java:21`); V1 beacons
+ * always use standard SPP. This is the unambiguous picker entry for
+ * Bluetrum-based boAt models — standard-SPP pairs stay on the generic
+ * HeyMelody claim and are sorted out by the identity handshake.
+ */
+export const BOAT_CUSTOM_SPP_UUID = 'b6632277-0642-458b-a7a0-23fb1dc92c93';
+
+export type ProtocolGeneration = 'gaia' | 'mdr-v1' | 'mdr-v2' | 'nothing-v1' | 'heymelody' | 'boat-bluetrum';
 
 export interface KnownService {
   uuid: string;
@@ -91,6 +101,7 @@ export const KNOWN_SERVICES: KnownService[] = [
   { uuid: SONY_MDR_V1_UUID, brand: 'sony', protocol: 'mdr-v1' },
   { uuid: NOTHING_SPP_UUID, brand: 'nothing', protocol: 'nothing-v1' },
   { uuid: HEYMELODY_SPP_UUID, brand: 'heymelody', protocol: 'heymelody' },
+  { uuid: BOAT_CUSTOM_SPP_UUID, brand: 'boat', protocol: 'boat-bluetrum' },
   { uuid: STANDARD_SPP_UUID, brand: 'heymelody', protocol: 'heymelody', generic: true },
 ];
 
