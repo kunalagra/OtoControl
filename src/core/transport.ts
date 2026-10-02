@@ -72,7 +72,16 @@ export const HEYMELODY_LEGACY_SPP_UUID = '00001107-d102-11e1-9b23-00025b00a5a5';
  */
 export const STANDARD_SPP_UUID = '00001101-0000-1000-8000-00805f9b34fb';
 
-export type ProtocolGeneration = 'gaia' | 'mdr-v1' | 'mdr-v2' | 'nothing-v1' | 'heymelody';
+/**
+ * The Maestro service Google Pixel Buds Pro / Pro 2 expose over RFCOMM: pw_rpc
+ * inside HDLC frames. Confirmed by qzed/pbpctrl (`libmaestro/src/lib.rs:10`) and
+ * the companion app (`gpk.java:16`). The app also knows a byte-reversed alias and a
+ * legacy service (`3a046f6d-…`) that are deliberately not offered — see
+ * docs/superpowers/specs/2026-10-02-pixelbuds-driver-design.md §2.
+ */
+export const PIXELBUDS_MAESTRO_UUID = '25e97ff7-24ce-4c4c-8951-f764a708f7b5';
+
+export type ProtocolGeneration = 'gaia' | 'mdr-v1' | 'mdr-v2' | 'nothing-v1' | 'heymelody' | 'maestro';
 
 export interface KnownService {
   uuid: string;
@@ -101,6 +110,7 @@ export const KNOWN_SERVICES: KnownService[] = [
   { uuid: NOTHING_SPP_UUID, brand: 'nothing', protocol: 'nothing-v1' },
   { uuid: HEYMELODY_SPP_UUID, brand: 'heymelody', protocol: 'heymelody' },
   { uuid: HEYMELODY_LEGACY_SPP_UUID, brand: 'heymelody', protocol: 'heymelody' },
+  { uuid: PIXELBUDS_MAESTRO_UUID, brand: 'pixelbuds', protocol: 'maestro' },
   { uuid: STANDARD_SPP_UUID, brand: 'heymelody', protocol: 'heymelody', generic: true },
 ];
 

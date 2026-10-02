@@ -18,6 +18,7 @@ import { describe, expect, it } from 'vitest';
 import {
   HEYMELODY_DRIVER,
   NOTHING_DRIVER,
+  PIXELBUDS_DRIVER,
   SENNHEISER_DRIVER,
   SONY_DRIVER,
   SOUNDCORE_DRIVER,
@@ -31,6 +32,7 @@ import { EqPreset } from '@/drivers/nothing/commands';
 import { initialSoundcoreState } from '@/drivers/soundcore/device';
 import { EQ_PRESETS } from '@/drivers/soundcore/commands';
 import { initialHeyMelodyState } from '@/drivers/heymelody/state';
+import { initialPixelBudsState } from '@/drivers/pixelbuds/state';
 import type { DeviceDriver } from '@/core/driver';
 import type { ActiveDevice } from '@/core/manager';
 import { summarise } from '@/ui/device/summary';
@@ -281,7 +283,7 @@ describe('summarise — worn', () => {
  */
 describe('summarise — cells and firmware', () => {
   const active = <TState>(
-    driver: typeof SENNHEISER_DRIVER | typeof SONY_DRIVER | typeof NOTHING_DRIVER | typeof SOUNDCORE_DRIVER | typeof HEYMELODY_DRIVER,
+    driver: typeof SENNHEISER_DRIVER | typeof SONY_DRIVER | typeof NOTHING_DRIVER | typeof SOUNDCORE_DRIVER | typeof HEYMELODY_DRIVER | typeof PIXELBUDS_DRIVER,
     state: TState,
   ): ActiveDevice => ({ id: driver.id, driver, device: {} as never, state }) as ActiveDevice;
 
@@ -410,6 +412,29 @@ describe('summarise — cells and firmware', () => {
     expect(summary.battery).toBe(30);
   });
 
+  it('maps Pixel Buds’ cells onto the short headings, charging included', () => {
+    const summary = summarise(
+      active(PIXELBUDS_DRIVER, {
+        ...initialPixelBudsState,
+        status: 'connected' as const,
+        battery: [
+          { device: 'case', level: 90, charging: false },
+          { device: 'left', level: 60, charging: true },
+          { device: 'right', level: 0, charging: false },
+        ],
+      }),
+    );
+    expect(summary.cells.map((entry) => [entry.label, entry.level, entry.charging])).toEqual([
+      ['Case', 90, false],
+      ['L', 60, true],
+      ['R', 0, false],
+    ]);
+    expect(summary.battery).toBe(0);
+    expect(summary.charging).toBe(true);
+    expect(summary.model).toBe('Pixel Buds');
+    expect(summary.hasDevice).toBe(false);
+  });
+
   it('reads the firmware each driver already holds, and null for the ones with none', () => {
     expect(summarise(sennheiser({ info: { ...initialState.info, firmware: '1.2.3' } })).firmware).toBe(
       '1.2.3',
@@ -424,6 +449,16 @@ describe('summarise — cells and firmware', () => {
     expect(
       summarise(active(SOUNDCORE_DRIVER, initialSoundcoreState)).firmware,
     ).toBeNull();
+    // Pixel Buds report one version per part; the chip shows the first the buds named.
+    expect(
+      summarise(
+        active(PIXELBUDS_DRIVER, {
+          ...initialPixelBudsState,
+          info: { model: 'Pixel Buds Pro', firmware: { case: 'c1', left: null, right: 'r1' }, serials: null },
+        }),
+      ).firmware,
+    ).toBe('r1');
+    expect(summarise(active(PIXELBUDS_DRIVER, initialPixelBudsState)).firmware).toBeNull();
     // HeyMelody reports one version per device; the chip shows the first.
     expect(
       summarise(
@@ -620,6 +655,12 @@ describe('eqPreview and connections', () => {
     expect(driver.eqPreview!(initialHeyMelodyState)).toBeNull();
   });
 
+  it('draws the Pixel Buds curve against the documented ±6 dB range, with no preset name', () => {
+    const state = { ...initialPixelBudsState, eq: [1, 0, -2, 0, 3] as [number, number, number, number, number] };
+    expect(PIXELBUDS_DRIVER.eqPreview(state)).toEqual({ preset: null, gains: [1, 0, -2, 0, 3], range: { min: -6, max: 6 } });
+    expect(PIXELBUDS_DRIVER.eqPreview(initialPixelBudsState)).toBeNull();
+  });
+
   it('leaves connections unimplemented for the drivers with no pairing table', () => {
     // Two of five drivers read no paired-device list at all; the method being
     // absent is what makes the Home tile show a plain link rather than an empty
@@ -628,6 +669,7 @@ describe('eqPreview and connections', () => {
     const asDriver = (descriptor: unknown) => descriptor as DeviceDriver<never, never>;
     expect(asDriver(NOTHING_DRIVER).connections).toBeUndefined();
     expect(asDriver(SOUNDCORE_DRIVER).connections).toBeUndefined();
+    expect(asDriver(PIXELBUDS_DRIVER).connections).toBeUndefined();
     expect(asDriver(HEYMELODY_DRIVER).connections).toBeTypeOf('function');
     expect(asDriver(SENNHEISER_DRIVER).connections).toBeTypeOf('function');
     expect(asDriver(SONY_DRIVER).connections).toBeTypeOf('function');
@@ -663,5 +705,6 @@ describe('wearCaption', () => {
     expect(asDriver(NOTHING_DRIVER).wearCaption).toBeUndefined();
     expect(asDriver(SOUNDCORE_DRIVER).wearCaption).toBeUndefined();
     expect(asDriver(HEYMELODY_DRIVER).wearCaption).toBeUndefined();
+    expect(asDriver(PIXELBUDS_DRIVER).wearCaption).toBeUndefined();
   });
 });

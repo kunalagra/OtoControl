@@ -30,6 +30,7 @@
 | **Nothing / CMF** | Ear (1)–(3), CMF Buds Pro, Headphone (a)… | ✅ Full controls incl. gestures & fit test |
 | **Soundcore** | Liberty Air 2 Pro, Space One, and more | ✅ ANC, EQ, tap customization, LDAC |
 | **OPPO / realme / OnePlus** (HeyMelody) | Enco Air series, Buds/Nord Buds, realme Buds… | 🧪 Battery, ANC, EQ — built from protocol reverse-engineering, unverified on real hardware |
+| **Google Pixel Buds** | Pixel Buds Pro, Pro 2 | 🧪 Battery, ANC, multipoint, on-head detection, EQ — built from pbpctrl and the companion app, unverified on real hardware |
 
 > [!NOTE]
 > Every model Sony's own catalog carries is recognized out of the box — its cloud catalog is the model list. Soundcore support targets the A3951 protocol family.
@@ -44,6 +45,7 @@
   * **Nothing / CMF** — ANC modes, presets + custom EQ, Advanced EQ, Dirac Opteo, bass enhance, touch assignment, low latency, find my buds, ear tip fit test
   * **Soundcore (BLE)** — battery, ANC scenes & custom transparency, 8-band custom EQ + 29 presets (incl. artist profiles), tap customization with enable/disable, wear detection, voice prompts, LDAC toggle
   * **HeyMelody (SPP)** — the shared OPPO/realme/OnePlus app: device identification via a 137-model catalog, battery, ANC modes, EQ presets with full per-band curves
+  * **Google Pixel Buds (Maestro)** — pw_rpc over HDLC on a Bluetooth Classic serial service: battery (case and each bud), noise control incl. Adaptive, multipoint, on-head detection, five-band EQ
 * **Settings snapshots** cached locally per device, so last-known state survives reloads
 * **Frame-level debug console** for capturing raw protocol frames (`localStorage["otocontrol:debug-frames"] = "1"`)
 

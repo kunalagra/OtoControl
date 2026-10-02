@@ -232,6 +232,33 @@ export function summarise(active: ActiveDevice): DeviceSummary {
     }
   }
 
+  if (active.id === 'pixelbuds') {
+    const { driver, state } = active
+    const CELL_LABEL: Record<(typeof state.battery)[number]['device'], BatteryCellSummary['label']> = {
+      left: 'L',
+      right: 'R',
+      case: 'Case',
+    }
+    const cells: BatteryCellSummary[] = state.battery.map((entry) => ({
+      label: CELL_LABEL[entry.device],
+      level: entry.level,
+      charging: entry.charging,
+    }))
+    return {
+      model: state.info.model ?? fallbackName(state.status, 'Pixel Buds'),
+      hasDevice: state.info.model !== null,
+      battery: lowest(cells),
+      charging: cells.some((entry) => entry.charging),
+      codec: driver.codecName(state),
+      detail: driver.statusLine(state),
+      artwork: driver.artwork(state),
+      worn: driver.worn(state),
+      // The hero chip has room for one version; the System page lists each part's.
+      firmware: state.info.firmware?.left ?? state.info.firmware?.right ?? state.info.firmware?.case ?? null,
+      cells,
+    }
+  }
+
   const { driver, state } = active
   return {
     model: state.info.model ?? fallbackName(state.status, 'Sennheiser headphones'),

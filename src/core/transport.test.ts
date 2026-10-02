@@ -6,6 +6,7 @@ import {
   HEYMELODY_SPP_UUID,
   KNOWN_SERVICES,
   M4_SERVICE_UUID,
+  PIXELBUDS_MAESTRO_UUID,
   PortOpenError,
   PortUnreachableError,
   SerialTransport,
@@ -63,6 +64,18 @@ describe('serviceForPort', () => {
     expect(service?.generic).toBeFalsy();
   });
 
+  it('routes the Maestro service to the Pixel Buds driver', () => {
+    const service = serviceForPort(portWith(PIXELBUDS_MAESTRO_UUID));
+    expect(service).toMatchObject({ brand: 'pixelbuds', protocol: 'maestro' });
+    expect(service?.generic).toBeFalsy();
+  });
+
+  it('does not offer the app’s legacy or byte-reversed Pixel Buds services', () => {
+    for (const uuid of ['3a046f6d-24d2-7655-6534-0d7ecb759709', 'b5f708a7-64f7-5189-4c4c-ce24f77fe925', '099775cb-7e0d-3465-5576-d2246d6f043a']) {
+      expect(serviceForPort(portWith(uuid))).toBeNull();
+    }
+  });
+
   it('routes the standard SPP service to the HeyMelody driver as a generic service', () => {
     expect(serviceForPort(portWith(STANDARD_SPP_UUID))).toMatchObject({ brand: 'heymelody', generic: true });
   });
@@ -96,7 +109,7 @@ describe('KNOWN_SERVICES', () => {
 
   it('maps every service to a brand that has artwork', () => {
     for (const { brand } of KNOWN_SERVICES) {
-      expect(['sennheiser', 'sony', 'nothing', 'heymelody']).toContain(brand);
+      expect(['sennheiser', 'sony', 'nothing', 'heymelody', 'pixelbuds']).toContain(brand);
     }
   });
 
@@ -106,6 +119,11 @@ describe('KNOWN_SERVICES', () => {
 });
 
 describe('servicesFor', () => {
+  it('resolves pixelbuds services', () => {
+    expect(servicesFor('pixelbuds')).toEqual([PIXELBUDS_MAESTRO_UUID]);
+    expect(PIXELBUDS_MAESTRO_UUID).toBe('25e97ff7-24ce-4c4c-8951-f764a708f7b5');
+  });
+
   it('resolves heymelody services', () => {
     expect(servicesFor('heymelody')).toEqual([HEYMELODY_SPP_UUID, HEYMELODY_LEGACY_SPP_UUID, STANDARD_SPP_UUID]);
   });

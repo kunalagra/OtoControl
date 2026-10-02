@@ -616,6 +616,7 @@ export const IMPLEMENTED: Record<Brand, readonly FeatureId[]> = {
     // carries the feature, so listing it here would silently claim support.
   ],
   heymelody: [F.Anc, F.Equalizer],
+  pixelbuds: [F.Anc, F.Equalizer, F.Multipoint, F.WearDetection],
 };
 
 /** The profile for a reported model string, or null when we know of no such model. */

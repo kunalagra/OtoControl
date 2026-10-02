@@ -18,6 +18,7 @@ import { RiHeadphoneLine } from '@remixicon/react'
 
 import {
   HEYMELODY_DRIVER,
+  PIXELBUDS_DRIVER,
   NOTHING_DRIVER,
   SENNHEISER_DRIVER,
   SONY_DRIVER,
@@ -36,6 +37,7 @@ type Descriptor =
   | typeof NOTHING_DRIVER
   | typeof SOUNDCORE_DRIVER
   | typeof HEYMELODY_DRIVER
+  | typeof PIXELBUDS_DRIVER
 
 const realState = (driver: Descriptor): unknown => (driver.create({}) as { state: unknown }).state
 
@@ -74,7 +76,7 @@ describe('navSections', () => {
     // the regression this pins is a driver's own list ending up ahead of it.
     // Written out rather than read off `DRIVERS`, because a driver added later
     // has to be added here too to be covered.
-    for (const driver of [SENNHEISER_DRIVER, SONY_DRIVER, NOTHING_DRIVER, SOUNDCORE_DRIVER, HEYMELODY_DRIVER]) {
+    for (const driver of [SENNHEISER_DRIVER, SONY_DRIVER, NOTHING_DRIVER, SOUNDCORE_DRIVER, HEYMELODY_DRIVER, PIXELBUDS_DRIVER]) {
       expect(idsOf(active(driver))[0]).toBe('home')
     }
   })
@@ -89,6 +91,11 @@ describe('navSections', () => {
     expect(idsOf(active(NOTHING_DRIVER))).toEqual(['home', 'sound', 'system'])
   })
 
+  it('gives Pixel Buds Home, Sound, System', () => {
+    // Noise lives on Home, and Pixel Buds declare no `devices` section.
+    expect(idsOf(active(PIXELBUDS_DRIVER))).toEqual(['home', 'sound', 'system'])
+  })
+
   it('gives a Sony without noise control Home, Sound, Devices, System', () => {
     expect(idsOf(sonyWithoutNoise())).toEqual(['home', 'sound', 'devices', 'system'])
   })
@@ -97,7 +104,7 @@ describe('navSections', () => {
     // The section still exists — the driver gates Sony's on a capability read
     // from the device, and `Home` renders it. The shell is what keeps it out of
     // the nav, and that is the rule under test here, not each driver's list.
-    for (const driver of [SENNHEISER_DRIVER, SONY_DRIVER, NOTHING_DRIVER, SOUNDCORE_DRIVER, HEYMELODY_DRIVER]) {
+    for (const driver of [SENNHEISER_DRIVER, SONY_DRIVER, NOTHING_DRIVER, SOUNDCORE_DRIVER, HEYMELODY_DRIVER, PIXELBUDS_DRIVER]) {
       expect(idsOf(active(driver))).not.toContain('noise')
     }
   })
