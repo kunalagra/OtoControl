@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import { HeyMelodyDevice } from './device';
 import { Cmd, replyFor } from './protocol/cmd';
@@ -487,7 +487,7 @@ describe('HeyMelodyDevice identity diagnostics', () => {
     const replies = new Map(FULL_REPLIES);
     replies.delete(Cmd.QueryProductId);
     replies.set(Cmd.QueryCapability, BITMAP_REPLY);
-    const device = new HeyMelodyDevice(heyMelodyOpener(replies), { timeoutMs: 50, probeTimeoutMs: 50 });
+    const device = new HeyMelodyDevice(heyMelodyOpener(replies), { timeoutMs: 50, probeTimeoutMs: 50, productIdRetryTimeoutMs: 50 });
     await device.adoptPort(port);
     expect(device.state.diagnostics.productId).toBe('no reply');
   });
@@ -505,6 +505,51 @@ describe('HeyMelodyDevice identity diagnostics', () => {
     const device = new HeyMelodyDevice(heyMelodyOpener(FULL_REPLIES), { timeoutMs: 50, probeTimeoutMs: 50 });
     await device.adoptPort(port);
     expect(device.state.diagnostics).toEqual({});
+  });
+});
+
+describe('HeyMelodyDevice slow productId', () => {
+  /** FULL_REPLIES with a bitmap, where `answer(n)` decides how the n-th 0x0103 is answered. */
+  function slowOpener(answer: (n: number) => 'drop' | 'late' | 'now'): TransportOpener {
+    const replies = new Map(FULL_REPLIES);
+    replies.set(Cmd.QueryCapability, BITMAP_REPLY);
+    return async (p, handlers) => {
+      const transport = (await heyMelodyOpener(replies)(p, handlers)) as FakeTransport;
+      const respond = transport.onWrite!;
+      const decoder = new SppFrameCodec().createDecoder();
+      let asked = 0;
+      transport.onWrite = (bytes) => {
+        const [frame] = decoder.push(bytes);
+        if (frame?.cmd !== Cmd.QueryProductId) return respond(bytes);
+        const mode = answer(++asked);
+        const reply = () => transport.receive(encodeSppFrame(replyFor(frame.cmd), frame.seq, [0x00, 0x50, 0xa8, 0x06]));
+        if (mode === 'now') queueMicrotask(reply);
+        else if (mode === 'late') setTimeout(reply, 80);
+      };
+      return transport;
+    };
+  }
+
+  it('takes a productId reply that arrives after the request timed out', async () => {
+    const device = new HeyMelodyDevice(slowOpener(() => 'late'), { timeoutMs: 50, probeTimeoutMs: 50, productIdRetryTimeoutMs: 50 });
+    await device.adoptPort(port);
+    await vi.waitFor(() => expect(device.state.info.productId).toBe('06A850'));
+    expect(device.state.info.model).toBe('OPPO Enco Buds3 Pro');
+    expect(device.state.diagnostics.productId).toBeUndefined();
+  });
+
+  it('asks again once the rest of connect is done when the first query went unanswered', async () => {
+    const device = new HeyMelodyDevice(slowOpener((n) => (n === 1 ? 'drop' : 'now')), { timeoutMs: 50, probeTimeoutMs: 50, productIdRetryTimeoutMs: 50 });
+    await device.adoptPort(port);
+    expect(device.state.info.productId).toBe('06A850');
+    expect(device.state.diagnostics.productId).toBeUndefined();
+  });
+
+  it('records no reply when neither query is answered', async () => {
+    const device = new HeyMelodyDevice(slowOpener(() => 'drop'), { timeoutMs: 50, probeTimeoutMs: 50, productIdRetryTimeoutMs: 50 });
+    await device.adoptPort(port);
+    expect(device.state.info.productId).toBeNull();
+    expect(device.state.diagnostics.productId).toBe('no reply');
   });
 });
 

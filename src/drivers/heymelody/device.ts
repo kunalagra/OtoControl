@@ -7,7 +7,7 @@
  * probing battery, ANC and EQ.
  */
 
-import { Cmd } from './protocol/cmd';
+import { Cmd, replyFor } from './protocol/cmd';
 import { decodeColourId, decodeProductId, decodeVersion } from './protocol/identity';
 import type { VersionEntry } from './protocol/identity';
 import { decodeBattery, decodeBatteryList } from './protocol/battery';
@@ -84,6 +84,13 @@ type Listener = (state: HeyMelodyState) => void;
  */
 const PROBE_TIMEOUT_MS = 400;
 
+/**
+ * How long the second productId query waits. HeyTap gives every packet 5s before retrying
+ * (`HeadsetCoreService` packet timeout), and OppoPodsManager notes some models answer
+ * `0x0103` late; it is only paid when the first query went unanswered.
+ */
+const PRODUCT_ID_RETRY_TIMEOUT_MS = 5000;
+
 /** How much of the conversation `protocolLog` keeps. */
 const PROTOCOL_LOG_MAX = 400;
 
@@ -102,6 +109,8 @@ const hex = (bytes: Uint8Array): string => Array.from(bytes, (b) => b.toString(1
 export interface HeyMelodyDeviceOptions {
   /** Injected so tests do not pay `DEFAULT_TIMEOUT_MS` per unanswered command. */
   timeoutMs?: number;
+  /** Injected so tests do not pay `PRODUCT_ID_RETRY_TIMEOUT_MS`. */
+  productIdRetryTimeoutMs?: number;
   /** Injected so tests do not pay `PROBE_TIMEOUT_MS` per unanswered probe. */
   probeTimeoutMs?: number;
 }
@@ -118,6 +127,7 @@ export class HeyMelodyDevice implements Persistable {
   readonly #session: DeviceSession<HeyMelodyClient>;
   readonly #timeoutMs?: number;
   readonly #probeTimeoutMs: number;
+  readonly #productIdRetryTimeoutMs: number;
   #refreshing = false;
   /** Last curve the device confirmed per eqId — what a failed curve write rolls back to. */
   readonly #confirmedEq = new Map<number, EqPreset>();
@@ -127,6 +137,7 @@ export class HeyMelodyDevice implements Persistable {
   constructor(openTransport: TransportOpener = openSerialTransport, options: HeyMelodyDeviceOptions = {}) {
     this.#timeoutMs = options.timeoutMs;
     this.#probeTimeoutMs = options.probeTimeoutMs ?? PROBE_TIMEOUT_MS;
+    this.#productIdRetryTimeoutMs = options.productIdRetryTimeoutMs ?? PRODUCT_ID_RETRY_TIMEOUT_MS;
     this.#store = new StateStore(
       { ...initialHeyMelodyState, status: isWebSerialSupported() ? 'disconnected' : 'unsupported' },
       stateStoreHooks,
@@ -278,7 +289,14 @@ export class HeyMelodyDevice implements Persistable {
   }
 
   #onNotification(frame: HeyMelodyFrame): void {
-    if (frame.cmd === Cmd.ActiveReport) {
+    if (frame.cmd === replyFor(Cmd.QueryProductId)) {
+      // Only reaches here when it outlived its request: some models answer 0x0103 late.
+      try {
+        this.#applyProductId(frame.payload);
+      } catch (error) {
+        console.debug('[heymelody] unreadable late productId', error);
+      }
+    } else if (frame.cmd === Cmd.ActiveReport) {
       const event = frame.payload[0];
       const list = frame.payload.subarray(1);
       try {
@@ -341,6 +359,17 @@ export class HeyMelodyDevice implements Persistable {
     const capabilities = commands ? await this.#pollReported(client, commands) : await this.#probeAll(client);
     if (this.#session.client !== client) return;
     this.#patch({ capabilities });
+    // A late reply to the first query may have landed meanwhile (`#onNotification`).
+    if (this.#store.state.info.productId === null) await this.#readProductId(client, this.#productIdRetryTimeoutMs);
+  }
+
+  /** Throws when the reply is not a usable productId. */
+  #applyProductId(payload: Uint8Array): void {
+    const { status, productId } = decodeProductId(payload);
+    if (status !== 0) throw new Error(`QueryProductId returned non-zero status ${status}`);
+    const catalog = catalogEntryFor(productId);
+    const { productId: _cleared, ...diagnostics } = this.#store.state.diagnostics;
+    this.#patch({ info: { ...this.#store.state.info, model: catalog?.name ?? null, productId, catalog }, diagnostics });
   }
 
   /** Best-effort: HeyTap sends this before asking for the productId, and nothing reads the reply. */
@@ -352,14 +381,11 @@ export class HeyMelodyDevice implements Persistable {
     }
   }
 
-  async #readProductId(client: HeyMelodyClient): Promise<boolean> {
+  async #readProductId(client: HeyMelodyClient, timeoutMs?: number): Promise<boolean> {
     let payload: Uint8Array | null = null;
     try {
-      payload = await client.request(Cmd.QueryProductId);
-      const { status, productId } = decodeProductId(payload);
-      if (status !== 0) throw new Error(`QueryProductId returned non-zero status ${status}`);
-      const catalog = catalogEntryFor(productId);
-      this.#patch({ info: { ...this.#store.state.info, model: catalog?.name ?? null, productId, catalog } });
+      payload = await client.request(Cmd.QueryProductId, [], { timeoutMs });
+      this.#applyProductId(payload);
       return true;
     } catch (error) {
       console.warn('[heymelody] QueryProductId failed', error);
