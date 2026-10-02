@@ -67,6 +67,11 @@ export interface HeyMelodyState {
   peers: PeerDevice[];
   /** Opportunistically probed — see spec §3.5 for why this replaces a bitmap parse. */
   capabilities: Set<HeyMelodyCapability>;
+  /**
+   * Why an identity read went wrong — the raw reply bytes, or `no reply` — so a
+   * tester can report it from the System tab without DevTools. Live-only.
+   */
+  diagnostics: Partial<Record<'productId' | 'version', string>>;
 }
 
 export const initialHeyMelodyState: HeyMelodyState = {
@@ -86,6 +91,7 @@ export const initialHeyMelodyState: HeyMelodyState = {
   gestures: [],
   peers: [],
   capabilities: new Set(),
+  diagnostics: {},
 };
 
 // --- persistence -----------------------------------------------------------

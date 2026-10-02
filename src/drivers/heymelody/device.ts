@@ -9,6 +9,7 @@
 
 import { Cmd } from './protocol/cmd';
 import { decodeColourId, decodeProductId, decodeVersion } from './protocol/identity';
+import type { VersionEntry } from './protocol/identity';
 import { decodeBattery, decodeBatteryList } from './protocol/battery';
 import { decodeWear, decodeWearList } from './protocol/wear';
 import { decodeAncDirectQuery, encodeSetAncMode } from './protocol/anc';
@@ -84,6 +85,8 @@ type Listener = (state: HeyMelodyState) => void;
 const PROBE_TIMEOUT_MS = 400;
 
 const NOT_HEYMELODY_ERROR = 'This does not look like a HeyMelody or realme device.';
+
+const hex = (bytes: Uint8Array): string => Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join(' ');
 
 export interface HeyMelodyDeviceOptions {
   /** Injected so tests do not pay `DEFAULT_TIMEOUT_MS` per unanswered command. */
@@ -304,14 +307,18 @@ export class HeyMelodyDevice implements Persistable {
   }
 
   async #readProductId(client: HeyMelodyClient): Promise<boolean> {
+    let payload: Uint8Array | null = null;
     try {
-      const { status, productId } = decodeProductId(await client.request(Cmd.QueryProductId));
+      payload = await client.request(Cmd.QueryProductId);
+      const { status, productId } = decodeProductId(payload);
       if (status !== 0) throw new Error(`QueryProductId returned non-zero status ${status}`);
       const catalog = catalogEntryFor(productId);
       this.#patch({ info: { ...this.#store.state.info, model: catalog?.name ?? null, productId, catalog } });
       return true;
     } catch (error) {
       console.warn('[heymelody] QueryProductId failed', error);
+      const reason = payload === null ? 'no reply' : `${payload.length >= 4 ? `status ${payload[0]}` : 'short'} · ${hex(payload)}`;
+      this.#patch({ diagnostics: { ...this.#store.state.diagnostics, productId: reason } });
       return false;
     }
   }
@@ -397,7 +404,18 @@ export class HeyMelodyDevice implements Persistable {
   }
 
   async #readVersion(client: HeyMelodyClient): Promise<void> {
-    const version = decodeVersion(await client.request(Cmd.QueryVersion, [], { timeoutMs: this.#probeTimeoutMs }));
+    const payload = await client.request(Cmd.QueryVersion, [], { timeoutMs: this.#probeTimeoutMs });
+    let version: VersionEntry[];
+    try {
+      version = decodeVersion(payload);
+    } catch (error) {
+      this.#patch({ diagnostics: { ...this.#store.state.diagnostics, version: hex(payload) } });
+      throw error;
+    }
+    // Blank or unprintable version strings: keep the bytes so the layout can be worked out.
+    if (version.some((entry) => !/^[\x21-\x7e]+$/.test(entry.version))) {
+      this.#patch({ diagnostics: { ...this.#store.state.diagnostics, version: hex(payload) } });
+    }
     this.#patch({ info: { ...this.#store.state.info, version } });
   }
 

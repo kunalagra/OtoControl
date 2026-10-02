@@ -46,6 +46,18 @@ export function HeyMelodySystem({ device, state }: Props) {
                 .join(' · ')}
             </p>
           )}
+          {state.diagnostics.productId && (
+            <p className="text-xs">
+              <span className="text-muted-foreground">Product ID reply </span>
+              <span className="font-mono select-all">{state.diagnostics.productId}</span>
+            </p>
+          )}
+          {state.diagnostics.version && (
+            <p className="text-xs">
+              <span className="text-muted-foreground">Firmware reply </span>
+              <span className="font-mono select-all break-all">{state.diagnostics.version}</span>
+            </p>
+          )}
         </CardContent>
       </Card>
 

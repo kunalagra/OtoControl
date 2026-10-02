@@ -472,6 +472,42 @@ describe('HeyMelodyDevice firmware version', () => {
   });
 });
 
+describe('HeyMelodyDevice identity diagnostics', () => {
+  it('records the raw productId reply when it does not decode', async () => {
+    const replies = new Map(FULL_REPLIES);
+    replies.set(Cmd.QueryProductId, [0x01, 0x50, 0xa8, 0x06]);
+    replies.set(Cmd.QueryCapability, BITMAP_REPLY);
+    const device = new HeyMelodyDevice(heyMelodyOpener(replies), { timeoutMs: 50, probeTimeoutMs: 50 });
+    await device.adoptPort(port);
+    expect(device.state.info.productId).toBeNull();
+    expect(device.state.diagnostics.productId).toBe('status 1 · 01 50 a8 06');
+  });
+
+  it('records an unanswered productId query', async () => {
+    const replies = new Map(FULL_REPLIES);
+    replies.delete(Cmd.QueryProductId);
+    replies.set(Cmd.QueryCapability, BITMAP_REPLY);
+    const device = new HeyMelodyDevice(heyMelodyOpener(replies), { timeoutMs: 50, probeTimeoutMs: 50 });
+    await device.adoptPort(port);
+    expect(device.state.diagnostics.productId).toBe('no reply');
+  });
+
+  it('records the raw version reply when a version string is blank', async () => {
+    const replies = new Map(FULL_REPLIES);
+    replies.set(Cmd.QueryCapability, [0x00, 0x01]);
+    replies.set(Cmd.QueryVersion, [0x00, 0x01, ...[...'1,0,'].map((c) => c.charCodeAt(0))]);
+    const device = new HeyMelodyDevice(heyMelodyOpener(replies), { timeoutMs: 50, probeTimeoutMs: 50 });
+    await device.adoptPort(port);
+    expect(device.state.diagnostics.version).toBe('00 01 31 2c 30 2c');
+  });
+
+  it('records nothing when identity reads cleanly', async () => {
+    const device = new HeyMelodyDevice(heyMelodyOpener(FULL_REPLIES), { timeoutMs: 50, probeTimeoutMs: 50 });
+    await device.adoptPort(port);
+    expect(device.state.diagnostics).toEqual({});
+  });
+});
+
 describe('HeyMelodyDevice live pushes', () => {
   it('replaces battery and wear from 0x0204 events 1 and 2', async () => {
     let transport!: FakeTransport;
