@@ -22,11 +22,19 @@ export const MsgId = {
   NoiseControls: 0x78,
   /** Write: ambient sound on/off. */
   AmbientMode: 0x80,
+  /** Push: ambient sound changed on the earbuds, `[on]`. */
+  AmbientModeUpdated: 0x81,
+  /** Write: the ambient-sound step. */
+  AmbientVolume: 0x84,
   Equalizer: 0x86,
   /** Write: tells the earbuds a companion app is running. */
   ManagerInfo: 0x88,
   LockTouchpad: 0x90,
   TouchUpdated: 0x91,
+  /** Write: what a touch-and-hold does, `[left, right]`. */
+  TouchOption: 0x92,
+  /** Write: which noise modes a long press cycles through. */
+  TouchNoiseCycle: 0x79,
   FindStart: 0xa0,
   /** Push and write: ringing stopped. */
   FindStop: 0xa1,
@@ -35,6 +43,8 @@ export const MsgId = {
   FindOnWearing: 0xa6,
   /** Write: Buds Live's ANC on/off. */
   NoiseReduction: 0x98,
+  /** Push: Buds Live's ANC changed on the earbuds, `[on]`. */
+  NoiseReductionUpdated: 0x9b,
 } as const;
 
 /**

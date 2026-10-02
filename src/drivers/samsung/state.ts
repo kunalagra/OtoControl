@@ -9,7 +9,8 @@
 
 import type { ConnectionStatus } from '@/core/connection';
 import type { Cells, Placement, TouchGestures } from './decode';
-import type { SamsungModelId } from './models';
+import type { NoiseCycle } from './commands';
+import type { SamsungModelId, TouchAction } from './models';
 
 export interface SamsungInfo {
   /** The model's display name — the field `core/manager.ts` reads generically off every driver's state. */
@@ -21,6 +22,8 @@ export interface SamsungInfo {
   revision: number | null;
   firmware: string | null;
   hardware: string | null;
+  /** The unit's colour id (`DeviceIds`), which picks its product render. */
+  colour: number | null;
 }
 
 export interface SamsungState {
@@ -37,6 +40,12 @@ export interface SamsungState {
   touchLocked: boolean | null;
   /** Per-gesture flags, kept so locking can restate them unchanged. */
   gestures: TouchGestures | null;
+  /** The ambient-sound step, zero-based, where the model has one. */
+  ambientLevel: number | null;
+  /** What a touch-and-hold does on each earbud; null for a byte in no map. */
+  hold: { left: TouchAction | null; right: TouchAction | null };
+  /** The pair of modes a long press cycles through on each earbud, where the model lets that be chosen. */
+  noiseCycle: { left: NoiseCycle | null; right: NoiseCycle | null };
   /** Live-only: resets on disconnect. */
   finding: boolean;
   /**
@@ -49,7 +58,7 @@ export interface SamsungState {
 export const initialSamsungState: SamsungState = {
   status: 'disconnected',
   error: null,
-  info: { model: null, modelId: null, sku: null, revision: null, firmware: null, hardware: null },
+  info: { model: null, modelId: null, sku: null, revision: null, firmware: null, hardware: null, colour: null },
   battery: { left: null, right: null, case: null },
   charging: { left: false, right: false, case: false },
   placement: { left: 'disconnected', right: 'disconnected' },
@@ -57,6 +66,9 @@ export const initialSamsungState: SamsungState = {
   eq: null,
   touchLocked: null,
   gestures: null,
+  ambientLevel: null,
+  hold: { left: null, right: null },
+  noiseCycle: { left: null, right: null },
   finding: false,
   diagnostics: {},
 };
@@ -71,6 +83,9 @@ export interface SamsungDurableState {
   eq: number | null;
   touchLocked: boolean | null;
   gestures: TouchGestures | null;
+  ambientLevel: number | null;
+  hold: SamsungState['hold'];
+  noiseCycle: SamsungState['noiseCycle'];
 }
 
 export const captureDurable = (state: SamsungState): SamsungDurableState => ({
@@ -79,6 +94,9 @@ export const captureDurable = (state: SamsungState): SamsungDurableState => ({
   eq: state.eq,
   touchLocked: state.touchLocked,
   gestures: state.gestures,
+  ambientLevel: state.ambientLevel,
+  hold: state.hold,
+  noiseCycle: state.noiseCycle,
 });
 
 export const applyDurable = (payload: object): Partial<SamsungState> => {
@@ -89,5 +107,8 @@ export const applyDurable = (payload: object): Partial<SamsungState> => {
     eq: snapshot.eq ?? null,
     touchLocked: snapshot.touchLocked ?? null,
     gestures: snapshot.gestures ?? null,
+    ambientLevel: snapshot.ambientLevel ?? null,
+    hold: snapshot.hold ?? initialSamsungState.hold,
+    noiseCycle: snapshot.noiseCycle ?? initialSamsungState.noiseCycle,
   };
 };

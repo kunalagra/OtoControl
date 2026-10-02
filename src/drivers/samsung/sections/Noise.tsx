@@ -1,7 +1,7 @@
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { SegmentButton } from '@/ui/controls/SegmentButton'
 import type { SamsungDevice, SamsungState } from '../device'
-import { NOISE_LABEL, noiseOptions } from '../labels'
+import { NOISE_LABEL, ambientSteps, noiseOptions } from '../labels'
 import { modelById } from '../models'
 
 interface Props {
@@ -51,6 +51,22 @@ export function SamsungNoise({ device, state }: Props) {
                 className="px-2.5 py-2"
               />
             ))}
+          </div>
+        )}
+        {model && state.ambientLevel !== null && ambientSteps(model, state.ambientLevel).length > 0 && (
+          <div className="flex flex-col gap-1.5">
+            <span className="text-muted-foreground text-xs">Ambient sound level</span>
+            <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-4">
+              {ambientSteps(model, state.ambientLevel).map((name, level) => (
+                <SegmentButton
+                  key={name}
+                  pressed={state.ambientLevel === level}
+                  disabled={disabled}
+                  onSelect={() => void device.setAmbientLevel(level)}
+                  label={name}
+                />
+              ))}
+            </div>
           </div>
         )}
         {state.noiseMode === 3 && !options.includes(3) && (

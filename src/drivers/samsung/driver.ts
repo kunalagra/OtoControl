@@ -70,7 +70,7 @@ export const SAMSUNG_DRIVER = {
     state.placement.left === 'disconnected' && state.placement.right === 'disconnected'
       ? null
       : `L ${PLACEMENT_LABEL[state.placement.left].toLowerCase()} · R ${PLACEMENT_LABEL[state.placement.right].toLowerCase()}`,
-  artwork: (_state: SamsungState) => samsungArtwork(),
+  artwork: (state: SamsungState) => samsungArtwork(state.info.modelId, state.info.colour),
   eqPresets: (device: SamsungDevice, state: SamsungState): EqPresets | null => {
     const model = modelById(state.info.modelId);
     if (!model?.eq) return null;

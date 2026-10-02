@@ -7,6 +7,7 @@ import type { SamsungDevice, SamsungState } from '../device'
 import { PLACEMENT_LABEL } from '../labels'
 import { modelById } from '../models'
 import { ProtocolLog } from './ProtocolLog'
+import { TouchControls } from './TouchControls'
 
 interface Props {
   device: SamsungDevice
@@ -90,6 +91,8 @@ export function SamsungSystem({ device, state }: Props) {
           </CardContent>
         </Card>
       )}
+
+      <TouchControls device={device} state={state} />
 
       {hasBattery && (
         <Card data-size="sm">

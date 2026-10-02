@@ -20,6 +20,28 @@ describe('crc16 (CRC-16/XMODEM)', () => {
   });
 });
 
+describe('frames MagicPodsCore carries from real Buds3 Pro sessions (`src/tests/TestsSgb.cpp`)', () => {
+  const hex = (bytes: Uint8Array): string => Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('');
+
+  it('encodes NoiseControls = adaptive to exactly the bytes a real session sent', () => {
+    // `TestChecksum2`: "fd04007803 93 b1 dd".
+    expect(hex(encodeFrame(0x78, [3]))).toBe('fd04007803' + '93b1dd');
+  });
+
+  it('encodes NoiseControls = off to the bytes `TestEncode1` expects', () => {
+    // `TestEncode1` (the leading 0 there is its unset start byte): 04 00 78 00 f0 81, then the end byte.
+    expect(hex(encodeFrame(0x78, [0])).slice(2, -2)).toBe('0400780' + '0f081');
+  });
+
+  it('decodes a real NoiseControlsUpdate push (0x77) with a valid CRC', () => {
+    // `TestAnc3`: [mode 0, wear 0x11, ...].
+    const wire = Uint8Array.from([253, 10, 0, 119, 0, 17, 1, 0, 13, 13, 1, 77, 166, 221]);
+    const [frame] = new FrameDecoder().push(wire);
+    expect(frame.id).toBe(0x77);
+    expect(frame.payload[0]).toBe(0);
+  });
+});
+
 describe('encodeFrame', () => {
   it('lays out a standard frame: FD, length LE, id, payload, CRC LE, DD', () => {
     const frame = encodeFrame(0x78, [0x01]);

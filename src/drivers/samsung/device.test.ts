@@ -101,34 +101,26 @@ describe('SamsungDevice connect', () => {
     expect(device.state.info.hardware).toBe('rev1.2');
   });
 
-  it('echoes the extended status as a response frame and announces itself, once', async () => {
+  it('sends nothing for the pushes, and no announcement either — none of the open-source clients do', async () => {
     const harness = buds({ pushes: [STATUS, extended(), extended({ 9: 4 })] });
     const device = new SamsungDevice(harness.open, OPTIONS);
     await device.adoptPort(port);
     await new Promise((resolve) => setTimeout(resolve, 5));
 
-    const echoes = harness.sent.filter((frame) => frame.id === 0x61);
-    expect(echoes).toHaveLength(2); // one per push
-    expect(echoes.every((frame) => frame.response && frame.payload.length === 1 && frame.payload[0] === 0)).toBe(true);
-    const managerInfo = harness.sent.filter((frame) => frame.id === 0x88);
-    expect(managerInfo).toHaveLength(1);
-    expect([...managerInfo[0].payload]).toEqual([1, 2, 34]);
-    expect(managerInfo[0].response).toBe(false);
+    // MagicPodsCore, GalaxyBuds-BatteryLevel, LiveBudsCli and a live Buds3 Pro session all listen without
+    // answering and the earbuds keep pushing (docs/.../samsung-driver-design.md §11.1). Only reads go out.
+    expect(ids(harness.sent).filter((id) => id !== 0x22 && id !== 0x63)).toEqual([]);
   });
 
-  it('does not echo the plain status push, which the vendor app leaves unanswered', async () => {
-    const harness = buds({ pushes: [STATUS, extended()] });
-    const device = new SamsungDevice(harness.open, OPTIONS);
-    await device.adoptPort(port);
-    expect(harness.sent.filter((frame) => frame.id === 0x60)).toEqual([]);
-  });
-
-  it('announces itself anyway when the earbuds stay quiet, and still connects', async () => {
+  it('nudges earbuds that stay quiet with GalaxyBudsClient\'s announcement, once, and still connects', async () => {
     const harness = buds();
     const device = new SamsungDevice(harness.open, OPTIONS);
     await device.adoptPort(port);
     expect(device.state.status).toBe('connected');
-    expect(ids(harness.sent)).toContain(0x88);
+    const nudges = harness.sent.filter((frame) => frame.id === 0x88);
+    expect(nudges).toHaveLength(1);
+    expect([...nudges[0].payload]).toEqual([1, 1, 34]);
+    expect(nudges[0].response).toBe(false);
   });
 
   it('reads a Buds2-era extended status that arrived before the model was known, once the SKU answers', async () => {
@@ -191,9 +183,9 @@ describe('SamsungDevice on a shared port', () => {
     return { device, harness };
   }
 
-  it('takes a Galaxy Buds+ for what answers the SKU with nothing but zeroes', async () => {
+  it('takes a Galaxy Buds+ from its ear type, since it has no SKU to answer with', async () => {
     const { device } = await handedOver({
-      pushes: [STATUS, extended({ 8: 1, 11: 4, 12: 1, 9: 2, 10: 0 })],
+      pushes: [STATUS, extended({ 1: 0, 8: 1, 11: 4, 12: 1, 9: 2, 10: 0 })],
       replies: new Map([[0x22, new Array(28).fill(0)]]),
     });
     expect(device.state.status).toBe('connected');
@@ -204,6 +196,18 @@ describe('SamsungDevice on a shared port', () => {
     expect(device.state.noiseMode).toBe(2);
   });
 
+  it('tells a Live (ear type 1) and a Pro (2) apart on the shared service without a SKU', async () => {
+    const live = await handedOver({ pushes: [extended({ 1: 1 })] });
+    expect(live.device.state.info.model).toBe('Galaxy Buds Live');
+    const pro = await handedOver({ pushes: [extended({ 1: 2 })] });
+    expect(pro.device.state.info.model).toBe('Galaxy Buds Pro');
+  });
+
+  it('prefers a SKU it recognises over the ear type', async () => {
+    const { device } = await handedOver({ pushes: [extended({ 1: 2 })], replies: new Map([[0x22, sku('SM-R180NZ')]]) });
+    expect(device.state.info.model).toBe('Galaxy Buds Live');
+  });
+
   it('reads what the earbuds sent before the driver took over', async () => {
     const { device } = await handedOver({ pushes: [STATUS], replies: new Map([[0x22, sku('SM-R190NZ')]]) });
     expect(device.state.info.model).toBe('Galaxy Buds Pro');
@@ -211,12 +215,12 @@ describe('SamsungDevice on a shared port', () => {
   });
 
   it('shows an unrecognised SKU as an unknown model rather than guessing a layout', async () => {
-    const { device } = await handedOver({ pushes: [extended()], replies: new Map([[0x22, sku('SM-R999')]]) });
+    const { device } = await handedOver({ pushes: [extended({ 1: 9 })], replies: new Map([[0x22, sku('SM-R999')]]) });
     expect(device.state.info.modelId).toBe('unknown');
   });
 
-  it('assumes no model when the SKU read is never answered', async () => {
-    const { device } = await handedOver({ pushes: [extended()] });
+  it('assumes no model when there is neither a SKU nor a known ear type', async () => {
+    const { device } = await handedOver({ pushes: [extended({ 1: 9 })] });
     expect(device.state.info.modelId).toBe('unknown');
     expect(device.state.diagnostics.sku).toBe('no reply');
   });
@@ -367,6 +371,127 @@ describe('SamsungDevice drop and disconnect', () => {
     const device = new SamsungDevice(harness.open, OPTIONS);
     await device.adoptPort(port);
     const snapshot = device.snapshot() as Record<string, unknown>;
-    expect(Object.keys(snapshot).sort()).toEqual(['eq', 'gestures', 'info', 'noiseMode', 'touchLocked']);
+    expect(Object.keys(snapshot).sort()).toEqual([
+      'ambientLevel',
+      'eq',
+      'gestures',
+      'hold',
+      'info',
+      'noiseCycle',
+      'noiseMode',
+      'touchLocked',
+    ]);
+  });
+});
+
+
+describe('SamsungDevice model from the ear type on its own service', () => {
+  it('names a Buds2 Pro (4), a Buds FE (6) and a Buds3 Pro (8) with no SKU answer', async () => {
+    for (const [earType, name] of [[4, 'Galaxy Buds2 Pro'], [6, 'Galaxy Buds FE'], [8, 'Galaxy Buds3 Pro']] as const) {
+      const device = new SamsungDevice(buds({ pushes: [extended({ 1: earType })] }).open, OPTIONS);
+      await device.adoptPort(port);
+      expect(device.state.info.model, name).toBe(name);
+    }
+  });
+
+  it('lets a recognised SKU override it', async () => {
+    const harness = buds({ pushes: [extended({ 1: 4 })], replies: new Map([[0x22, sku('SM-R177')]]) });
+    const device = new SamsungDevice(harness.open, OPTIONS);
+    await device.adoptPort(port);
+    expect(device.state.info.model).toBe('Galaxy Buds2');
+  });
+
+  it('leaves an unseen ear type unknown', async () => {
+    const device = new SamsungDevice(buds({ pushes: [extended({ 1: 5 })] }).open, OPTIONS);
+    await device.adoptPort(port);
+    expect(device.state.info.modelId).toBe('unknown');
+  });
+});
+
+describe('SamsungDevice ambient level, hold actions and noise cycle', () => {
+  const pro = (overrides: Record<number, number> = {}) =>
+    buds({
+      pushes: [extended({ 1: 4, 11: 0x23, 21: 0x35, 23: 2, 14: 0x46, 15: 0x01, ...overrides })],
+      replies: new Map([[0x22, sku('SM-R510')]]),
+      ackWrites: true,
+    });
+
+  async function connected(harness = pro()) {
+    const device = new SamsungDevice(harness.open, OPTIONS);
+    await device.adoptPort(port);
+    harness.sent.length = 0;
+    return { device, harness };
+  }
+
+  it('reads the ambient step, both hold actions, both noise cycles and the colour', async () => {
+    const { device } = await connected();
+    expect(device.state.ambientLevel).toBe(2);
+    expect(device.state.hold).toEqual({ left: 'noise', right: 'volume' });
+    expect(device.state.noiseCycle).toEqual({ left: 'ambOff', right: 'ancOff' });
+    expect(device.state.info.colour).toBe(326);
+  });
+
+  it('sets the ambient step with 0x84 and refuses one out of range', async () => {
+    const { device, harness } = await connected();
+    await device.setAmbientLevel(1);
+    expect(device.state.ambientLevel).toBe(1);
+    expect(harness.sent[0]).toMatchObject({ id: 0x84 });
+    expect([...harness.sent[0].payload]).toEqual([1]);
+    harness.sent.length = 0;
+    await device.setAmbientLevel(9);
+    expect(harness.sent).toEqual([]);
+    expect(device.state.ambientLevel).toBe(1);
+  });
+
+  it("changes one earbud's hold action and restates the other's", async () => {
+    const { device, harness } = await connected();
+    await device.setHoldAction('right', 'assistant');
+    expect(device.state.hold).toEqual({ left: 'noise', right: 'assistant' });
+    expect(harness.sent[0]).toMatchObject({ id: 0x92 });
+    expect([...harness.sent[0].payload]).toEqual([2, 1]);
+  });
+
+  it("will not guess the other earbud's action when it has not been reported", async () => {
+    const { device, harness } = await connected(buds({ pushes: [extended({ 1: 4 })], replies: new Map([[0x22, sku('SM-R510')]]), ackWrites: true }));
+    // [11] is 0, a byte in no map: the earbuds reported no hold action to restate.
+    await device.setHoldAction('left', 'volume');
+    expect(harness.sent).toEqual([]);
+    expect(device.state.error).toMatch(/current settings/);
+  });
+
+  it("changes one earbud's noise cycle with 0x79 and restates the other's", async () => {
+    const { device, harness } = await connected();
+    await device.setNoiseCycle('left', 'ancAmb');
+    expect(device.state.noiseCycle).toEqual({ left: 'ancAmb', right: 'ancOff' });
+    expect(harness.sent[0]).toMatchObject({ id: 0x79 });
+    expect([...harness.sent[0].payload]).toEqual([1, 1, 0, 1, 0, 1]);
+  });
+
+  it('offers none of it on a model that has no such control', async () => {
+    const harness = buds({ pushes: [extended({ 1: 2, 11: 0x22 })], replies: new Map([[0x22, sku('SM-R190')]]), ackWrites: true });
+    const device = new SamsungDevice(harness.open, OPTIONS);
+    await device.adoptPort(port);
+    expect(device.state.ambientLevel).toBe(0);
+    harness.sent.length = 0;
+    await device.setHoldAction('left', 'ambient');
+    expect(harness.sent).toEqual([]);
+  });
+});
+
+describe('SamsungDevice noise pushes from the earbuds', () => {
+  it('follows Buds+ ambient changes made on the earbuds (0x81) and Buds Live ANC changes (0x9B)', async () => {
+    const plus = buds({ pushes: [extended({ 1: 0, 8: 0 })], replies: new Map([[0x22, sku('SM-R175')]]) });
+    const plusDevice = new SamsungDevice(plus.open, OPTIONS);
+    await plusDevice.adoptPort(port);
+    plus.fake().receive(encodeFrame(0x81, [1]));
+    expect(plusDevice.state.noiseMode).toBe(2);
+    plus.fake().receive(encodeFrame(0x81, [0]));
+    expect(plusDevice.state.noiseMode).toBe(0);
+
+    const live = buds({ pushes: [extended({ 1: 1, 12: 0 })], replies: new Map([[0x22, sku('SM-R180')]]) });
+    const liveDevice = new SamsungDevice(live.open, OPTIONS);
+    await liveDevice.adoptPort(port);
+    live.fake().receive(encodeFrame(0x9b, [1]));
+    expect(liveDevice.state.noiseMode).toBe(1);
   });
 });
