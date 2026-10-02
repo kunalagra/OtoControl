@@ -1,12 +1,12 @@
 # Samsung Galaxy Buds driver — design
 
-Status: implemented on `feat/samsung-driver`, **not yet tested against hardware**. Everything below is read from source; the protocol log on the System tab exists so a tester can send back what the earbuds really say.
+Status: implemented, **not yet run against earbuds by us**. §11 separates what is backed by real-hardware captures and logs from what is read from code; the protocol log on the System tab exists so a tester can send back what the earbuds really say.
 
 ## 1. Scope
 
 Galaxy Buds2 and later (Buds2, 2 Pro, FE, Core, Buds3, 3 Pro, 3 FE, Buds4, 4 Pro), plus Buds+, Live, Pro and the original 2019 Buds. One driver (`drivers/samsung/`, brand `samsung`, id `samsung`), Web Serial only (Bluetooth Classic RFCOMM). No GATT path: the vendor plugin has an LE one (`rn/j.java:24-30`) but nothing here needs it.
 
-Features: battery L/R/case and charging, placement (in ear / out / in case), noise control, EQ presets, touch lock, find my earbuds, model and firmware. Deferred: touch-and-hold actions, ambient level, adaptive mode, custom EQ curves, firmware update, spatial audio, per-model artwork.
+Features: battery L/R/case and charging, placement (in ear / out / in case), noise control (off / ANC / ambient, and adaptive where the model has it), ambient-sound level, EQ presets, touch lock, touch-and-hold actions (and, on the models whose layout is verified, which two noise modes a long press cycles through), find my earbuds, model, colour and firmware, product renders. Deferred: ambient extras (voice focus, ambient during calls), custom EQ curves, the Buds3-generation noise-cycle layout, firmware update, spatial audio.
 
 ## 2. Sources, and who wins
 
@@ -43,8 +43,9 @@ The plugin's `B4A9D6A0-…` (`on/i.java:93`) is a separate Bixby audio connectio
 Chrome gives a port's service class and nothing else (`port.getInfo()`, `core/knownDevices.ts`) — no name, no address, no device-id UUID — so GBC's name and SDP-id lookups (`DeviceSpecHelper.cs`) are unavailable. The model comes in-band:
 
 - Legacy service ⇒ Galaxy Buds. No SKU read.
-- Otherwise read `DEBUG_SKU` (0x22): two 14-byte ASCII SKUs. Match by substring: `R170` Buds, `SM-R175` Buds+, `R180` Live, `R190` Pro, `R177` Buds2, `R510` Buds2 Pro, `R400N` FE, `R410` Core, `R530` Buds3, `R630` Buds3 Pro, `R420` Buds3 FE, `R540` Buds4, `R640` Buds4 Pro (GBC `Constants.cs:209-231`).
-- Buds+ has no SKU and answers with zeroes (GBC protocol notes). On the **shared** service an empty answer means Buds+. An unanswered read, or an unrecognised SKU, means *unknown*: battery, wear and find only, no controls.
+- **Ear type.** `ExtendedStatus[1]` (GBC calls it `EarType`, "unused") differs per model within a service in every capture: Buds+ 0, Live 1, Pro 2 on standard SPP; Buds2 3, Buds2 Pro 4, FE 6, Buds3 Pro 8 on the custom one (§11.2). It names the model with no extra round trip, from the very first push; only these pairs are in the table.
+- **SKU.** `DEBUG_SKU` (0x22): two 14-byte ASCII SKUs, matched by substring: `R170` Buds, `SM-R175` Buds+, `R180` Live, `R190` Pro, `R177` Buds2, `R510` Buds2 Pro, `R400N` FE, `R410` Core, `R530` Buds3, `R630` Buds3 Pro, `R420` Buds3 FE, `R540` Buds4, `R640` Buds4 Pro (GBC `Constants.cs:209-231`). Not supported by the 2019 Buds or Buds+ (GBC's own `scripts/DumpSKU.cs` refuses both). A SKU that matches wins over the ear type; an unrecognised one changes nothing.
+- A model neither names is *unknown*: battery, wear and find only, no controls.
 - Because the 0x61 layout depends on the model, the last status payloads are kept and re-read when the model becomes known.
 
 ## 5. Messages
@@ -64,14 +65,18 @@ Ids agree between GBC (`SppMessageEnums.cs`) and the plugin (`kk/f.java`, `mi/i.
 | 0xA6 / 0xA0 / 0xA1 | tx | none | find: 0xA6 where an earbud can ring while worn, else 0xA0; 0xA1 stops. 0xA1 also arrives unprompted |
 | 0x22 | req | none → 28 bytes | SKU |
 | 0x63 | req | none → `[hwL, hwR, swL(3), swR(3), touchL, touchR]` | firmware; the build id (`R510XXE0ARF4`) is reassembled client-side from date-coded bytes (GBC `DebugModeVersionDecoder.cs:38-52`) |
-| 0x88 | tx | `[1, 2, 34]` | manager info: client 1, "not a Samsung phone" 2, SDK 34 (plugin `yn/b.java:428-432`) |
+| 0x84 | tx | `[step]`, zero-based | ambient level; a Buds4 Pro's "Level 1-5" is 0-4 (GBC PR #722, hardware). Read from `ExtendedStatus[23]` (Pro and later) or `[9]` (Buds, Buds+) |
+| 0x92 | tx | `[left, right]` hold actions (+2 zero bytes on Buds4/4 Pro, per the plugin `kk/f.java:66-71`) | read from the nibbles of `[11]` (`[13]` on Buds, Buds+); byte maps per model in `TOUCH_MAPS` |
+| 0x79 | tx | `[anc, ambient, off]` flags for the left earbud then the right (one set before the model's dual-side revision) | read from `[21]`: bit 0 off, 1 ambient, 2 ANC; left = the same bits << 4. Offered for Pro, Buds2, Buds2 Pro, FE, Core only |
+| 0x81 / 0x9B | rx | `[on]` | ambient (Buds, Buds+) / ANC (Live) changed on the earbuds |
+| 0x88 | tx | `[1, 1, 34]` | manager info, GalaxyBudsClient's bytes. Sent **only** to earbuds that stay silent (§8) |
 | 0x42 Ack | rx | `[request id, …]` | answers most writes |
 
 Console on the System tab may send only reads: 0x22, 0x24, 0x26, 0x28, 0x29, 0x63.
 
 ## 6. Extended status layouts (0x61)
 
-All share the prefix `[0]rev [2]L [3]R [6]placement [7]case` (not `[7]` on the 2019 Buds). The fields this driver reads:
+All share the prefix `[0]rev [1]earType [2]L [3]R [6]placement [7]case` (no case on the 2019 Buds). The fields this driver reads:
 
 | Layout | Models | EQ | Touch lock | Noise |
 |---|---|---|---|---|
@@ -81,7 +86,16 @@ All share the prefix `[0]rev [2]L [3]R [6]placement [7]case` (not `[7]` on the 2
 | pro | Buds Pro | `[9]` | `[10]` = 1 | `[12]` mode |
 | modern | Buds2 and later | `[9]` | `[10]`: bits 0 hold, 1 triple, 2 double, 3 single, 4/5 call gestures, **7 = touch enabled** | `[12]` mode |
 
-(GBC `ExtendedStatusUpdateDecoder.cs:203-545`.) Everything is read with bounds checks: a field the buffer is too short to reach stays what it was. Fields past `[12]` vary by model and revision and are not read.
+(GBC `ExtendedStatusUpdateDecoder.cs:203-545`.) Also read, per layout (all asserted in `fixtures.test.ts`):
+
+| Field | Offset |
+|---|---|
+| hold actions, left nibble / right nibble | `[11]` (`[13]` on Buds, Buds+) |
+| ambient step | `[9]` Buds, Buds+; `[23]` Pro and later; none on Live and Buds3 |
+| colour id, int16 LE | `[14]` (`[15]` on Buds+); none on the 2019 Buds |
+| noise-cycle bits (Pro, Buds2, Buds2 Pro, FE, Core) | `[21]` |
+
+Everything is read with bounds checks: a field the buffer is too short to reach stays what it was. Fields past these vary by model and revision and are not read.
 
 ## 7. Disagreements resolved
 
@@ -98,13 +112,12 @@ All share the prefix `[0]rev [2]L [3]R [6]placement [7]case` (not `[7]` on the 2
 
 ## 8. Handshake
 
-No authentication. The earbuds push `0x60` and `0x61` on connect. The driver waits for the first `0x61` (or 1.5 s), then:
+No authentication, and nothing needs sending: the earbuds push `0x60` and `0x61` on connect and again whenever something changes, and accept settings without any prior message (§11.1). The driver therefore:
 
-1. Echoes each `0x61` as a response-type frame `[0]` (plugin `yn/b.java:392-420`; GBC's notes say the same for 0x60 too, the plugin does not — only 0x61 is echoed).
-2. Sends `0x88` manager info once per link.
-3. Reads SKU, then version.
-
-If the earbuds stay silent, manager info is sent anyway after the wait.
+1. Waits up to 1.5 s for the first `0x61`.
+2. Sends nothing in reply to any push. (An earlier version echoed `0x61` and announced itself; no open-source client does either.)
+3. Only if nothing was heard, sends `0x88` manager info once, as a nudge.
+4. Reads SKU (not on the 2019 Buds), then version.
 
 ## 9. Shared standard-SPP service (Buds+ / Live / Pro)
 
@@ -124,8 +137,69 @@ The identified driver is remembered per service (`knownDevices.identifiedDriver`
 
 ## 10. Risks and unknowns
 
-- **Never run on hardware.** The riskiest assumptions: that the earbuds push `0x60`/`0x61` unprompted (GBC relies on it); that the CRC is checked correctly on receive (a mismatch would drop every frame — the raw log still shows them); the SKU patterns; and every per-model offset in §6.
-- Buds+ identification is a default for "SKU read answered with nothing" on the shared service; a Live or Pro whose SKU read fails would be shown as unknown, not as a Buds+.
-- `0x91` (touch-updated) is ignored; lock state comes from `0x61` and the optimistic write.
-- Revision gates (`advancedLockFrom`, `lockCallsFrom`, `ringWhileWearingFrom`, `chargingFrom`) are GBC's feature-rule minimum revisions, unverified.
-- No artwork is bundled and none is fetched; every model gets the placeholder frame.
+See §11.7 for the full list of what only hardware can settle. The ones most likely to bite:
+
+- **Which RFCOMM record Chrome opens on 0x1101.** The Linux battery script finds the control channel among standard-SPP records *by service name* (`GEARMANAGER`), so Buds+/Live/Pro may expose more than one record with that class, and Web Serial picks by class id.
+- Buds+/Live/Pro frames were captured at one revision each; other revisions may add or move fields past the ones read.
+- Revision gates are GalaxyBudsClient's feature-rule minimum revisions.
+- Buds3 and later: only one capture (Buds3 Pro); Buds4, Core, Buds3, Buds3 FE are the layout and nothing else.
+- Product renders exist only for models Samsung still sells (§12).
+
+## 11. Verification evidence
+
+Labelled **[hw]** real-hardware capture or log, **[prod]** shipping software whose users exercise it on hardware, **[code]** read from source only.
+
+### 11.1 Do the earbuds push 0x60/0x61 unprompted, and is a reply or manager-info needed? — **verified**
+- [hw] GalaxyBuds-BatteryLevel (`buds_battery.py`) connects the RFCOMM channel and only reads; it prints battery and wear and, with `--monitor`, every later change. Its README lists Buds, Buds+, Live and Pro; GBC issue #8 shows its monitor output from real Buds+ and thread comments by the maintainer: "the Buds send status updates regularly to the client… Actively sending update requests is not necessary". https://github.com/ThePBone/GalaxyBuds-BatteryLevel/blob/master/buds_battery.py · https://github.com/timschneeb/GalaxyBudsClient/issues/8#issuecomment-653755066
+- [hw] GalaxyBuds-rs `examples/receive.rs` (Buds+/Live/Pro/Buds2 Pro/Buds3 Pro model list) and its CLI LiveBudsCli (211 stars) connect and read with no handshake. https://github.com/JojiiOfficial/GalaxyBuds-rs · https://github.com/JojiiOfficial/LiveBudsCli
+- [prod] MagicPodsCore opens the channel for every model and decodes the pushes for battery and ANC; it never sends manager info and never echoes (no `MANAGER_INFO` anywhere in `src/sdk/sgb`, `src/device`). https://github.com/steam3d/MagicPodsCore
+- [hw] omarchy-buds' notes record a live SPP session against a Buds3 Pro that round-tripped `anc:anc / anc:off / anc:adaptive` through the same push-only channel. https://github.com/jzuijlek/omarchy-buds/blob/main/knowledge/spp-protocol.md
+- [hw] gnome-shell-extension-anc (Buds FE tested): "on connect the buds push EXTENDED_STATUS_UPDATED"; a SET that changes something is answered by an ack, a no-op SET by a fresh `0x61` + `0x77` instead — so the client must not treat a missing ack as failure (it does not). https://github.com/snizovtsev/gnome-shell-extension-anc
+- [code] The vendor plugin does echo `0x61` and send an init burst (`yn/b.java:392-441`); GBC replies manager info. Neither is needed for the pushes to continue, so the driver sends neither in the normal path.
+
+**Result: corrected.** The first version echoed `0x61` and sent manager info on every connect; now nothing goes out unless the earbuds are silent.
+
+### 11.2 Extended-status layouts per model and revision — **verified for seven models at one revision each**
+- [hw] GBC keeps one real capture per model as test fixtures, with the decoded values its tests expect: Buds rev 3, Buds+ rev 13, Live rev 9, Pro rev 10, Buds2 rev 10, Buds2 Pro rev 13, FE rev 2. https://github.com/timschneeb/GalaxyBudsClient/tree/master/GalaxyBudsClient.Tests/TestData/ExtendedStatusUpdate · tests under `GalaxyBudsClient.Tests/<Model>/ExtendedStatusUpdateTests.cs`
+- [hw] A Buds3 Pro rev 2 frame, in MagicPodsCore's `TestsSgb.cpp` (`TestExtract1`, `TestAnc1`–`TestAnc3`, `TestChecksum1`, `TestChecksum2`, `TestEncode1`) and read by omarchy-buds' live session.
+- `drivers/samsung/fixtures.test.ts` embeds all eight and asserts, through the real deframer, every field the driver reads: battery L/R/case, placement, EQ, lock (including per-gesture bits), noise mode, ambient level, both hold actions, colour, both noise cycles. **Every offset in §6 matched on first run.** Notable confirmations: lock is `!bit 7` on Buds2-era (`0x3f` → locked, `0xbf` → unlocked); ANC mode at `[12]` (Buds3 Pro `[12]=2` → ambient in `TestAnc1`); colour ids 260/279/298/316/326/330/340 match the units; case byte 101 (Buds+) and 0 (FE) are "no reading".
+- [prod] Charging offsets in `0x61` (`[36]` Buds2 ≥ rev 10, `[43]` Buds2 Pro ≥ rev 11 / FE / Core, `[42]` Buds3 and later) and `0x60[7]` for Buds2 and later are MagicPodsCore's `GalaxyBudsBatteryWatcher.cpp`. The driver reads `0x60[7]`.
+- **Corrected:** a battery byte of 0 is now "unknown" (FE capture's case, MagicPodsCore's `Disconnected`), as is ≥101.
+- **Correction to GBC's own spec table:** the Buds3 Pro capture has ambient level 4 where GBC's `MaximumAmbientVolume` says 2; Buds4 Pro is 0-4 (GBC PR #722). The driver allows the step the earbuds report above the table's top.
+- **Still unverified:** other revisions of each model; Buds4, Core, Buds3, Buds3 FE (no capture, layout assumed identical to the Buds3 Pro's); anything past the fields read.
+
+### 11.3 DEBUG_SKU and identifying a model on the shared port — **partly verified; mitigated**
+- [code] 2 × 14 ASCII bytes: GBC `DebugSkuDecoder.cs` and, independently, GalaxyBuds-rs `src/message/debug.rs` (`Sku::new`: 0..14, 14..28). No capture of a reply was found.
+- [code] GBC's `scripts/DumpSKU.cs` refuses Buds and Buds+ ("Unsupported device"); its protocol notes say a Buds+ returns zero-data "most of the time". PR #537 notes the hidden-command interface was "only tested on the Buds Pro".
+- [hw] The ear-type byte (§4) is in every capture and differs per model, so identification no longer depends on the SKU read. The empty-SKU-means-Buds+ rule from the first version is gone.
+- **Corrected:** model comes from SKU if it matches, else ear type (shared: 0/1/2, custom: 3/4/6/8), else unknown.
+- **Still unverified:** the SKU reply bytes on any model; ear types of Buds2 FE-era siblings (Core, Buds3, Buds3 FE, Buds4, Buds4 Pro).
+
+### 11.4 CRC on receive — **verified valid on all real frames; strict check kept**
+- Every capture above (eight real frames, flag bytes `0x10`, `0x0c`, `0x00`, one legacy) passes CRC-16/XMODEM, low byte first, in this driver's deframer; so does MagicPodsCore's `TestChecksum1` (`CRC(frame minus SOM/header/EOM) == 0`). MagicPodsCore, GBC and gnome-shell-extension-anc all drop frames with a bad CRC in production without trouble. The plugin merely does not check.
+- The header's flag bits are inconsistent between captures (`0x10`, `0x0c`, `0x00`, and `0xC0` in `TestAnc1`), so nothing depends on them; only the low 10 bits of the length are read.
+- **Result: verified; no leniency added.** A bad-CRC frame is dropped, and the raw log still shows its bytes.
+
+### 11.5 Find: 0xA6 vs 0xA0 per model — **unverifiable without hardware**
+- [prod] 0xA0 (`FIND_MY_EARBUDS_START`) is what GalaxyBuds-rs/LiveBudsCli (Buds+, Live, Pro, Buds2 Pro) and Gadgetbridge send. https://github.com/JojiiOfficial/GalaxyBuds-rs/blob/main/examples/find_my_buds.rs
+- [code] 0xA6 is `FIND_MY_EARBUDS_ON_WEARING_START`; GBC picks it when the model has `FmgRingWhileWearing` (Buds2 ≥ rev 9, Buds2 Pro ≥ rev 4, FE and later always), the Buds4 plugin always sends it (`zo/i.java:116`, `(byte)-90`). The notes' "0xA2" was an arithmetic slip (§7).
+- Kept as is. If a modern model ignores 0xA6, 0xA0 is the fallback to try.
+
+### 11.6 Other cross-checks
+- Noise modes per model: MagicPodsCore `GetAncModesFor` (Buds3: off/ANC only; Buds Pro, 2, 2 Pro, FE, Core, 3 FE: off/ambient/ANC; Buds3 Pro, 4, 4 Pro: plus adaptive) — [prod], and adaptive on a Buds3 Pro by omarchy-buds [hw]. MelodyLink's catalog lists Buds3 as off/ANC too. Buds Live's ANC switch is `0x98` (GBC, Gadgetbridge, orbitBluetooth), not `0x78` — MagicPodsCore disabled Live because it used the wrong id.
+- Touch-hold byte maps: read back from all seven captures (Volume 2 on Buds, Ambient 2 on Buds+, ANC 2 on Live, "switch noise control" 2 on Pro/Buds2/Buds2 Pro, Volume 3 on FE). The **Buds4 plugin numbers actions differently** (`fn/g.java:184-270`: volume 6, digital assistant 3), so Buds4 and 4 Pro offer only the two that agree and write four bytes.
+- Noise-cycle bits `[21]`: verified on Pro, Buds2, Buds2 Pro, FE captures. GBC's Buds3-generation encoder (`AmbOff => [0 + 4]`) looks unfinished, and a Buds3 Pro capture reads `0xDD`, which the classic bits decode ambiguously — **not offered** there.
+
+### 11.7 What only hardware can settle
+- Whether Chrome's Web Serial reaches the control record on Buds+/Live/Pro (see §10).
+- Hold-action and noise-cycle **writes** (`0x92`, `0x79`) and the ambient-level write (`0x84`): reads are verified, writes are GBC's bytes and the plugin's.
+- 0xA6 vs 0xA0 per model.
+- The SKU reply bytes, and the ear type of models never captured.
+- Revisions other than the captured ones; Buds4, Core, Buds3, Buds3 FE.
+- Which models stop pushing if a write arrives first (none reported).
+
+## 12. Product renders
+
+`scripts/gen-samsung-images.py` reads Samsung's storefront listing pages (US, UK, IN, DE, FR, AU, SG, AE) and keeps every gallery image whose path carries a Galaxy Buds SKU (`sm-r<model>nz<colour>a…`), keyed by model and the SKU's colour letter, with Samsung's own product slugs naming the finish where they can (`…-pink-gold-…-sm-r640nzd…`). Output: `images.generated.ts`, plain `images.samsung.com` URLs (650×519 transparent PNG), no credentials, no runtime vendor call. `colours.ts` maps the colour id the earbuds report (GBC `DeviceIds`) to a finish, with synonym groups (Apricot = "pink gold", Silver ≈ gray), and `samsungArtwork` falls back to the model's first render, then to the placeholder.
+
+Coverage today: Buds3, Buds3 FE, Buds3 Pro, Buds4, Buds4 Pro, Buds Core. Samsung has delisted the product pages for Buds, Buds+, Live, Pro, Buds2, Buds2 Pro and FE (404), the archive copies load their images by script, and Samsung's product-search API refuses anonymous clients; those models show the placeholder. `docs/reference/samsung-images-extra.json` (optional, `{ "<modelId>": "<url>" | { "<colour>": "<url>" } }`) is merged over the scraped set the next time the script runs, for anyone who has a legitimate source.

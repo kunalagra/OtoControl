@@ -6,8 +6,8 @@
 
 import { MsgId } from './ids';
 import type { TouchGestures } from './decode';
-import type { SamsungModel } from './models';
-import { atLeast } from './models';
+import type { SamsungModel, TouchAction } from './models';
+import { TOUCH_MAPS, atLeast } from './models';
 
 export interface Command {
   id: number;
@@ -21,7 +21,7 @@ export const NoiseMode = { Off: 0, Anc: 1, Ambient: 2, Adaptive: 3 } as const;
 export function noiseCommand(model: SamsungModel, mode: number): Command | null {
   switch (model.noise) {
     case 'modes':
-      return { id: MsgId.NoiseControls, payload: [mode] };
+      return model.noiseModes.includes(mode) ? { id: MsgId.NoiseControls, payload: [mode] } : null;
     case 'anc':
       return mode === NoiseMode.Off || mode === NoiseMode.Anc
         ? { id: MsgId.NoiseReduction, payload: [mode === NoiseMode.Anc ? 1 : 0] }
@@ -84,8 +84,59 @@ export function findCommand(model: SamsungModel, revision: number | null, start:
 }
 
 /**
- * Tells the earbuds a companion app is here: `[client type 1, is-Samsung-phone
- * 1 or 2, Android SDK]`. A browser is not a Samsung phone, and has no SDK;
- * 34 (Android 14) is what the open-source client sends.
+ * Tells the earbuds a companion app is here: `[client type 1, phone maker, Android
+ * SDK]`, byte for byte what GalaxyBudsClient sends (`ManagerInfoEncoder.cs`:
+ * maker 1 is "Samsung", 2 "other"; SDK 34 is Android 14). Only a nudge here —
+ * MagicPodsCore, GalaxyBuds-BatteryLevel and LiveBudsCli never send it and the
+ * earbuds still push and accept every setting.
  */
-export const managerInfoCommand = (): Command => ({ id: MsgId.ManagerInfo, payload: [1, 2, 34] });
+export const managerInfoCommand = (): Command => ({ id: MsgId.ManagerInfo, payload: [1, 1, 34] });
+
+/**
+ * Sets the ambient-sound step on 0x84, zero-based (a Buds4 Pro's "Level 1-5" is
+ * 0-4: GalaxyBudsClient PR #722, tested on hardware). `reported` is the step
+ * the earbuds last said they were on, which may sit above the table's top — an
+ * extra-loud Buds2 Pro reads 3 where the table says 2 — and is allowed.
+ */
+export function ambientLevelCommand(model: SamsungModel, level: number, reported: number | null): Command | null {
+  if (model.ambientMax === null || !Number.isInteger(level) || level < 0) return null;
+  if (level > Math.max(model.ambientMax, reported ?? 0)) return null;
+  return { id: MsgId.AmbientVolume, payload: [level] };
+}
+
+/** The wire byte for an action in a model's map, or null if the model offers no such action. */
+function holdByte(model: SamsungModel, action: TouchAction): number | null {
+  if (model.touchMap === null || !model.holdActions.includes(action)) return null;
+  const entry = Object.entries(TOUCH_MAPS[model.touchMap]).find(([, value]) => value === action);
+  return entry ? Number(entry[0]) : null;
+}
+
+/**
+ * Sets what a touch-and-hold does on each earbud: `[left, right]` on 0x92
+ * (GalaxyBudsClient `SetTouchOptionsEncoder.cs`), padded with the two
+ * digital-assistant bytes where the Buds4 plugin sends four (`kk/f.java:66-71`).
+ */
+export function touchOptionCommand(model: SamsungModel, left: TouchAction, right: TouchAction): Command | null {
+  const l = holdByte(model, left);
+  const r = holdByte(model, right);
+  if (l === null || r === null) return null;
+  return { id: MsgId.TouchOption, payload: [l, r, ...new Array<number>(model.holdWritePad).fill(0)] };
+}
+
+/** Which two noise modes a long press toggles between: ANC and off, ambient and off, or ANC and ambient. */
+export type NoiseCycle = 'ancOff' | 'ambOff' | 'ancAmb';
+
+/** `[anc, ambient, off]` flags per earbud (`TouchAndHoldNoiseControlsEncoder.cs`, the layout before the Buds3 generation). */
+const CYCLE_FLAGS: Record<NoiseCycle, number[]> = { ancOff: [1, 0, 1], ambOff: [0, 1, 1], ancAmb: [1, 1, 0] };
+
+/**
+ * Chooses the pair of noise modes a long press cycles through, on 0x79: the
+ * left earbud's flags then the right's, or just one set on a model and revision
+ * that share one setting. Not offered for the Buds3 generation, whose layout
+ * the open-source client leaves half done.
+ */
+export function noiseCycleCommand(model: SamsungModel, revision: number | null, left: NoiseCycle, right: NoiseCycle): Command | null {
+  if (!model.noiseCycle) return null;
+  const dual = atLeast(model.noiseCycle.dualSideFrom, revision);
+  return { id: MsgId.TouchNoiseCycle, payload: dual ? [...CYCLE_FLAGS[left], ...CYCLE_FLAGS[right]] : [...CYCLE_FLAGS[right]] };
+}

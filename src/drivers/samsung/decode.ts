@@ -36,8 +36,20 @@ export interface StatusUpdate {
   charging: Cells<boolean> | null;
 }
 
+/** Which of off / ambient / ANC / adaptive an earbud's noise-control long press cycles through. */
+export interface NoiseSet {
+  off: boolean;
+  ambient: boolean;
+  anc: boolean;
+  adaptive: boolean;
+}
+
 export interface ExtendedUpdate {
   revision: number;
+  /** `[1]`: told apart per model within a family — see `SamsungModel.earType`. */
+  earType: number;
+  /** The unit's colour id (a `DeviceIds` value, read from the left earbud), or null when absent. */
+  colour: number | null;
   battery: Cells<number | null>;
   placement: { left: Placement; right: Placement };
   /** 0 off/normal, 1-5 the built-in presets, 6 a custom curve. */
@@ -46,13 +58,24 @@ export interface ExtendedUpdate {
   gestures: TouchGestures | null;
   /** 0 off, 1 ANC, 2 ambient, 3 adaptive. */
   noiseMode: number | null;
+  /** The ambient-sound step (0 is the quietest), where the model has one. */
+  ambientLevel: number | null;
+  /** The raw touch-and-hold action byte per earbud; `TOUCH_MAPS` says what it means for a model. */
+  touchOptions: { left: number; right: number } | null;
+  /** The modes the noise-control long press cycles through, per earbud, where the model lets that be chosen. */
+  noiseTouch: { left: NoiseSet; right: NoiseSet } | null;
 }
 
 const PLACEMENTS: Placement[] = ['disconnected', 'wearing', 'idle', 'case', 'closedCase'];
 const placementOf = (nibble: number): Placement => PLACEMENTS[nibble] ?? 'disconnected';
 
+/**
+ * 101 and up mean "unknown" (a case reads 101 or 255 when it has not been heard
+ * from); so does 0, which the captured Buds FE sends for a case it cannot see
+ * and MagicPodsCore treats as "disconnected" for any cell.
+ */
 const percent = (value: number | undefined): number | null =>
-  value === undefined || value > 100 ? null : value;
+  value === undefined || value === 0 || value > 100 ? null : value;
 
 /** The 2019 Buds' wear byte: 0x10 is the left bud, 0x01 the right. */
 function legacyPlacement(wear: number | undefined): StatusUpdate['placement'] {
@@ -100,15 +123,34 @@ interface Offsets {
   eq: number;
   lock: number;
   noise: number | null;
+  /** The two nibbles holding the left and right hold actions. */
+  touch: number;
+  /** The ambient step, where there is one (none on the Live). */
+  ambient: number | null;
+  /** The int16 colour id, little-endian; none on the 2019 Buds. */
+  colour: number | null;
 }
 
+/**
+ * Every offset below is read back by `fixtures.test.ts` from a real capture of
+ * that layout (Buds, Buds+, Live, Pro, Buds2, Buds2 Pro, FE) except `modern`'s
+ * Buds3-and-later column, which one Buds3 Pro capture covers.
+ */
 const OFFSETS: Record<StatusLayout, Offsets> = {
-  legacy: { eq: 11, lock: 12, noise: 7 },
-  plus: { eq: 11, lock: 12, noise: 8 },
-  live: { eq: 9, lock: 10, noise: 12 },
-  pro: { eq: 9, lock: 10, noise: 12 },
-  modern: { eq: 9, lock: 10, noise: 12 },
+  legacy: { eq: 11, lock: 12, noise: 7, touch: 13, ambient: 9, colour: null },
+  plus: { eq: 11, lock: 12, noise: 8, touch: 13, ambient: 9, colour: 15 },
+  live: { eq: 9, lock: 10, noise: 12, touch: 11, ambient: null, colour: 14 },
+  pro: { eq: 9, lock: 10, noise: 12, touch: 11, ambient: 23, colour: 14 },
+  modern: { eq: 9, lock: 10, noise: 12, touch: 11, ambient: 23, colour: 14 },
 };
+
+/** The noise-control long-press byte: bit 0 off, 1 ambient, 2 ANC for the right earbud, the same bits shifted by 4 for the left. */
+const noiseSet = (byte: number, shift: number): NoiseSet => ({
+  off: (byte >> shift & 0x01) !== 0,
+  ambient: (byte >> shift & 0x02) !== 0,
+  anc: (byte >> shift & 0x04) !== 0,
+  adaptive: false,
+});
 
 /** `ExtendedStatus` (0x61): the battery prefix, then the layout's settings. Null when too short to be one. */
 export function decodeExtended(payload: Uint8Array, model: SamsungModel): ExtendedUpdate | null {
@@ -159,7 +201,40 @@ export function decodeExtended(payload: Uint8Array, model: SamsungModel): Extend
     else if (model.noise === 'modes') noiseMode = noiseByte;
   }
 
-  return { ...base, battery, placement, eq, touchLocked, gestures, noiseMode };
+  const ambientByte = offsets.ambient === null || model.ambientMax === null ? undefined : at(offsets.ambient);
+
+  const touchByte = model.touchMap === null ? undefined : at(offsets.touch);
+  const touchOptions = touchByte === undefined ? null : { left: touchByte >> 4, right: touchByte & 0x0f };
+
+  let colour: number | null = null;
+  if (offsets.colour !== null && payload.length >= offsets.colour + 2) {
+    colour = payload[offsets.colour] | (payload[offsets.colour + 1] << 8);
+    if (colour === 0) colour = null;
+  }
+
+  let noiseTouch: ExtendedUpdate['noiseTouch'] = null;
+  const cycleByte = model.noiseCycle ? at(21) : undefined;
+  if (model.noiseCycle && cycleByte !== undefined) {
+    const right = noiseSet(cycleByte, 0);
+    // Before the revision that gave the left earbud a setting of its own, one setting covers both.
+    const sharedSide = model.noiseCycle.dualSideFrom !== null && payload[0] < model.noiseCycle.dualSideFrom;
+    noiseTouch = { right, left: sharedSide ? right : noiseSet(cycleByte, 4) };
+  }
+
+  return {
+    ...base,
+    earType: payload[1],
+    colour,
+    battery,
+    placement,
+    eq,
+    touchLocked,
+    gestures,
+    noiseMode,
+    ambientLevel: ambientByte ?? null,
+    touchOptions,
+    noiseTouch,
+  };
 }
 
 /** `NoiseControlsUpdate` (0x77): `[mode, wear?]`. */

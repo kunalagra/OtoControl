@@ -14,13 +14,23 @@
  */
 
 import { decodeAck, decodeExtended, decodeNoiseUpdate, decodeSku, decodeStatus, decodeVersion } from './decode';
+import type { NoiseSet } from './decode';
 import { MsgId, QUERY_IDS } from './ids';
-import { equalizerCommand, findCommand, managerInfoCommand, noiseCommand, touchLockCommand } from './commands';
-import type { Command } from './commands';
+import {
+  ambientLevelCommand,
+  equalizerCommand,
+  findCommand,
+  managerInfoCommand,
+  noiseCommand,
+  noiseCycleCommand,
+  touchLockCommand,
+  touchOptionCommand,
+} from './commands';
+import type { Command, NoiseCycle } from './commands';
 import { SamsungClient, SamsungUnansweredError } from './client';
 import type { FrameVariant, SamsungFrame } from './frame';
-import { UNKNOWN_MODERN, modelById, modelForSku } from './models';
-import type { SamsungModel } from './models';
+import { TOUCH_MAPS, UNKNOWN_MODERN, modelById, modelForEarType, modelForSku } from './models';
+import type { ModelFamily, SamsungModel, TouchAction } from './models';
 import {
   SAMSUNG_SNAPSHOT_VERSION,
   applyDurable,
@@ -67,6 +77,9 @@ const PROBE_TIMEOUT_MS = 1200;
  */
 export type ServiceKind = 'legacy' | 'shared' | 'modern';
 
+/** How a model was learned, weakest first: guessed from the service, named by the ear type, or by the SKU. */
+type ModelSource = 'assumed' | 'earType' | 'sku';
+
 export interface SamsungDeviceOptions {
   /** Injected so tests do not pay `DEFAULT_TIMEOUT_MS` per unanswered request. */
   timeoutMs?: number;
@@ -82,6 +95,8 @@ const stateStoreHooks: StateStoreHooks<SamsungState> = {
   capture: captureDurable,
   apply: (_state, payload) => applyDurable(payload),
 };
+
+const FAMILY: Record<ServiceKind, ModelFamily> = { legacy: 'legacy', shared: 'shared', modern: 'modern' };
 
 /** The model to assume until the SKU says otherwise. */
 const assumedModel = (kind: ServiceKind): SamsungModel =>
@@ -99,8 +114,9 @@ export class SamsungDevice implements Persistable {
   /** The last payloads, so a model learned late can re-read what arrived before it was known. */
   #lastStatus: Uint8Array | null = null;
   #lastExtended: Uint8Array | null = null;
-  #managerInfoSent = false;
   #firstStatus: (() => void) | null = null;
+  /** Where the current model came from; a stronger source replaces a weaker one, never the reverse. */
+  #modelSource: ModelSource | null = null;
 
   constructor(openTransport: TransportOpener = openSerialTransport, options: SamsungDeviceOptions = {}) {
     this.#timeoutMs = options.timeoutMs;
@@ -115,7 +131,7 @@ export class SamsungDevice implements Persistable {
       createClient: (transport) => new SamsungClient(transport, { timeoutMs: this.#timeoutMs, variant: this.#variant }),
       handleData: (client, chunk) => client.handleData(chunk),
       wire: (client) => {
-        client.onNotification((frame) => this.#onFrame(frame, client));
+        client.onNotification((frame) => this.#onFrame(frame));
         this.#log.append('connect');
         client.onRaw((bytes, direction) => this.#log.append(direction, bytes));
       },
@@ -213,10 +229,12 @@ export class SamsungDevice implements Persistable {
         this.#patch({ finding: false, diagnostics: {} });
         const assumed = assumedModel(this.#kind);
         // A cached model from a previous link is kept until the SKU answers, unless the service itself names one.
-        if (this.#kind === 'legacy' || this.#store.state.info.modelId === null) this.#setModel(assumed);
-        await this.#awaitFirstStatus();
+        if (this.#kind === 'legacy' || this.#store.state.info.modelId === null) this.#setModel(assumed, 'assumed');
+        const heard = await this.#awaitFirstStatus();
         if (this.#session.client !== client) return;
-        await this.#sendManagerInfo(client);
+        // Earbuds that push their state unprompted — every open-source client relies on it — need nothing sent.
+        // Ones that stay quiet are nudged once, with the announcement GalaxyBudsClient opens with.
+        if (!heard) await this.#nudge(client);
         await this.refresh();
       });
     } catch (error) {
@@ -227,28 +245,26 @@ export class SamsungDevice implements Persistable {
   #resetLink(): void {
     this.#lastStatus = null;
     this.#lastExtended = null;
-    this.#managerInfoSent = false;
     this.#firstStatus = null;
+    this.#modelSource = null;
   }
 
-  /** Resolves on the first extended-status push, or after `statusWaitMs`, whichever is first. */
-  #awaitFirstStatus(): Promise<void> {
-    if (this.#lastExtended) return Promise.resolve();
-    return new Promise<void>((resolve) => {
-      const done = (): void => {
+  /** Resolves true on the first extended-status push, or false after `statusWaitMs` without one. */
+  #awaitFirstStatus(): Promise<boolean> {
+    if (this.#lastExtended) return Promise.resolve(true);
+    return new Promise<boolean>((resolve) => {
+      const finish = (heard: boolean): void => {
         clearTimeout(timer);
         this.#firstStatus = null;
-        resolve();
+        resolve(heard);
       };
-      const timer = setTimeout(done, this.#statusWaitMs);
-      this.#firstStatus = done;
+      const timer = setTimeout(() => finish(false), this.#statusWaitMs);
+      this.#firstStatus = () => finish(true);
     });
   }
 
-  /** Once per link: tell the earbuds a companion app is running. */
-  async #sendManagerInfo(client: SamsungClient): Promise<void> {
-    if (this.#managerInfoSent) return;
-    this.#managerInfoSent = true;
+  /** Announces a companion app to earbuds that have said nothing — a last resort, not part of the normal handshake. */
+  async #nudge(client: SamsungClient): Promise<void> {
     const { id, payload } = managerInfoCommand();
     await client.send(id, payload).catch((error) => console.debug('[samsung] manager info not sent', error));
   }
@@ -274,14 +290,14 @@ export class SamsungDevice implements Persistable {
     const { left, right } = decodeSku(payload);
     const sku = left || right;
     const matched = sku ? modelForSku(sku) : null;
-    // A Buds+ answers with nothing but zeroes; a Live or Pro with a SKU. So on the shared service an empty
-    // answer is a Buds+, and an unrecognised one is a model this table lacks — shown, but with no controls.
-    const model = matched ?? (this.#kind === 'shared' && !sku ? modelById('budsPlus') : null) ?? UNKNOWN_MODERN;
     if (!matched) {
+      // A Buds+ has no SKU to give (its read comes back all zeroes); anything else unrecognised is a model this
+      // table lacks. Either way the ear type may already have named it, so this only records why.
       this.#patch({ diagnostics: { ...this.#store.state.diagnostics, sku: sku ? `unrecognised SKU ${sku}` : `empty · ${hex(payload)}` } });
     }
     this.#patch({ info: { ...this.#store.state.info, sku: sku || null } });
-    this.#setModel(model);
+    if (matched) this.#setModel(matched, 'sku');
+    else if (this.#modelSource === null || this.#modelSource === 'assumed') this.#setModel(UNKNOWN_MODERN, 'assumed');
   }
 
   async #readVersion(client: SamsungClient): Promise<void> {
@@ -306,8 +322,11 @@ export class SamsungDevice implements Persistable {
     return modelById(this.#store.state.info.modelId) ?? assumedModel(this.#kind);
   }
 
-  #setModel(model: SamsungModel): void {
+  #setModel(model: SamsungModel, source: ModelSource): void {
     const info = this.#store.state.info;
+    if (this.#modelSource === 'sku' && source !== 'sku') return;
+    if (this.#modelSource === 'earType' && source === 'assumed') return;
+    this.#modelSource = source;
     if (info.modelId === model.id && info.model === model.name) return;
     this.#patch({ info: { ...info, modelId: model.id, model: model.name } });
     // What arrived before the model was known was read with the wrong layout.
@@ -315,7 +334,7 @@ export class SamsungDevice implements Persistable {
     if (this.#lastExtended) this.#applyExtended(this.#lastExtended);
   }
 
-  #onFrame(frame: SamsungFrame, client: SamsungClient): void {
+  #onFrame(frame: SamsungFrame): void {
     try {
       switch (frame.id) {
         case MsgId.Status:
@@ -325,9 +344,7 @@ export class SamsungDevice implements Persistable {
         case MsgId.ExtendedStatus:
           this.#lastExtended = frame.payload;
           this.#applyExtended(frame.payload);
-          // The earbuds expect their push acknowledged, then a companion app to announce itself.
-          void client.send(MsgId.ExtendedStatus, [0], { response: true }).catch(() => undefined);
-          void this.#sendManagerInfo(client);
+          // Nothing is sent back for the push: none of the open-source clients answer it, and the earbuds keep pushing.
           this.#firstStatus?.();
           break;
         case MsgId.NoiseControlsUpdate: {
@@ -335,6 +352,12 @@ export class SamsungDevice implements Persistable {
           if (mode !== null) this.#patch({ noiseMode: mode });
           break;
         }
+        case MsgId.AmbientModeUpdated:
+          if (this.#model().noise === 'ambient' && frame.payload.length > 0) this.#patch({ noiseMode: frame.payload[0] ? 2 : 0 });
+          break;
+        case MsgId.NoiseReductionUpdated:
+          if (this.#model().noise === 'anc' && frame.payload.length > 0) this.#patch({ noiseMode: frame.payload[0] ? 1 : 0 });
+          break;
         case MsgId.FindStop:
           this.#patch({ finding: false });
           break;
@@ -367,16 +390,32 @@ export class SamsungDevice implements Persistable {
   #applyExtended(payload: Uint8Array): void {
     const update = decodeExtended(payload, this.#model());
     if (!update) return;
+    // The model decides how the payload is read, and the ear type may name it: if it does, read again with the right layout.
+    const named = modelForEarType(FAMILY[this.#kind], update.earType);
+    if (named && this.#modelSource !== 'sku' && named.id !== this.#store.state.info.modelId) {
+      this.#setModel(named, 'earType'); // re-applies this very payload, now it is the last one
+      return;
+    }
+    const model = this.#model();
     const state = this.#store.state;
+    const map = model.touchMap === null ? null : TOUCH_MAPS[model.touchMap];
+    const action = (byte: number | undefined): TouchAction | null => (map && byte !== undefined ? (map[byte] ?? null) : null);
     // A field the buffer was too short to reach stays what it was.
     this.#patch({
       battery: update.battery,
       placement: update.placement,
-      info: { ...state.info, revision: update.revision },
+      info: { ...state.info, revision: update.revision, colour: update.colour ?? state.info.colour },
       eq: update.eq ?? state.eq,
       touchLocked: update.touchLocked ?? state.touchLocked,
       gestures: update.gestures ?? state.gestures,
       noiseMode: update.noiseMode ?? state.noiseMode,
+      ambientLevel: update.ambientLevel ?? state.ambientLevel,
+      hold: update.touchOptions
+        ? { left: action(update.touchOptions.left), right: action(update.touchOptions.right) }
+        : state.hold,
+      noiseCycle: update.noiseTouch
+        ? { left: cycleOf(update.noiseTouch.left), right: cycleOf(update.noiseTouch.right) }
+        : state.noiseCycle,
     });
   }
 
@@ -427,6 +466,39 @@ export class SamsungDevice implements Persistable {
     );
   }
 
+  /** `level`: the ambient step, zero-based. */
+  async setAmbientLevel(level: number): Promise<void> {
+    const { ambientLevel } = this.#store.state;
+    await this.#change({ ambientLevel: level }, { ambientLevel }, ambientLevelCommand(this.#model(), level, ambientLevel));
+  }
+
+  /** What a touch-and-hold does on one earbud; the other earbud's is restated as the earbuds last reported it. */
+  async setHoldAction(side: 'left' | 'right', action: TouchAction): Promise<void> {
+    const { hold } = this.#store.state;
+    const other = hold[side === 'left' ? 'right' : 'left'];
+    if (other === null) return this.#needSettings();
+    const next = { ...hold, [side]: action };
+    await this.#change({ hold: next }, { hold }, touchOptionCommand(this.#model(), next.left ?? other, next.right ?? other));
+  }
+
+  /** Which two noise modes a long press cycles through on one earbud; the other earbud's is restated. */
+  async setNoiseCycle(side: 'left' | 'right', cycle: NoiseCycle): Promise<void> {
+    const { noiseCycle, info } = this.#store.state;
+    const other = noiseCycle[side === 'left' ? 'right' : 'left'];
+    if (other === null) return this.#needSettings();
+    const next = { ...noiseCycle, [side]: cycle };
+    await this.#change(
+      { noiseCycle: next },
+      { noiseCycle },
+      noiseCycleCommand(this.#model(), info.revision, next.left ?? other, next.right ?? other),
+    );
+  }
+
+  /** A setting that restates its neighbour cannot go out until the earbuds have said what the neighbour is. */
+  #needSettings(): void {
+    this.#patch({ error: 'The earbuds have not reported their current settings yet, so this one cannot be changed safely.' });
+  }
+
   async setFinding(on: boolean): Promise<void> {
     const { info } = this.#store.state;
     await this.#change({ finding: on }, { finding: !on }, findCommand(this.#model(), info.revision, on));
@@ -452,3 +524,10 @@ function serviceKindOf(port: SerialPort): ServiceKind {
   }
 }
 
+/** The pair of modes a long press cycles through, from which of the three the earbud has switched on. */
+function cycleOf(set: NoiseSet): NoiseCycle | null {
+  if (set.anc && set.off) return 'ancOff';
+  if (set.ambient && set.off) return 'ambOff';
+  if (set.ambient && set.anc) return 'ancAmb';
+  return null;
+}

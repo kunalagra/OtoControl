@@ -5,6 +5,8 @@ import { SamsungDevice } from './device'
 import { SamsungNoise } from './sections/Noise'
 import { SamsungSound } from './sections/Sound'
 import { SamsungSystem } from './sections/System'
+import { ambientSteps } from './labels'
+import { modelById } from './models'
 import { initialSamsungState } from './state'
 import type { SamsungState } from './state'
 import type { SamsungModelId } from './models'
@@ -119,5 +121,70 @@ describe('SamsungSystem', () => {
 
   it('renders before anything has been read', () => {
     expect(() => render(<SamsungSystem device={device} state={initialSamsungState} />)).not.toThrow()
+  })
+})
+
+
+describe('SamsungNoise ambient level', () => {
+  it("offers the model's steps and marks the current one", () => {
+    const html = render(<SamsungNoise device={device} state={known('budsPro', { noiseMode: 2, ambientLevel: 1 })} />)
+    expect(html).toContain('Ambient sound level')
+    for (const name of ['Low', 'Moderate', 'High', 'Extra loud']) expect(html).toContain(name)
+    // One pressed mode button and one pressed step.
+    expect(html.match(/aria-pressed="true"/g)).toHaveLength(2)
+  })
+
+  it('has no level to offer before the earbuds report one, nor on the Live', () => {
+    expect(render(<SamsungNoise device={device} state={known('budsPro', { ambientLevel: null })} />)).not.toContain('Ambient sound level')
+    expect(render(<SamsungNoise device={device} state={known('budsLive', { ambientLevel: 0 })} />)).not.toContain('Ambient sound level')
+  })
+})
+
+describe('ambientSteps', () => {
+  it('names five steps for the 2019 Buds, a Level 1-5 scale for the Buds4 Pro, Low to Extra loud otherwise', () => {
+    expect(ambientSteps(modelById('buds')!, 0)).toEqual(['Very low', 'Low', 'Moderate', 'High', 'Extra loud'])
+    expect(ambientSteps(modelById('buds4Pro')!, 0)).toEqual(['Level 1', 'Level 2', 'Level 3', 'Level 4', 'Level 5'])
+    expect(ambientSteps(modelById('buds2')!, 0)).toEqual(['Low', 'Moderate', 'High'])
+  })
+
+  it('grows to a step the earbuds reported above the table, and has none where there is no level', () => {
+    expect(ambientSteps(modelById('buds2Pro')!, 3)).toEqual(['Low', 'Moderate', 'High', 'Extra loud'])
+    expect(ambientSteps(modelById('budsLive')!, 0)).toEqual([])
+  })
+})
+
+describe('SamsungSystem touch controls', () => {
+  const withHold = (modelId: SamsungModelId, extra: Partial<SamsungState> = {}) =>
+    known(modelId, { hold: { left: 'noise', right: 'volume' }, noiseCycle: { left: 'ancOff', right: 'ambOff' }, ...extra })
+
+  it("lists the model's hold actions for each earbud, marking the current one", () => {
+    const html = render(<SamsungSystem device={device} state={withHold('buds2Pro')} />)
+    expect(html).toContain('Touch and hold')
+    expect(html).toContain('Left earbud')
+    expect(html).toContain('Right earbud')
+    expect(html).toContain('Switch noise control')
+    expect(html).toContain('Voice assistant')
+  })
+
+  it('offers the noise cycle only under an earbud set to switch noise control', () => {
+    const html = render(<SamsungSystem device={device} state={withHold('buds2Pro')} />)
+    // Left is set to noise control, right to volume: one cycle group, three choices.
+    expect(html.match(/Noise cancelling and off/g)).toHaveLength(1)
+    expect(html).toContain('Ambient sound and off')
+  })
+
+  it('offers no cycle where the layout is unverified (Buds3 Pro)', () => {
+    const html = render(<SamsungSystem device={device} state={withHold('buds3Pro')} />)
+    expect(html).not.toContain('Noise cancelling and off')
+    expect(html).toContain('Touch and hold')
+  })
+
+  it('waits for the earbuds to report their settings rather than offering a blind write', () => {
+    const html = render(<SamsungSystem device={device} state={known('buds2Pro')} />)
+    expect(html).toContain('Waiting for the earbuds to report their settings')
+  })
+
+  it('shows nothing for a model with no hold actions', () => {
+    expect(render(<SamsungSystem device={device} state={known('unknown')} />)).not.toContain('Touch and hold')
   })
 })

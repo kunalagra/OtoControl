@@ -1,6 +1,16 @@
 import { describe, expect, it } from 'vitest';
 
-import { NoiseMode, equalizerCommand, findCommand, managerInfoCommand, noiseCommand, touchLockCommand } from './commands';
+import {
+  NoiseMode,
+  ambientLevelCommand,
+  equalizerCommand,
+  findCommand,
+  managerInfoCommand,
+  noiseCommand,
+  noiseCycleCommand,
+  touchLockCommand,
+  touchOptionCommand,
+} from './commands';
 import type { TouchGestures } from './decode';
 import { MsgId } from './ids';
 import { modelById } from './models';
@@ -28,6 +38,82 @@ describe('noiseCommand', () => {
 
   it('sends nothing for a model it does not know', () => {
     expect(noiseCommand(model('unknown'), NoiseMode.Anc)).toBeNull();
+  });
+
+  it('refuses a mode the model does not list: no ambient on Buds3, no adaptive before Buds3 Pro', () => {
+    expect(noiseCommand(model('buds3'), NoiseMode.Ambient)).toBeNull();
+    expect(noiseCommand(model('buds3'), NoiseMode.Anc)).toEqual({ id: 0x78, payload: [1] });
+    expect(noiseCommand(model('budsPro'), NoiseMode.Adaptive)).toBeNull();
+    expect(noiseCommand(model('buds2Pro'), NoiseMode.Adaptive)).toBeNull();
+  });
+
+  it('sends adaptive where the model has it — round-tripped on a live Buds3 Pro', () => {
+    expect(noiseCommand(model('buds3Pro'), NoiseMode.Adaptive)).toEqual({ id: 0x78, payload: [3] });
+    expect(noiseCommand(model('buds4Pro'), NoiseMode.Adaptive)).toEqual({ id: 0x78, payload: [3] });
+  });
+});
+
+describe('ambientLevelCommand', () => {
+  it('sends the step on 0x84, zero-based', () => {
+    expect(ambientLevelCommand(model('budsPro'), 2, null)).toEqual({ id: 0x84, payload: [2] });
+    expect(ambientLevelCommand(model('buds4Pro'), 4, null)).toEqual({ id: 0x84, payload: [4] });
+  });
+
+  it('refuses a step past the top of the model', () => {
+    expect(ambientLevelCommand(model('buds2'), 3, null)).toBeNull();
+    expect(ambientLevelCommand(model('buds2'), -1, null)).toBeNull();
+    expect(ambientLevelCommand(model('buds2'), 1.5, null)).toBeNull();
+  });
+
+  it('allows a step the earbuds themselves reported even past the table top (an extra-loud Buds2 Pro read 3)', () => {
+    expect(ambientLevelCommand(model('buds2Pro'), 3, 3)).toEqual({ id: 0x84, payload: [3] });
+  });
+
+  it('has no ambient level on the Live or the Buds3, nor on an unknown model', () => {
+    expect(ambientLevelCommand(model('budsLive'), 0, null)).toBeNull();
+    expect(ambientLevelCommand(model('buds3'), 0, null)).toBeNull();
+    expect(ambientLevelCommand(model('unknown'), 0, null)).toBeNull();
+  });
+});
+
+describe('touchOptionCommand', () => {
+  it("writes [left, right] on 0x92 in the model's own byte map", () => {
+    // Standard map: assistant 1, noise control 2, volume 3.
+    expect(touchOptionCommand(model('buds2Pro'), 'noise', 'volume')).toEqual({ id: 0x92, payload: [2, 3] });
+    expect(touchOptionCommand(model('budsPlus'), 'ambient', 'assistant')).toEqual({ id: 0x92, payload: [2, 1] });
+    expect(touchOptionCommand(model('budsLive'), 'anc', 'volume')).toEqual({ id: 0x92, payload: [2, 3] });
+    // The 2019 Buds number them from zero, with quick ambient at 1.
+    expect(touchOptionCommand(model('buds'), 'assistant', 'quickAmbient')).toEqual({ id: 0x92, payload: [0, 1] });
+  });
+
+  it('pads with the digital-assistant bytes the Buds4 plugin sends', () => {
+    expect(touchOptionCommand(model('buds4Pro'), 'noise', 'assistant')).toEqual({ id: 0x92, payload: [2, 1, 0, 0] });
+  });
+
+  it('refuses an action the model does not offer', () => {
+    expect(touchOptionCommand(model('buds4'), 'volume', 'noise')).toBeNull();
+    expect(touchOptionCommand(model('budsPlus'), 'noise', 'volume')).toBeNull();
+    expect(touchOptionCommand(model('unknown'), 'noise', 'noise')).toBeNull();
+  });
+});
+
+describe('noiseCycleCommand', () => {
+  it('writes anc, ambient, off flags for the left earbud then the right', () => {
+    expect(noiseCycleCommand(model('buds2Pro'), 13, 'ancOff', 'ambOff')).toEqual({
+      id: 0x79,
+      payload: [1, 0, 1, 0, 1, 1],
+    });
+    expect(noiseCycleCommand(model('buds2Pro'), 13, 'ancAmb', 'ancAmb')?.payload).toEqual([1, 1, 0, 1, 1, 0]);
+  });
+
+  it("writes one earbud's worth before the revision that gave each side its own setting", () => {
+    expect(noiseCycleCommand(model('budsPro'), 7, 'ancOff', 'ambOff')?.payload).toEqual([0, 1, 1]);
+    expect(noiseCycleCommand(model('budsPro'), 8, 'ancOff', 'ambOff')?.payload).toHaveLength(6);
+  });
+
+  it('is not offered where the layout is unverified', () => {
+    expect(noiseCycleCommand(model('buds3Pro'), 2, 'ancOff', 'ancOff')).toBeNull();
+    expect(noiseCycleCommand(model('budsLive'), 9, 'ancOff', 'ancOff')).toBeNull();
   });
 });
 
@@ -82,7 +168,7 @@ describe('findCommand', () => {
 });
 
 describe('managerInfoCommand', () => {
-  it('is [client type, not-a-Samsung-phone, SDK]', () => {
-    expect(managerInfoCommand()).toEqual({ id: 0x88, payload: [1, 2, 34] });
+  it("is GalaxyBudsClient's own announcement: [client type, maker, SDK]", () => {
+    expect(managerInfoCommand()).toEqual({ id: 0x88, payload: [1, 1, 34] });
   });
 });

@@ -40,3 +40,7 @@ task-6-screenshots/
 .env
 .env.*
 !.env.example
+
+# Python bytecode from the scripts/ generators
+__pycache__/
+*.pyc
