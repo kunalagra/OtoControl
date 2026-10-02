@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import {
   AIROHA_SERVICE_UUID,
+  HEYMELODY_LEGACY_SPP_UUID,
   HEYMELODY_SPP_UUID,
   KNOWN_SERVICES,
   M4_SERVICE_UUID,
@@ -56,6 +57,12 @@ describe('serviceForPort', () => {
     expect(serviceForPort(portWith('0000110a-0000-1000-8000-00805f9b34fb'))).toBeNull();
   });
 
+  it('routes the legacy HeyMelody service to the HeyMelody driver', () => {
+    const service = serviceForPort(portWith(HEYMELODY_LEGACY_SPP_UUID));
+    expect(service).toMatchObject({ brand: 'heymelody', protocol: 'heymelody' });
+    expect(service?.generic).toBeFalsy();
+  });
+
   it('routes the standard SPP service to the HeyMelody driver as a generic service', () => {
     expect(serviceForPort(portWith(STANDARD_SPP_UUID))).toMatchObject({ brand: 'heymelody', generic: true });
   });
@@ -100,7 +107,7 @@ describe('KNOWN_SERVICES', () => {
 
 describe('servicesFor', () => {
   it('resolves heymelody services', () => {
-    expect(servicesFor('heymelody')).toEqual([HEYMELODY_SPP_UUID, STANDARD_SPP_UUID]);
+    expect(servicesFor('heymelody')).toEqual([HEYMELODY_SPP_UUID, HEYMELODY_LEGACY_SPP_UUID, STANDARD_SPP_UUID]);
   });
 });
 

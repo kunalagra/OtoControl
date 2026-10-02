@@ -50,11 +50,20 @@ export const NOTHING_BLE_DATA_UUID = 'ca235943-1810-45e6-8326-fc8ca3bc45ce';
 
 /**
  * HeyMelody's SPP service — shared across OPPO/realme/OnePlus earbuds
- * (`com.heytap.headset`, one app rebadged per brand). Present on every
- * catalog entry as `supportSpp: true` / this exact UUID. See
+ * (`com.heytap.headset`, one app rebadged per brand). The UUID most catalog
+ * entries name (62 of 82 whitelist entries; the rest use the legacy one below). See
  * `docs/superpowers/specs/2026-08-27-heymelody-driver-design.md` §3.1.
  */
 export const HEYMELODY_SPP_UUID = '0000079a-d102-11e1-9b23-00025b00a5a5';
+
+/**
+ * The other HeyMelody SPP service, used by older models (Enco Free/W31/W51,
+ * Buds2 Pro, the OnePlus Buds/Nord Buds 2/2r line — 20 of the app's 82
+ * whitelist entries). HeyTap's `BaseBRDevice` connects here whenever a model's
+ * whitelist `uuid` is empty, and those models list it explicitly; the frame
+ * code is the same either way.
+ */
+export const HEYMELODY_LEGACY_SPP_UUID = '00001107-d102-11e1-9b23-00025b00a5a5';
 
 /**
  * The standard Serial Port Profile service. realme's catalog marks most TL
@@ -91,6 +100,7 @@ export const KNOWN_SERVICES: KnownService[] = [
   { uuid: SONY_MDR_V1_UUID, brand: 'sony', protocol: 'mdr-v1' },
   { uuid: NOTHING_SPP_UUID, brand: 'nothing', protocol: 'nothing-v1' },
   { uuid: HEYMELODY_SPP_UUID, brand: 'heymelody', protocol: 'heymelody' },
+  { uuid: HEYMELODY_LEGACY_SPP_UUID, brand: 'heymelody', protocol: 'heymelody' },
   { uuid: STANDARD_SPP_UUID, brand: 'heymelody', protocol: 'heymelody', generic: true },
 ];
 
