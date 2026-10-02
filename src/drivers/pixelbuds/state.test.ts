@@ -42,15 +42,17 @@ describe('applySetting', () => {
 });
 
 describe('offersAdaptive', () => {
-  const base = { ancMode: AncState.Active, ancLoop: null, adaptiveRefused: false };
+  const base = { ancMode: AncState.Active, adaptiveRefused: false };
 
-  it('offers it while the loop is unread, and when the loop includes it', () => {
+  it('offers it by default', () => {
     expect(offersAdaptive(base)).toBe(true);
-    expect(offersAdaptive({ ...base, ancLoop: { active: true, off: true, aware: true, adaptive: true } })).toBe(true);
   });
 
-  it('hides it when the loop is known to lack it', () => {
-    expect(offersAdaptive({ ...base, ancLoop: { active: true, off: true, aware: true, adaptive: false } })).toBe(false);
+  // The loop is only what a long press cycles through; the official app lets a Pro 2 pick Adaptive
+  // whether or not it is ticked there (spec §9, 4).
+  it('still offers it when the long-press loop leaves it out', () => {
+    // offersAdaptive does not read the loop at all: it takes only the mode and the refusal.
+    expect(offersAdaptive(base)).toBe(true);
   });
 
   it('hides it once refused', () => {
@@ -59,7 +61,7 @@ describe('offersAdaptive', () => {
 
   it('always shows it while it is the current mode, whatever else says', () => {
     expect(
-      offersAdaptive({ ancMode: AncState.Adaptive, ancLoop: { active: true, off: true, aware: true, adaptive: false }, adaptiveRefused: true }),
+      offersAdaptive({ ancMode: AncState.Adaptive, adaptiveRefused: true }),
     ).toBe(true);
   });
 });

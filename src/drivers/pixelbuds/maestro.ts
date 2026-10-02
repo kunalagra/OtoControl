@@ -122,10 +122,15 @@ const versionOf = (fields: ReturnType<typeof parseFields> | null, field: number)
   return version === '' ? null : version;
 };
 
-/** `SoftwareInfo{ firmware (4): { case (1), right (2), left (3) }, FirmwareVersion{ version_string (2) } }`. */
+/**
+ * `SoftwareInfo{ firmware (4): { case (1), left (2), right (3) }, FirmwareVersion{ version_string (2) } }`.
+ * pbpctrl's proto lists right before left and says that order "might not be correct"; the companion
+ * app shows entry 2 as the left bud and entry 3 as the right one (spec §9, 1). Skips the fixed64 and
+ * varint (fields 5, 6) the buds append.
+ */
 export function decodeSoftwareInfo(bytes: Uint8Array): FirmwareVersions {
   const firmware = messageOf(parseFields(bytes), 4);
-  return { case: versionOf(firmware, 1), right: versionOf(firmware, 2), left: versionOf(firmware, 3) };
+  return { case: versionOf(firmware, 1), left: versionOf(firmware, 2), right: versionOf(firmware, 3) };
 }
 
 export interface SerialNumbers {

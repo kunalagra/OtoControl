@@ -25,6 +25,8 @@ export const RpcStatus = {
   Unknown: 2,
   InvalidArgument: 3,
   NotFound: 5,
+  /** What the buds answer to a write they will not take in their current state, e.g. out of the ears. */
+  FailedPrecondition: 9,
   Unimplemented: 12,
   Unavailable: 14,
 } as const;
@@ -145,6 +147,12 @@ export const CANDIDATE_CHANNELS: ReadonlyArray<{ channel: number; local: number;
   { channel: 24, local: Peer.MaestroB, remote: Peer.LeftBtCore },
   { channel: 26, local: Peer.MaestroB, remote: Peer.RightBtCore },
 ];
+
+/**
+ * The order an active probe tries: channel 18 first (what MagicPodsCore sends to a Pro 2), then the bud
+ * channels, then the second case channel. The buds answer on the channel they serve whichever one asked.
+ */
+export const PROBE_ORDER: readonly number[] = [18, 19, 21, 24, 26, 23];
 
 /** The HDLC address to send a packet on `channel` with, or null for a channel we do not know. */
 export function addressForChannel(channel: number): number | null {

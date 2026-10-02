@@ -64,9 +64,29 @@ describe('requests', () => {
 
 describe('decodeSoftwareInfo', () => {
   it('reads the version string of each part and ignores the unknown field', () => {
-    // case: { unknown "x", version "1.2.3" }, right: { version "9" }, left absent
+    // entry 1 (case): { unknown "x", version "1.2.3" }, entry 2 (left): { version "9" }, entry 3 absent
     const reply = bytes('22 11 0a 0a 0a 01 78 12 05 31 2e 32 2e 33 12 03 12 01 39');
-    expect(decodeSoftwareInfo(reply)).toEqual({ case: '1.2.3', right: '9', left: null });
+    expect(decodeSoftwareInfo(reply)).toEqual({ case: '1.2.3', left: '9', right: null });
+  });
+
+  // The vendor app shows entry 1 as the case, 2 as the left bud and 3 as the right one (spec §9, 1);
+  // pbpctrl's proto comment says its right/left order "might not be correct".
+  it('reads entry 2 as the left bud and entry 3 as the right bud', () => {
+    const entry = (text: string) => [0x12, text.length, ...Array.from(text, (c) => c.charCodeAt(0))];
+    const version = (n: number, text: string) => [(n << 3) | 2, entry(text).length, ...entry(text)];
+    const body = [...version(1, 'C'), ...version(2, 'L'), ...version(3, 'R')];
+    expect(decodeSoftwareInfo(Uint8Array.from([0x22, body.length, ...body]))).toEqual({ case: 'C', left: 'L', right: 'R' });
+  });
+
+  // A Pixel Buds Pro 2 announcement as captured (tedsluis/opencontrolpixelbudspro2 PROTOCOL.md §6): three
+  // { build number, release string } entries, then a fixed64 (field 5) and a varint (field 6) nobody has named.
+  it('reads a real announcement, skipping its fixed64 and varint tail', () => {
+    const text = (s: string) => Array.from(s, (c) => c.charCodeAt(0));
+    const one = [0x0a, 10, ...text('1779298694'), 0x12, 13, ...text('release_5.203')];
+    const entry = (n: number) => [(n << 3) | 2, one.length, ...one];
+    const firmware = [...entry(1), ...entry(2), ...entry(3)];
+    const reply = Uint8Array.from([0x22, firmware.length, ...firmware, 0x29, 0x34, 0x29, 0x3f, 0xc2, 0xf6, 0xcb, 0xd8, 0x1a, 0x30, 0x00]);
+    expect(decodeSoftwareInfo(reply)).toEqual({ case: 'release_5.203', left: 'release_5.203', right: 'release_5.203' });
   });
 
   it('treats an empty reply as unknown', () => {

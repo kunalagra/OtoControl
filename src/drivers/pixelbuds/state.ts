@@ -18,7 +18,7 @@ export interface PixelBudsInfo {
   /**
    * Required by `core/manager.ts`'s `Adoptable.subscribe` contract, which reads
    * `state.info.model` generically to remember a device's name. Generic on
-   * purpose: nothing on the wire tells a Pixel Buds Pro from a Pro 2 (spec §6).
+   * purpose: nothing on the wire names the model, only Adaptive proves a Pro 2 (spec §9, 2).
    */
   model: string | null;
   firmware: FirmwareVersions | null;
@@ -43,7 +43,7 @@ export interface PixelBudsState {
   eq: EqGains | null;
   volumeEq: boolean | null;
   capabilities: Set<PixelBudsCapability>;
-  /** The Maestro channel the buds answered on, and whether finding it needed the unverified probe. Live-only. */
+  /** The Maestro channel the buds answered on, and whether finding it needed the active probe. Live-only. */
   channel: number | null;
   channelProbed: boolean;
 }
@@ -127,6 +127,13 @@ export const CAPABILITY_FOR_SETTING: Partial<Record<number, PixelBudsCapability>
  * An ANC value outside the enum leaves the mode untouched rather than claiming one.
  */
 export function applySetting(state: PixelBudsState, change: SettingChange): PixelBudsState {
+  const next = applyValue(state, change);
+  return hasAdaptiveEvidence(next) && next.info.model !== PIXELBUDS_PRO2_NAME
+    ? { ...next, info: { ...next.info, model: PIXELBUDS_PRO2_NAME } }
+    : next;
+}
+
+function applyValue(state: PixelBudsState, change: SettingChange): PixelBudsState {
   switch (change.setting) {
     case SettingId.AncState:
       return change.value === null ? state : { ...state, ancMode: change.value };
@@ -143,9 +150,22 @@ export function applySetting(state: PixelBudsState, change: SettingChange): Pixe
   }
 }
 
-/** Whether the Noise tab should list Adaptive: never twice-refused, and not when the loop is known to lack it. */
-export function offersAdaptive(state: Pick<PixelBudsState, 'ancMode' | 'ancLoop' | 'adaptiveRefused'>): boolean {
+/**
+ * Whether the Noise tab should list Adaptive: unless the buds refused it as unsupported. The long-press
+ * loop is deliberately not consulted — it is only what a press cycles through, and a Pro 2 can pick
+ * Adaptive with it unticked there (spec §9, 4).
+ */
+export function offersAdaptive(state: Pick<PixelBudsState, 'ancMode' | 'adaptiveRefused'>): boolean {
   if (state.ancMode === AncState.Adaptive) return true;
-  if (state.adaptiveRefused) return false;
-  return state.ancLoop === null || state.ancLoop.adaptive;
+  return !state.adaptiveRefused;
 }
+
+export const PIXELBUDS_PRO_NAME = 'Pixel Buds Pro';
+export const PIXELBUDS_PRO2_NAME = 'Pixel Buds Pro 2';
+
+/**
+ * Nothing on the wire names the model (spec §9, 2). The one proof available is Adaptive: Google ships it
+ * on the Pro 2 only, so Adaptive as the current mode, or ticked in the long-press loop, means a Pro 2.
+ */
+export const hasAdaptiveEvidence = (state: Pick<PixelBudsState, 'ancMode' | 'ancLoop'>): boolean =>
+  state.ancMode === AncState.Adaptive || state.ancLoop?.adaptive === true;

@@ -64,27 +64,32 @@ describe('channel discovery', () => {
     await expect(client.discoverChannel()).rejects.toBeInstanceOf(PixelBudsChannelError);
   });
 
-  // UNVERIFIED fallback: nothing in pbpctrl or the app shows it working on hardware.
-  it('falls back to asking each candidate in order until one answers', async () => {
+  // Active probe, as MagicPodsCore and pb2pcd send it on real Pro 2 hardware: GetSoftwareInfo with call id
+  // 0xffffffff on channel 18, the reply naming whichever channel the buds serve (spec §9, 1).
+  it('asks once on channel 18 with the announcement call id when nothing is announced, and takes the reply’s channel', async () => {
     const { client, deliver, sent } = rig();
     const found = client.discoverChannel();
-    // Answer only once the client has reached channel 23, the fourth candidate.
     const timer = setInterval(() => {
-      if (sent.some((packet) => packet.channelId === 23)) {
-        deliver({ type: PacketType.Response, channelId: 23, serviceId: SERVICE, methodId: rpcHash(Method.GetSoftwareInfo) });
-      }
+      if (sent.length > 0) deliver(announce(21));
     }, 2);
-    expect(await found).toBe(23);
+    expect(await found).toBe(21);
     clearInterval(timer);
-    expect(sent.map((packet) => packet.channelId)).toEqual([18, 19, 21, 23]);
-    expect(sent.every((packet) => packet.methodId === rpcHash(Method.GetSoftwareInfo) && packet.type === PacketType.Request)).toBe(true);
+    expect(sent).toHaveLength(1);
+    expect(sent[0]).toMatchObject({
+      type: PacketType.Request,
+      channelId: 18,
+      serviceId: SERVICE,
+      methodId: rpcHash(Method.GetSoftwareInfo),
+      callId: ANNOUNCE_CALL_ID,
+    });
     expect(client.channelWasProbed).toBe(true);
   });
 
-  it('gives up with a channel error once every candidate is silent', async () => {
+  it('then tries the bud channels before the second case channel, all with the announcement call id', async () => {
     const { client, sent } = rig();
     await expect(client.discoverChannel()).rejects.toBeInstanceOf(PixelBudsChannelError);
-    expect(sent.map((packet) => packet.channelId)).toEqual([18, 19, 21, 23, 24, 26]);
+    expect(sent.map((packet) => packet.channelId)).toEqual([18, 19, 21, 24, 26, 23]);
+    expect(sent.every((packet) => packet.callId === ANNOUNCE_CALL_ID && packet.type === PacketType.Request)).toBe(true);
   });
 
   it('stops waiting when aborted', async () => {

@@ -14,7 +14,7 @@ const bytes = (text: string): number[] => text.split(' ').map((byte) => parseInt
 const hex = (data: ArrayLike<number>): string => Array.from(data, (b) => b.toString(16).padStart(2, '0')).join(' ');
 
 // Fixtures written by hand from maestro_pw.proto, as in maestro.test.ts.
-const SOFTWARE = bytes('22 11 0a 0a 0a 01 78 12 05 31 2e 32 2e 33 12 03 12 01 39'); // case 1.2.3, right 9
+const SOFTWARE = bytes('22 11 0a 0a 0a 01 78 12 05 31 2e 32 2e 33 12 03 12 01 39'); // case 1.2.3, left 9
 const HARDWARE = bytes('3a 0b 0a 02 43 31 12 01 52 1a 02 4c 31'); // case C1, right R, left L1
 const RUNTIME = bytes('10 80 01 32 0e 0a 04 08 5a 10 01 12 04 08 50 10 02 1a 00 3a 02 08 01');
 const EQ = bytes('22 12 82 01 0f 0d 00 00 c0 3f 1d 00 00 c0 c0 2d 00 00 c0 40'); // [1.5, 0, -6, 0, 6]
@@ -70,8 +70,8 @@ describe('PixelBudsDevice connect', () => {
     // Nothing is asked of the buds until the channel is known, and the announcement needs no request.
     expect(buds.requests[0].methodId).not.toBe(rpcHash(Method.GetSoftwareInfo));
 
-    expect(state.info.model).toBe('Pixel Buds Pro');
-    expect(state.info.firmware).toEqual({ case: '1.2.3', right: '9', left: null });
+    expect(state.info.model).toBe('Pixel Buds Pro 2'); // the scripted loop includes Adaptive
+    expect(state.info.firmware).toEqual({ case: '1.2.3', left: '9', right: null });
     expect(state.info.serials).toEqual({ case: 'C1', right: 'R', left: 'L1' });
     expect(state.battery).toEqual([
       { device: 'case', level: 90, charging: false },
@@ -97,6 +97,25 @@ describe('PixelBudsDevice connect', () => {
     expect(subscribed).toContain(rpcHash(Method.SubscribeToSettingsChanges));
   });
 
+  // The firmware allows one SubscribeRuntimeInfo per channel: a second one ends the first (PixelBudsMacOS
+  // ARCHITECTURE.md, hardware-observed), so a refresh must not subscribe again.
+  it('subscribes once per link, however often it refreshes', async () => {
+    const { device, buds } = await connected();
+    await device.refresh();
+    await device.refresh();
+    const count = (method: string) => buds.requests.filter((r) => r.type === PacketType.Request && r.methodId === rpcHash(method)).length;
+    expect(count(Method.SubscribeRuntimeInfo)).toBe(1);
+    expect(count(Method.SubscribeToSettingsChanges)).toBe(1);
+  });
+
+  it('names the pair Pixel Buds Pro 2 only on evidence of Adaptive, which only the Pro 2 has', async () => {
+    expect((await connected()).device.state.info.model).toBe('Pixel Buds Pro 2'); // loop includes Adaptive
+    const noAdaptive = scripted({}, { [SettingId.AncLoop]: bytes('22 06 62 04 08 01 18 01') });
+    expect((await connected(noAdaptive)).device.state.info.model).toBe('Pixel Buds Pro');
+    const current = scripted({}, { [SettingId.AncLoop]: bytes('22 06 62 04 08 01 18 01'), [SettingId.AncState]: bytes('22 02 68 04') });
+    expect((await connected(current)).device.state.info.model).toBe('Pixel Buds Pro 2');
+  });
+
   it('drops the controls for settings the buds refuse to read', async () => {
     const { device } = await connected(scripted({}, { [SettingId.UserEq]: null, [SettingId.VolumeEq]: null, [SettingId.Multipoint]: null }));
     expect(device.state.capabilities).toEqual(new Set(['firmware', 'battery', 'anc', 'onHead']));
@@ -113,14 +132,15 @@ describe('PixelBudsDevice connect', () => {
     expect(device.state.capabilities.has('anc')).toBe(true);
   });
 
-  // UNVERIFIED fallback path: pbpctrl never asks, it only listens.
+  // Probe path: MagicPodsCore and pb2pcd ask this way on a Pro 2; pbpctrl only listens.
   it('finds the channel by asking when the buds announce nothing, and says so', async () => {
     const { device, buds } = await connected(scripted({ announce: false, channel: 24 }));
     expect(device.state.status).toBe('connected');
     expect(device.state.channel).toBe(24);
     expect(device.state.channelProbed).toBe(true);
     const probed = buds.requests.filter((request) => request.methodId === rpcHash(Method.GetSoftwareInfo)).map((request) => request.channelId);
-    expect(probed.slice(0, 5)).toEqual([18, 19, 21, 23, 24]);
+    expect(probed[0]).toBe(18);
+    expect(probed.at(-1)).toBe(24);
   });
 
   it('releases a port that never speaks Maestro, with an explanation', async () => {
@@ -192,6 +212,18 @@ describe('PixelBudsDevice writes', () => {
     expect(device.state.ancMode).toBe(2);
     expect(device.state.adaptiveRefused).toBe(true);
     expect(device.state.error).toBe('These earbuds do not support Adaptive.');
+  });
+
+  // Status 9 is what the buds answer when they are not in the ears (PixelBudsMacOS ARCHITECTURE.md):
+  // a state, not a missing feature, so Adaptive must stay on offer.
+  it('keeps Adaptive on offer when the buds answer FAILED_PRECONDITION', async () => {
+    const script = scripted();
+    script.unary[Method.WriteSetting] = () => ({ status: 9 });
+    const { device } = await connected(script);
+    await device.setAncMode(4);
+    expect(device.state.ancMode).toBe(2);
+    expect(device.state.adaptiveRefused).toBe(false);
+    expect(device.state.error).toBe('The earbuds refused that right now. Put them in your ears and try again.');
   });
 
   it('writes the bool settings and rolls each back on a refusal', async () => {
@@ -268,7 +300,7 @@ describe('PixelBudsDevice teardown and persistence', () => {
     expect(cancelled).toEqual([rpcHash(Method.SubscribeRuntimeInfo), rpcHash(Method.SubscribeToSettingsChanges)]);
     expect(buds.transport().isOpen).toBe(false);
     expect(device.state.status).toBe('disconnected');
-    expect(device.state.info.model).toBe('Pixel Buds Pro');
+    expect(device.state.info.model).toBe('Pixel Buds Pro 2');
     expect(device.state.ancMode).toBe(2);
     expect(device.state.battery).toEqual([]);
     expect(device.state.channel).toBeNull();
@@ -291,7 +323,7 @@ describe('PixelBudsDevice teardown and persistence', () => {
 
     const fresh = new PixelBudsDevice(fakeBuds(scripted()).open, FAST);
     fresh.restore(snapshot);
-    expect(fresh.state.info.model).toBe('Pixel Buds Pro');
+    expect(fresh.state.info.model).toBe('Pixel Buds Pro 2');
     expect(fresh.state.ancMode).toBe(2);
     expect(fresh.state.eq).toEqual([1.5, 0, -6, 0, 6]);
     expect(fresh.state.capabilities.has('anc')).toBe(true);

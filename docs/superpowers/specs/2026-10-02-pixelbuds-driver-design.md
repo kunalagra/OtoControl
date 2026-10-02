@@ -1,6 +1,6 @@
 # Google Pixel Buds driver — design
 
-Status: implemented v1, **no hardware test**. Pixel Buds Pro / Pro 2 only.
+Status: implemented, **no hardware test of this app**; protocol claims re-verified against third-party hardware logs in §9. Pixel Buds Pro / Pro 2 only.
 
 ## 1. Sources and how they were cross-checked
 
@@ -66,7 +66,7 @@ proto3 omits zero-valued fields, so a REQUEST with call id 0 carries neither `ty
 
 (Sensor-hub channels 20/22/25/27 exist but are never candidates.)
 
-**Discovery** (pbpctrl `protocol/utils.rs:20-73`): the client opens, without transmitting, a pending `GetSoftwareInfo` call with call id `0xffffffff` on all six candidates; the buds push an unsolicited response on the channel they serve and the first to arrive wins. We do the same and treat *any* inbound packet on a candidate channel as the announcement. The fallback, which no source verifies, is to actively call `GetSoftwareInfo` on each candidate in turn if nothing is announced within a short wait.
+**Discovery** (§9, 1): the buds push an unsolicited `GetSoftwareInfo` response (call id `0xffffffff`) on the channel they serve, 22-102 ms after the link opens, so the client just listens: *any* inbound packet on a candidate channel names the channel. If nothing arrives within 800 ms it asks, as MagicPodsCore and pb2pcd do on a Pro 2: `GetSoftwareInfo` with call id `0xffffffff` on channel 18, and takes the channel of whatever answers (the reply carries the buds' own channel, not the one asked on); then the bud channels 19, 21, 24, 26, then 23.
 
 Calls use call id 0 (pbpctrl), one unary call in flight at a time.
 
@@ -74,7 +74,7 @@ Calls use call id 0 (pbpctrl), one unary call in flight at a time.
 
 | Service / method | Use |
 |---|---|
-| `maestro_pw.Maestro/GetSoftwareInfo` | `SoftwareInfo{firmware(4){case(1), right(2), left(3)}}`, each `FirmwareVersion{version_string(2)}` |
+| `maestro_pw.Maestro/GetSoftwareInfo` | `SoftwareInfo{firmware(4){case(1), left(2), right(3)}, fixed64(5), varint(6)}`, each `FirmwareVersion{build(1), version_string(2)}` (pbpctrl lists right before left; the app disagrees, §9, 1) |
 | `.../GetHardwareInfo` | `HardwareInfo{serial_number(7){case(1), right(2), left(3)}}` (strings) |
 | `.../SubscribeRuntimeInfo` (server stream) | `RuntimeInfo{battery_info(6){case(1), left(2), right(3)}, placement(7){right_in_case(1), left_in_case(2)}}`; `DeviceBatteryInfo{level(1), state(2)}`; state 1 not charging, 2 charging |
 | `.../ReadSetting` | `ReadSettingMsg{settings_id(4)}` returns `SettingsRsp{value(4)}` |
@@ -101,18 +101,69 @@ Several ids answer a read with status 2 (pbpctrl `maestro_pw.proto:125-135`); a 
 3. **DLCI claims.** The Notes rebut "DLCI 0x02/0x04/0x08"; current pbpctrl never claims them (that is tedsluis). Irrelevant to a browser, which sees one RFCOMM service.
 4. **`SetWallclock` spelling.** APK `gsp.java:40` says `SetWallclock`; pbpctrl's proto says `SetWallClock`. The hash is case-sensitive; the APK is authoritative. Unused here.
 5. **Battery.** The Notes' 5-byte battery parser (`gsf.c`) belongs to the *legacy* socket. Pigweed devices report battery in `RuntimeInfo`.
-6. **Model identity.** No source gives an on-wire model id; the APK's `bud_type`/SKU are display-only and D2/D4/D5 are log prefixes. So the driver cannot tell Pro from Pro 2 and labels the device generically.
+6. **Model identity.** No source gives an on-wire model id (§9, 2); the driver labels a pair "Pixel Buds Pro 2" only on proof of Adaptive, else "Pixel Buds Pro".
 
 ## 7. Scope
 
-Implemented: firmware and serials; battery (case, left, right) with charging; bud-in-case placement; ANC read, write and live updates; multipoint; on-head detection; five-band EQ with an on/off switch for volume EQ; a protocol log with a read-only query box (`GetSoftwareInfo`, `GetHardwareInfo`, `ReadSetting <id>`).
+Implemented: per-model artwork bundled from the companion app's drawables (§9, 5); firmware and serials; battery (case, left, right) with charging; bud-in-case placement; ANC read, write and live updates; multipoint; on-head detection; five-band EQ with an on/off switch for volume EQ; a protocol log with a read-only query box (`GetSoftwareInfo`, `GetHardwareInfo`, `ReadSetting <id>`).
 
-Deferred: find-my-buds (Fast Pair GFPS, a separate RFCOMM service), gestures (setting 7), OTA, head-gesture/dosimeter/eartip services, the legacy UUID and A-Series / 2a (no evidence they speak Maestro), product artwork (placeholder only, no network).
+Deferred: find-my-buds (Fast Pair GFPS, a separate RFCOMM service), gestures (setting 7), OTA, head-gesture/dosimeter/eartip services, the legacy UUID and A-Series / 2a (no evidence they speak Maestro), 
 
 ## 8. Risks
 
-* **Untested on hardware.** pbpctrl was tested on the Pro, MagicPodsCore on the Pro 2; nothing here has run on a buds.
-* **Channel discovery** leans on the buds announcing themselves at connect. The active fallback is unverified.
-* **One Maestro client at a time?** A phone running the Pixel Buds app may hold the link; MagicPods mentions case and role-handover behaviour.
-* **Adaptive** is offered when the loop setting (12) reports it, when it is already the current state, or while the loop is unread; if a write is refused it is withdrawn for the session.
-* The case battery is only known while a bud sits in the case (pbpctrl README).
+* **Untested on hardware here.** pbpctrl was tested on the Pro, MagicPodsCore, pb2pcd and tedsluis on the Pro 2; §9 lists what is still unverifiable.
+* **Pro vs Pro 2** is inferred only from Adaptive; a Pro 2 with no Adaptive evidence reads as "Pixel Buds Pro" and gets the Pro render.
+* **The link is not exclusive and moves.** The buds close Maestro and re-announce on the other bud's channel when the hosting bud changes; a half-dead link follows a multipoint handoff. Both surface as a dropped session.
+* The case battery is only known while a bud sits in the case (pbpctrl issue #19).
+
+## 9. Verification evidence
+
+Labels: **[HW]** a log or capture from real earbuds, **[static]** reading code or the APK, **[doc]** a vendor statement.
+
+### 1. Channel discovery and the companion app's behaviour: verified, probe corrected
+
+* **[HW] The buds announce unsolicited.** pbpctrl issue #8 (Pixel Buds Pro, firmware 5.9; <https://github.com/qzed/pbpctrl/issues/8>): pbpctrl only *opens* six pending calls (no transmit), and 24 ms later receives `type=0x01 channel_id=0x15 service=0x7ede71ea method=0x7199fa44 call_id=0xffffffff`; its first transmitted packet is the next call. Issue #7 shows the same line on channel 0x15 and a hang on firmware 5.9 until pbpctrl accepted call id `0xffffffff` (commit 7e75204, "firmware 5.9 returns a packet with call_id 0xffffffff"; before that the announcement carried call id 0, and pbpctrl never transmitted in either case).
+* **[HW] Pro 2, 43 of 43 captures.** tedsluis/opencontrolpixelbudspro2 `PROTOCOL.md` §2.2a: the announcement (`call_id 0xFFFFFFFF`) arrives 22, 102, 30 and 58 ms after the RFCOMM open (btsnoop of the official app), and the phone's first request is a `ReadSetting` on the announced channel, so a fresh client needs no opening message. Channels seen: 19, 21, 24, 26, never 18 or 23. With only the left bud out of the case the buds announce 19, only the right 21 (7 of 7, CAP-065); on a change of the hosting bud they `DISC` Maestro and announce the other (CAP-066).
+* **[HW] An active probe works on a Pro 2.** MagicPodsCore PR #24 (<https://github.com/steam3d/MagicPodsCore/pull/24>, tested on a Steam Deck with Pro 2): sends `GetSoftwareInfo`, call id `0xffffffff`, on channel 18 only, repeated every 300 ms ("the answer was measured taking up to 332 ms"), and takes the channel from the reply, "the buds answer with their own channel whichever one they are asked on" (`src/sdk/pbp/MaestroAddress.cpp`, `PixelBudsDevice.cpp`). Its test pins the byte-exact probe: `7e 00 2b 03 10 12 1d ea 71 de 7d 5e 25 44 fa 99 71 38 ff ff ff ff 0f c8 5e 0d 12 7e` (`src/tests/TestsPbp.cpp`, `TestChannelProbe1`). pb2pcd (Pro 2, macOS) probes all candidates with the same call id and keeps the first reply; PixelBudsMacOS probes sequentially (19, 24, 21, 26, 18, 23, 0.5 s each). BudsLink (googleBudsSocket.js) only listens for the `0xffffffff` response.
+* **[static] The companion app** never probes: its channel is whatever the buds announce (tedsluis: 43 of 43 phone sessions use the announced channel). This driver does the same, listening first.
+* **Corrected:** the old fallback tried 18, 19, 21, 23, 24, 26 with call id 0, waited per channel for a reply *on that channel*, and reported itself unverified. Now: call id `0xffffffff`, channel 18 first, any candidate-channel reply ends the wait.
+* **[HW] Announcement payload**: `4:{1:{1:<build> 2:"release_5.203"} 2:{..} 3:{..}} 5:<fixed64> 6:<varint>` in 140 of 140 announcements (tedsluis §2.2a); the parser skips wire type 1 and a test pins the real layout.
+
+### 2. Pro vs Pro 2: nothing reliable on the wire; inference by Adaptive only
+
+* **[HW]** Pro 2 `GetHardwareInfo` carries only the three serials (`57071WRBEC0251`, `57081WRBDR2309`, `57071WRBDL3147`, tedsluis `PROTOCOL.md` §6, CAP-036 frame 1423); none of pbpctrl's `unknown*` ints appear. No public serial-prefix spec exists. All 573 announced firmware entries on the Pro 2 are `(1779298694, release_5.203)`; the entries do not differ per component.
+* **[doc]** Firmware numbering overlaps in kind, not in value: Pro 2 4.467 / 5.203, Pro 2.12 / 3.14 / 5.9 / 5.11 (9to5Google, Android Authority release coverage). Too weak to gate on.
+* **[HW]** Bluetooth class and name are the only separators other projects use (MagicPodsCore: class `0x244404` vs `0x240404`; PixelBudsMacOS: the name starts "Pixel Buds Pro 2", and says both report `0x240404`, so the two disagree). Web Serial exposes neither.
+* **[HW] Fast Pair Model ID** on the *other* RFCOMM service (`df21fe2c-...`, GFPS Message Stream) is `da 2d b1` on the Pro 2 in every capture (tedsluis §0.1). Reliable, but needs a second port grant; not done.
+* **[static]** The app's SKU table keys colours by device type (`jmx`, `hqh`), but the SKU is not in `GetHardwareInfo` or the announcement.
+* **Implemented:** `info.model` is "Pixel Buds Pro" and becomes "Pixel Buds Pro 2" once Adaptive is the current mode or ticked in the long-press loop (Adaptive is Pro 2 only, §9, 4).
+
+### 3. Request encoding, single client, stream cancel, case battery
+
+* **Omitted zero `type` and `call_id`: verified [HW].** pbpctrl's frames (prost, `type` and `call_id` zero) work on the Pro and the Pro 2 (issue #19 reporter, Pro 2); tedsluis: "`type` is omitted for a REQUEST" in the official app's own frames; MagicPodsCore's captured probe omits `type`. Call ids 1, 2, 3... (BudsLink, MagicPods) also work, so ids are not checked for value, and replies are matched on channel + method.
+* **One runtime stream per channel [HW]** (PixelBudsMacOS `ARCHITECTURE.md`: a second `SubscribeRuntimeInfo` ended the first about 260 ms later and forced a reconnect every 30 s). **Corrected:** `refresh()` re-subscribed; it now subscribes once per link.
+* **Cancel on teardown [HW]:** pbpctrl's trace sends `CLIENT_ERROR status=1` per open stream when it terminates; `disconnect()` does the same. A dropped link cannot carry one; the streams die with the RFCOMM session.
+* **Single Maestro client: partly unverified.** The phone and a desktop client coexisted in pbpctrl and MagicPods use, but the buds move/close Maestro when the hosting bud changes (tedsluis CAP-065/066), and after a multipoint handoff the link goes half-dead for writes (PixelBudsMacOS, ~75 s hang); MagicPods reconnects and re-resolves after a role handover. This app treats both as a dropped session.
+* **FAILED_PRECONDITION (9) on a write [HW]** is what the buds answer when not in the ears (PixelBudsMacOS). **Corrected:** that no longer withdraws Adaptive for the session; it reports "put them in your ears".
+* **Case battery [HW]:** runtime info omits the case cell when no bud is in the case (pbpctrl issue #19: "the standard maestro response still returns `null` when the buds are out of the case"; the phone reads it elsewhere). The decoder already reports only present cells.
+* **Firmware entry order [static], corrected:** pbpctrl's proto says case, right, left ("order might not be correct"); the companion app's `OtaFragment` shows entry 1 as the Case, 2 the Left, 3 the Right (local APK `iea`/`idv`/`gqh.d`, tedsluis' smali trace of a second APK build). The decoder now reads 2 as left, 3 as right. Serials keep case, right, left (the `EC`/`DR`/`DL` letters in the Pro 2 serials agree; not proven).
+
+### 4. Adaptive ANC
+
+* **[doc]** Adaptive Audio arrived on the Pixel Buds Pro 2 with firmware 4.467 (Sept 2025); the original Pro's updates (5.9, 5.11) list conversation detection and hearing wellness, not Adaptive. pbpctrl issue #19 (a Pro 2 user) shows `get anc` returning `unknown (4)` on 4.467. MagicPodsCore and PixelBudsMacOS both show Adaptive on the Pro 2 only.
+* **[HW]** tedsluis reads loop `4:{12:{1:1 2:1 3:0 4:1}}`: the long-press loop is user-togglable and can leave Adaptive out while Adaptive stays selectable in the app.
+* **Corrected:** Adaptive was hidden whenever the loop read without it. It is now offered unless a write was refused as unsupported (status other than 9); the loop only feeds Pro 2 evidence.
+
+### 5. Artwork
+
+* Google no longer lists the Pixel Buds Pro in the Store (its URL redirects to the Pro 2), the Pro 2's Store gallery is JPEGs with a baked-in background behind content-hash `lh3.googleusercontent.com` URLs, and the APK references no image CDN (`PrestoOta__download_url` is an OTA bundle base). The app's drawables `budtype_4_*` (Pro: carbon, fog, limoncello, real_red) and `budtype_6_*` (Pro 2: dark_haze, mojito, porcelain_white, raspberry, sterling) are transparent earbud renders, so they are bundled by `scripts/gen-pixelbuds-artwork.py` into `public/devices/pixelbuds/` with `pixelbudsCatalog.generated.ts`. Colour and SKU are not on the wire, so each model shows a default colour. The colour names in the script are my mapping from the APK's drawable names.
+
+### Still unverifiable without hardware
+
+* That an active probe wakes a *Pro (1)* the same way (only Pro 2 probes are documented).
+* Whether any Pro firmware announces with call id 0 rather than `0xffffffff` (pre-5.9; the client accepts both).
+* Whether a Pro (1) rejects Adaptive writes, and with which status.
+* Firmware entry order on a pair whose parts differ (all captured values are identical).
+* The serial order case/right/left.
+* Behaviour with the phone's Pixel Buds app holding Maestro at the same time.
+* That Web Serial's RFCOMM bridge delivers the announcement within the 800 ms wait.

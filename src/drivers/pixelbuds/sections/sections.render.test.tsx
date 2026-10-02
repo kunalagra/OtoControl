@@ -25,11 +25,11 @@ describe('Pixel Buds Noise section', () => {
     for (const name of ['Off', 'Noise cancelling', 'Transparency', 'Adaptive']) expect(html).toContain(name);
   });
 
-  it('drops Adaptive when the buds refused it or the loop lacks it', () => {
+  it('drops Adaptive when the buds refused it, but not for a loop that leaves it out', () => {
     expect(render(PixelBudsNoise, { ancMode: AncState.Active, adaptiveRefused: true })).not.toContain('Adaptive');
     expect(
       render(PixelBudsNoise, { ancMode: AncState.Active, ancLoop: { active: true, off: true, aware: true, adaptive: false } }),
-    ).not.toContain('Adaptive');
+    ).toContain('Adaptive');
   });
 
   it('marks the current mode pressed', () => {
@@ -75,7 +75,7 @@ describe('Pixel Buds System section', () => {
     expect(html).toContain('Left L1 · Case C1');
   });
 
-  it('flags a channel found by asking as unverified', () => {
+  it('flags a channel found by asking', () => {
     expect(render(PixelBudsSystem, { channel: 19 })).not.toContain('unverified');
     expect(render(PixelBudsSystem, { channel: 24, channelProbed: true })).toContain('found by asking');
   });

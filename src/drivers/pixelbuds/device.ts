@@ -24,13 +24,14 @@ import {
 import type { AncMode, EqGains, SettingChange } from './maestro';
 import { PixelBudsChannelError, PixelBudsClient } from './client';
 import { parseQuery } from './query';
-import { RpcError } from './rpc';
+import { RpcError, RpcStatus } from './rpc';
 import {
   applyDurable,
   applySetting,
   captureDurable,
   CAPABILITY_FOR_SETTING,
   initialPixelBudsState,
+  PIXELBUDS_PRO_NAME,
   PIXELBUDS_SNAPSHOT_VERSION,
 } from './state';
 import type { PixelBudsCapability, PixelBudsState } from './state';
@@ -59,8 +60,8 @@ const PROBE_TIMEOUT_MS = 800;
 /** How much of the conversation `protocolLog` keeps. */
 const PROTOCOL_LOG_MAX = 400;
 
-/** The name shown for every pair: Pro and Pro 2 cannot be told apart on the wire. */
-export const PIXELBUDS_MODEL_NAME = 'Pixel Buds Pro';
+/** The name until a pair proves to be a Pro 2 by having Adaptive (`state.ts`); nothing else on the wire names the model. */
+export const PIXELBUDS_MODEL_NAME = PIXELBUDS_PRO_NAME;
 
 export interface ProtocolLogEntry {
   /** `Date.now()` when the bytes crossed the link. */
@@ -70,7 +71,11 @@ export interface ProtocolLogEntry {
   bytes: Uint8Array;
 }
 
+const NOT_NOW_ERROR = 'The earbuds refused that right now. Put them in your ears and try again.';
 const NOT_PIXEL_BUDS_ERROR = 'This does not look like a Google Pixel Buds Pro.';
+
+const writeError = (error: unknown): string =>
+  error instanceof RpcError && error.status === RpcStatus.FailedPrecondition ? NOT_NOW_ERROR : describeError(error);
 
 const hex = (bytes: Uint8Array): string => Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join(' ');
 
@@ -97,6 +102,8 @@ export class PixelBudsDevice implements Persistable {
   readonly #session: DeviceSession<PixelBudsClient>;
   readonly #probeTimeoutMs: number;
   #refreshing = false;
+  /** The streams are opened once per link: a second `SubscribeRuntimeInfo` ends the first on the buds' firmware. */
+  #subscribed = false;
   #unsubscribers: Array<() => void> = [];
   #protocolLog: ProtocolLogEntry[] = [];
   readonly #protocolLogListeners = new Set<() => void>();
@@ -123,6 +130,7 @@ export class PixelBudsDevice implements Persistable {
       onStatus: (status, error) => this.#patch({ status, error }),
       onDrop: (reason) => {
         this.#unsubscribers = [];
+        this.#subscribed = false;
         this.#patch({
           ...initialPixelBudsState,
           ...this.#lastKnownDurable(),
@@ -216,6 +224,7 @@ export class PixelBudsDevice implements Persistable {
       await this.#session.connectTo(target, async () => {
         // A connect that supersedes a live session skips onDrop, so clear the live-only fields.
         this.#unsubscribers = [];
+        this.#subscribed = false;
         this.#patch({ battery: [], placement: null, adaptiveRefused: false, channel: null, channelProbed: false });
         await this.refresh();
       });
@@ -251,11 +260,15 @@ export class PixelBudsDevice implements Persistable {
     this.#patch({
       channel: client.channel,
       channelProbed: client.channelWasProbed,
+      // Back to the generic name on every link: the reads below promote it to Pro 2 on Adaptive evidence.
       info: { ...this.#store.state.info, model: PIXELBUDS_MODEL_NAME },
     });
 
-    this.#subscribeRuntime(client);
-    this.#subscribeSettings(client);
+    if (!this.#subscribed) {
+      this.#subscribed = true;
+      this.#subscribeRuntime(client);
+      this.#subscribeSettings(client);
+    }
 
     const found = new Set<PixelBudsCapability>();
     const read = async (capability: PixelBudsCapability, run: () => Promise<void>) => {
@@ -356,11 +369,13 @@ export class PixelBudsDevice implements Persistable {
     try {
       await client.call(Method.WriteSetting, encodeWriteSetting({ setting: SettingId.AncState, value: mode }));
     } catch (error) {
-      const refused = mode === AncState.Adaptive && error instanceof RpcError;
+      // FAILED_PRECONDITION is the buds declining for now (not in the ears), not a missing feature.
+      const notNow = error instanceof RpcError && error.status === RpcStatus.FailedPrecondition;
+      const refused = mode === AncState.Adaptive && error instanceof RpcError && !notNow;
       this.#patch({
         ancMode: previous,
         adaptiveRefused: refused || this.#store.state.adaptiveRefused,
-        error: refused ? 'These earbuds do not support Adaptive.' : describeError(error),
+        error: notNow ? NOT_NOW_ERROR : refused ? 'These earbuds do not support Adaptive.' : describeError(error),
       });
     }
   }
@@ -389,7 +404,7 @@ export class PixelBudsDevice implements Persistable {
     try {
       await client.call(Method.WriteSetting, encodeWriteSetting({ setting, value: on } as SettingChange));
     } catch (error) {
-      this.#patch({ [field]: previous, error: describeError(error) });
+      this.#patch({ [field]: previous, error: writeError(error) });
     }
   }
 
@@ -403,7 +418,7 @@ export class PixelBudsDevice implements Persistable {
     try {
       await client.call(Method.WriteSetting, encodeWriteSetting({ setting: SettingId.UserEq, value: next }));
     } catch (error) {
-      this.#patch({ eq: previous, error: describeError(error) });
+      this.#patch({ eq: previous, error: writeError(error) });
     }
   }
 

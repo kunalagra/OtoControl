@@ -51,7 +51,7 @@ export function PixelBudsSystem({ device, state }: Props) {
             <p className="text-xs">
               <span className="text-muted-foreground">Maestro channel </span>
               {state.channel}
-              {state.channelProbed && ' (found by asking — unverified)'}
+              {state.channelProbed && ' (found by asking)'}
             </p>
           )}
         </CardContent>

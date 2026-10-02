@@ -54,7 +54,7 @@ export const PIXELBUDS_DRIVER = {
   },
   // The buds report only whether each bud is in the case, so "not worn" is the one thing it can say: both in.
   worn: (state: PixelBudsState) => !(state.placement?.leftInCase && state.placement.rightInCase),
-  artwork: (_state: PixelBudsState) => pixelBudsArtwork(),
+  artwork: (state: PixelBudsState) => pixelBudsArtwork(state.info.model),
   // The range is the one pbpctrl documents for the five bands; the buds report none of their own.
   eqPreview: (state: PixelBudsState) =>
     state.eq === null ? null : { preset: null, gains: [...state.eq], range: { min: EQ_RANGE.min, max: EQ_RANGE.max } },

@@ -7,10 +7,11 @@
  * id, which the buds' unsolicited announcement does not echo.
  *
  * The channel is not negotiated. The buds announce the one they serve with an
- * unsolicited `GetSoftwareInfo` reply at connect, so the client is listening
- * from construction and `discoverChannel` usually just reads what already
- * arrived. If nothing does, it asks on each candidate in turn — **a fallback
- * that no source verifies**; see docs/superpowers/specs/2026-10-02-pixelbuds-driver-design.md §4.
+ * unsolicited `GetSoftwareInfo` reply 20-100 ms after connect (call id 0xffffffff; hardware
+ * logs from a Pro and a Pro 2), so the client is listening from construction. If none comes
+ * it asks the way MagicPodsCore and pb2pcd do on a Pro 2 — `GetSoftwareInfo`, call id
+ * 0xffffffff, channel 18 — and takes the channel of whatever answers. See
+ * docs/superpowers/specs/2026-10-02-pixelbuds-driver-design.md §4 and §9.
  */
 
 import type { Transport } from '@/core/transport';
@@ -18,10 +19,12 @@ import { createHdlcDecoder, encodeFrame } from './hdlc';
 import { MAESTRO_SERVICE, Method } from './maestro';
 import {
   addressForChannel,
+  ANNOUNCE_CALL_ID,
   CANDIDATE_CHANNELS,
   decodeRpcPacket,
   encodeRpcPacket,
   PacketType,
+  PROBE_ORDER,
   RpcError,
   RpcStatus,
   rpcHash,
@@ -29,10 +32,10 @@ import {
 import type { RpcPacket } from './rpc';
 
 export const DEFAULT_TIMEOUT_MS = 1500;
-/** How long the buds get to announce their channel before the client starts asking. */
-export const DEFAULT_DISCOVERY_WAIT_MS = 1500;
-/** How long each candidate channel gets to answer an active `GetSoftwareInfo`. */
-export const DEFAULT_CHANNEL_PROBE_MS = 700;
+/** How long the buds get to announce their channel before the client starts asking (seen: 22-102 ms, one measured 332 ms). */
+export const DEFAULT_DISCOVERY_WAIT_MS = 800;
+/** How long each probe gets to be answered, on any candidate channel. */
+export const DEFAULT_CHANNEL_PROBE_MS = 500;
 
 export class PixelBudsTimeoutError extends Error {
   constructor(what: string, ms: number) {
@@ -159,21 +162,16 @@ export class PixelBudsClient {
     if (announced !== null) return announced;
     if (this.#aborted) throw this.#aborted;
 
-    // UNVERIFIED FALLBACK: no source shows a request being answered on a channel the buds did not
-    // announce. pbpctrl only ever listens. Costs `candidates × channelProbeMs` when nothing answers.
+    // Ask, as MagicPodsCore (Pro 2, probe byte-captured) and pb2pcd (Pro 2) do. The reply names the
+    // channel the buds serve, not the one asked on, so any candidate-channel packet ends the wait.
     this.#probed = true;
-    for (const { channel } of CANDIDATE_CHANNELS) {
-      if (this.#channel !== null) return this.#channel;
+    for (const channel of PROBE_ORDER) {
       if (this.#aborted) throw this.#aborted;
-      try {
-        await this.#call(channel, MAESTRO_SERVICE, Method.GetSoftwareInfo, new Uint8Array(0), this.#channelProbeMs);
-        this.#channel = channel;
-        return channel;
-      } catch (error) {
-        console.debug(`[pixelbuds] channel ${channel} did not answer`, error);
-      }
+      this.#send({ type: PacketType.Request, channelId: channel, serviceId: rpcHash(MAESTRO_SERVICE), methodId: rpcHash(Method.GetSoftwareInfo), callId: ANNOUNCE_CALL_ID });
+      const answered = await this.#waitForAnnouncement(this.#channelProbeMs);
+      if (answered !== null) return answered;
     }
-    if (this.#channel !== null) return this.#channel;
+    if (this.#aborted) throw this.#aborted;
     throw new PixelBudsChannelError();
   }
 
