@@ -11,6 +11,7 @@ import { BATTERY_LABEL } from '../protocol/battery'
 import { ALERT_VOLUME_RANGE, FeatureId, gameModeIds } from '../protocol/feature'
 import type { BatteryDevice } from '../protocol/battery'
 import type { HeyMelodyCapability } from '../state'
+import { ProtocolLog } from './ProtocolLog'
 import { TouchControls } from './TouchControls'
 
 interface Props {
@@ -101,6 +102,7 @@ export function HeyMelodySystem({ device, state }: Props) {
         </Card>
       )}
 
+      <ProtocolLog device={device} connected={state.status === 'connected'} />
       {/* No model profiles yet, so no not-supported-yet list: the tail shows
           what the device reported and the shared About. */}
       <SystemTail capabilities={<Capabilities reported={state.capabilities} />} profile={null} />

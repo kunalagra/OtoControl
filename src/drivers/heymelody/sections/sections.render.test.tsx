@@ -10,7 +10,10 @@ import { HeyMelodySound } from './Sound';
 import { HeyMelodySystem } from './System';
 
 /** Markup only: a Proxy stands in for the device, handing back a no-op for any call. */
-const device = new Proxy({}, { get: () => () => undefined }) as never;
+const device = new Proxy(
+  {},
+  { get: (_target, key) => (key === 'protocolLog' ? [] : key === 'onProtocolLog' ? () => () => undefined : () => undefined) },
+) as never;
 
 function renderSection(
   Component: ComponentType<{ device: never; state: HeyMelodyState }>,

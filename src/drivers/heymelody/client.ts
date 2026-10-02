@@ -23,6 +23,8 @@ export class HeyMelodyUnsupportedError extends Error {
 
 export type NotificationListener = (frame: HeyMelodyFrame) => void;
 export type FrameListener = (frame: HeyMelodyFrame, direction: 'tx' | 'rx') => void;
+/** Bytes as they crossed the link: whole packets out, chunks in — before any decoding can drop them. */
+export type RawListener = (bytes: Uint8Array, direction: 'tx' | 'rx') => void;
 
 interface Pending {
   replyCmd: number;
@@ -52,6 +54,7 @@ export class HeyMelodyClient {
   #timeoutMs: number;
   #notificationListeners = new Set<NotificationListener>();
   #frameListeners = new Set<FrameListener>();
+  #rawListeners = new Set<RawListener>();
 
   constructor(transport: Transport, options: HeyMelodyClientOptions = {}) {
     this.#transport = transport;
@@ -61,6 +64,7 @@ export class HeyMelodyClient {
   }
 
   handleData(chunk: Uint8Array): void {
+    for (const listener of this.#rawListeners) listener(chunk, 'rx');
     for (const frame of this.#decoder.push(chunk)) this.#dispatch(frame);
   }
 
@@ -129,6 +133,7 @@ export class HeyMelodyClient {
         listener({ cmd, seq, payload: Uint8Array.from(payload), lengthOk: true }, 'tx');
       }
 
+      for (const listener of this.#rawListeners) listener(packet, 'tx');
       this.#transport.write(packet).catch((error: Error) => {
         const pending = this.#pending;
         if (!pending) return;
@@ -147,6 +152,11 @@ export class HeyMelodyClient {
   onFrame(listener: FrameListener): () => void {
     this.#frameListeners.add(listener);
     return () => this.#frameListeners.delete(listener);
+  }
+
+  onRaw(listener: RawListener): () => void {
+    this.#rawListeners.add(listener);
+    return () => this.#rawListeners.delete(listener);
   }
 
   abort(reason: Error): void {

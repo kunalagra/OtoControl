@@ -102,3 +102,19 @@ describe('HeyMelodyClient.request', () => {
     await expect(pending).rejects.toThrow('aborted');
   });
 });
+
+describe('HeyMelodyClient.onRaw', () => {
+  it('reports every written packet and every received chunk, decodable or not', async () => {
+    const { transport, client } = setup();
+    const seen: Array<[string, number[]]> = [];
+    client.onRaw((bytes, direction) => seen.push([direction, Array.from(bytes)]));
+    const pending = client.request(Cmd.QueryProductId, [], { timeoutMs: 20 }).catch(() => undefined);
+    await vi.waitFor(() => expect(transport.written).toHaveLength(1));
+    client.handleData(Uint8Array.from([0x01, 0x02, 0x03]));
+    await pending;
+    expect(seen).toEqual([
+      ['tx', Array.from(transport.written[0])],
+      ['rx', [0x01, 0x02, 0x03]],
+    ]);
+  });
+});

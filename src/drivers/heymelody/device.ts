@@ -84,6 +84,17 @@ type Listener = (state: HeyMelodyState) => void;
  */
 const PROBE_TIMEOUT_MS = 400;
 
+/** How much of the conversation `protocolLog` keeps. */
+const PROTOCOL_LOG_MAX = 400;
+
+export interface ProtocolLogEntry {
+  /** `Date.now()` when the bytes crossed the link. */
+  at: number;
+  /** `connect` marks a new link, with no bytes. */
+  direction: 'tx' | 'rx' | 'connect';
+  bytes: Uint8Array;
+}
+
 const NOT_HEYMELODY_ERROR = 'This does not look like a HeyMelody or realme device.';
 
 const hex = (bytes: Uint8Array): string => Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join(' ');
@@ -110,6 +121,8 @@ export class HeyMelodyDevice implements Persistable {
   #refreshing = false;
   /** Last curve the device confirmed per eqId — what a failed curve write rolls back to. */
   readonly #confirmedEq = new Map<number, EqPreset>();
+  #protocolLog: ProtocolLogEntry[] = [];
+  readonly #protocolLogListeners = new Set<() => void>();
 
   constructor(openTransport: TransportOpener = openSerialTransport, options: HeyMelodyDeviceOptions = {}) {
     this.#timeoutMs = options.timeoutMs;
@@ -124,6 +137,8 @@ export class HeyMelodyDevice implements Persistable {
       handleData: (client, chunk) => client.handleData(chunk),
       wire: (client) => {
         client.onNotification((frame) => this.#onNotification(frame));
+        this.#appendLog('connect', new Uint8Array());
+        client.onRaw((bytes, direction) => this.#appendLog(direction, bytes));
       },
       onStatus: (status, error) => this.#patch({ status, error }),
       onDrop: (reason) =>
@@ -140,6 +155,37 @@ export class HeyMelodyDevice implements Persistable {
 
   get state(): HeyMelodyState {
     return this.#store.state;
+  }
+
+  /**
+   * Raw bytes both ways since the first connect, newest last — for working out what a
+   * model that misbehaves actually sends. Kept outside state so logging never re-renders.
+   */
+  get protocolLog(): readonly ProtocolLogEntry[] {
+    return this.#protocolLog;
+  }
+
+  onProtocolLog(listener: () => void): () => void {
+    this.#protocolLogListeners.add(listener);
+    return () => this.#protocolLogListeners.delete(listener);
+  }
+
+  #appendLog(direction: ProtocolLogEntry['direction'], bytes: Uint8Array): void {
+    this.#protocolLog = [...this.#protocolLog, { at: Date.now(), direction, bytes: Uint8Array.from(bytes) }].slice(-PROTOCOL_LOG_MAX);
+    for (const listener of this.#protocolLogListeners) listener();
+  }
+
+  /**
+   * Sends one hand-entered command and resolves with its reply payload. Limited to the
+   * `0x01xx` queries and `0x02xx` notification setup, so nothing typed here changes a setting.
+   */
+  async sendQuery(cmd: number, payload: number[]): Promise<Uint8Array> {
+    if (!Number.isInteger(cmd) || cmd < 0x0100 || cmd > 0x02ff) {
+      throw new Error('Only query commands (0x0100–0x02FF) can be sent from here.');
+    }
+    const client = this.#session.client;
+    if (!client) throw new Error('Not connected.');
+    return client.request(cmd, payload);
   }
 
   // --- Persistable ---------------------------------------------------------

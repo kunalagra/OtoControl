@@ -508,6 +508,31 @@ describe('HeyMelodyDevice identity diagnostics', () => {
   });
 });
 
+describe('HeyMelodyDevice protocol log', () => {
+  it('records the raw connect conversation, including the productId query', async () => {
+    const device = new HeyMelodyDevice(heyMelodyOpener(FULL_REPLIES), { timeoutMs: 50, probeTimeoutMs: 50 });
+    await device.adoptPort(port);
+    const decoder = new SppFrameCodec().createDecoder();
+    const sent = device.protocolLog.filter((entry) => entry.direction === 'tx').flatMap((entry) => decoder.push(entry.bytes));
+    expect(sent.map((frame) => frame.cmd)).toContain(Cmd.QueryProductId);
+    expect(device.protocolLog.some((entry) => entry.direction === 'rx')).toBe(true);
+  });
+
+  it('sends a query command and returns its reply', async () => {
+    const replies = new Map(FULL_REPLIES);
+    replies.set(0x0104, [0x00, 0x31]);
+    const device = new HeyMelodyDevice(heyMelodyOpener(replies), { timeoutMs: 50, probeTimeoutMs: 50 });
+    await device.adoptPort(port);
+    await expect(device.sendQuery(0x0104, [0x30])).resolves.toEqual(Uint8Array.from([0x00, 0x31]));
+  });
+
+  it('refuses anything outside the 0x01xx/0x02xx query range', async () => {
+    const device = new HeyMelodyDevice(heyMelodyOpener(FULL_REPLIES), { timeoutMs: 50, probeTimeoutMs: 50 });
+    await device.adoptPort(port);
+    await expect(device.sendQuery(0x0401, [])).rejects.toThrow(/query/);
+  });
+});
+
 describe('HeyMelodyDevice live pushes', () => {
   it('replaces battery and wear from 0x0204 events 1 and 2', async () => {
     let transport!: FakeTransport;
