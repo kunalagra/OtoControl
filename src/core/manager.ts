@@ -17,9 +17,10 @@ import {
   HEYMELODY_DRIVER,
   PIXELBUDS_DRIVER,
   XIAOMI_DRIVER,
-  driverForService,
+  SAMSUNG_DRIVER,
+  driversForService,
 } from '@/core/driver';
-import type { DriverId } from '@/core/driver';
+import type { DeviceDriver, DriverId } from '@/core/driver';
 import { SonyDevice } from '@/drivers/sony/sony';
 import { NothingDevice } from '@/drivers/nothing/device';
 import { SoundcoreDevice } from '@/drivers/soundcore/device';
@@ -29,6 +30,8 @@ import { PixelBudsDevice } from '@/drivers/pixelbuds/device';
 import type { PixelBudsState } from '@/drivers/pixelbuds/device';
 import { XiaomiDevice } from '@/drivers/xiaomi/device';
 import type { XiaomiState } from '@/drivers/xiaomi/device';
+import { SamsungDevice } from '@/drivers/samsung/device';
+import type { SamsungState } from '@/drivers/samsung/device';
 import type { DeviceState } from '@/drivers/sennheiser/state';
 import type { SonyState } from '@/drivers/sony/sony';
 import type { NothingState } from '@/drivers/nothing/device';
@@ -37,9 +40,11 @@ import {
   findGrantedPort,
   isWebSerialSupported,
   listGrantedPorts,
+  openSerialTransport,
   requestPort,
 } from '@/core/transport';
-import type { ConnectionTarget, GrantedPort, Transport } from '@/core/transport';
+import type { ConnectionTarget, GrantedPort, KnownService, Transport } from '@/core/transport';
+import { identifyOnPort } from '@/core/identify';
 import {
   GattTransport,
   gattServiceBrand,
@@ -49,8 +54,10 @@ import {
 } from '@/core/gattTransport';
 import {
   deviceLabel,
+  identifiedDriver,
   preferredService,
   rememberDeviceName,
+  rememberIdentifiedDriver,
   rememberPreferredService,
 } from '@/core/knownDevices';
 import { restoreSnapshot, saveSnapshot } from '@/core/persistence';
@@ -112,7 +119,8 @@ export type ActiveDevice =
   | { id: Extract<DriverId, 'soundcore-gatt'>; driver: typeof SOUNDCORE_DRIVER; device: SoundcoreDevice; state: SoundcoreState }
   | { id: Extract<DriverId, 'heymelody'>; driver: typeof HEYMELODY_DRIVER; device: HeyMelodyDevice; state: HeyMelodyState }
   | { id: Extract<DriverId, 'pixelbuds'>; driver: typeof PIXELBUDS_DRIVER; device: PixelBudsDevice; state: PixelBudsState }
-  | { id: Extract<DriverId, 'xiaomi-rcsp'>; driver: typeof XIAOMI_DRIVER; device: XiaomiDevice; state: XiaomiState };
+  | { id: Extract<DriverId, 'xiaomi-rcsp'>; driver: typeof XIAOMI_DRIVER; device: XiaomiDevice; state: XiaomiState }
+  | { id: Extract<DriverId, 'samsung'>; driver: typeof SAMSUNG_DRIVER; device: SamsungDevice; state: SamsungState };
 
 /**
  * Whether the app knows of any device.
@@ -167,6 +175,7 @@ export class DeviceManager {
   readonly #heymelody = this.#devices[HEYMELODY_DRIVER.id] as HeyMelodyDevice;
   readonly #pixelbuds = this.#devices[PIXELBUDS_DRIVER.id] as PixelBudsDevice;
   readonly #xiaomi = this.#devices[XIAOMI_DRIVER.id] as XiaomiDevice;
+  readonly #samsung = this.#devices[SAMSUNG_DRIVER.id] as SamsungDevice;
 
   /**
    * Which driver's device the UI should render, keyed by driver id, or null
@@ -174,7 +183,7 @@ export class DeviceManager {
    * device you own is still your device when it is switched off.
    *
    * Driver id, not `Brand`: `select`/`connect`/`autoConnect` already resolve
-   * a specific driver via `driverForService` and act on `#devices[driver.id]`
+   * a specific driver via `driversForService` and act on `#devices[driver.id]`
    * — storing only its brand here would have made `active` (below) unable to
    * tell apart two drivers that happened to share one, always rendering
    * whichever of them has the lower-numbered concrete field regardless of
@@ -213,22 +222,35 @@ export class DeviceManager {
         // actually granted, not one hardcoded per driver — Sony already
         // needed this to disambiguate its two protocol generations, and a
         // future driver may too.
-        const uuid = this.#uuidFor(driver.services);
-        if (uuid) {
-          rememberDeviceName(uuid, state.info.model);
+        const entry = this.#entryFor(driver);
+        if (entry) {
+          rememberDeviceName(entry.service.uuid, state.info.model);
           // Only while connected: every value in a snapshot came from the
           // device, and caching a restored cache would let one bad reading
           // calcify.
-          if (state.status === 'connected') saveSnapshot(uuid, device);
+          if (state.status === 'connected') saveSnapshot(snapshotKey(entry.service, driver), device);
         }
         this.#emit();
       });
     }
   }
 
-  /** The granted uuid speaking one of `services`, whichever generation it turned out to be. */
-  #uuidFor(services: readonly string[]): string | undefined {
-    return this.#granted.find((entry) => services.includes(entry.service.uuid))?.service.uuid;
+  /**
+   * The driver behind a granted service. For a service that names its device,
+   * its owner; for a shared one (standard SPP), whichever driver the port was
+   * last identified as, else the first candidate — which is only a guess until
+   * `#adoptSerial` has listened to the port.
+   */
+  #driverFor(service: KnownService): DeviceDriver<never, never> | null {
+    const candidates = driversForService(service.uuid);
+    if (!service.generic) return candidates[0] ?? null;
+    const remembered = identifiedDriver(service.uuid);
+    return candidates.find((candidate) => candidate.id === remembered) ?? candidates[0] ?? null;
+  }
+
+  /** The granted port a driver is currently speaking through, whichever generation it turned out to be. */
+  #entryFor(driver: DeviceDriver<never, never>): GrantedPort | undefined {
+    return this.#granted.find((entry) => this.#driverFor(entry.service)?.id === driver.id);
   }
 
   /**
@@ -242,8 +264,8 @@ export class DeviceManager {
    */
   #restoreCached(): void {
     for (const { service } of this.#granted) {
-      const driver = driverForService(service.uuid);
-      if (driver) restoreSnapshot(service.uuid, this.#devices[driver.id]);
+      const driver = this.#driverFor(service);
+      if (driver) restoreSnapshot(snapshotKey(service, driver), this.#devices[driver.id]);
     }
   }
 
@@ -253,11 +275,10 @@ export class DeviceManager {
    * Chrome offers no way to open their picker-free chooser entries here.
    */
   get available(): Array<{ uuid: string; brand: Brand; label: string }> {
-    return this.#granted.map(({ service }) => ({
-      uuid: service.uuid,
-      brand: service.brand,
-      label: deviceLabel(service.uuid, service.brand),
-    }));
+    return this.#granted.map(({ service }) => {
+      const brand = this.#driverFor(service)?.brand ?? service.brand;
+      return { uuid: service.uuid, brand, label: deviceLabel(service.uuid, brand) };
+    });
   }
 
   async refreshAvailable(): Promise<void> {
@@ -277,12 +298,56 @@ export class DeviceManager {
       Object.values(this.#devices).map((device) => device.disconnect().catch(() => undefined)),
     );
 
-    const driver = driverForService(entry.service.uuid);
-    if (!driver) return;
-
     rememberPreferredService(serviceUuid);
+    await this.#adoptSerial(entry);
+  }
+
+  /**
+   * Hands a granted port to the driver that speaks it.
+   *
+   * A service that names its device goes straight to its owner. A shared one
+   * (standard SPP) is opened once and listened to first — `core/identify.ts`
+   * — and that same open transport is handed to whichever candidate
+   * recognised it, so there is no reconnect between the two. A port nothing
+   * recognised goes to the first candidate, which is where such a port went
+   * before this step existed, and which reports "not my device" itself.
+   *
+   * Whatever went wrong while listening (the port is held elsewhere, or the
+   * earbuds are off) falls through to that same first candidate's own
+   * `adoptPort`: it opens the port itself and reports the failure in its own
+   * words, as it always did.
+   */
+  async #adoptSerial(entry: GrantedPort): Promise<void> {
+    const candidates = driversForService(entry.service.uuid);
+    const owner = this.#driverFor(entry.service);
+    if (!owner) return;
+    if (!entry.service.generic || candidates.length < 2) {
+      this.#select(owner.id);
+      await this.#devices[owner.id].adoptPort(entry.port);
+      return;
+    }
+
+    const probes = candidates.flatMap((driver) => (driver.probe ? [{ brand: driver.brand, probe: driver.probe }] : []));
+    const remembered = identifiedDriver(entry.service.uuid);
+    const preferred = candidates.find((driver) => driver.id === remembered)?.brand ?? null;
+    let identified: Awaited<ReturnType<typeof identifyOnPort>> | null = null;
+    try {
+      identified = await identifyOnPort(openSerialTransport, entry.port, probes, { preferred });
+    } catch (error) {
+      console.debug('[manager] could not listen to the shared port', error);
+    }
+
+    const driver = (identified?.brand && candidates.find((candidate) => candidate.brand === identified.brand)) || candidates[0];
     this.#select(driver.id);
-    await this.#devices[driver.id].adoptPort(entry.port);
+    const device = this.#devices[driver.id];
+    if (identified && device.adoptTransport) {
+      if (identified.brand) rememberIdentifiedDriver(entry.service.uuid, driver.id);
+      await device.adoptTransport(identified.transport);
+      return;
+    }
+    // Nothing to hand over (the listen failed, or this driver cannot adopt): let the driver open it itself.
+    await identified?.transport.close().catch(() => undefined);
+    await device.adoptPort(entry.port);
   }
 
   /**
@@ -319,7 +384,7 @@ export class DeviceManager {
   #resolvedDriverId(): string {
     if (this.#driverId !== null) return this.#driverId;
     const first = this.#granted[0];
-    const driver = first ? driverForService(first.service.uuid) : null;
+    const driver = first ? this.#driverFor(first.service) : null;
     return driver?.id ?? SENNHEISER_DRIVER.id;
   }
 
@@ -395,6 +460,14 @@ export class DeviceManager {
         state: this.#xiaomi.state,
       };
     }
+    if (driverId === SAMSUNG_DRIVER.id) {
+      return {
+        id: SAMSUNG_DRIVER.id,
+        driver: SAMSUNG_DRIVER,
+        device: this.#samsung,
+        state: this.#samsung.state,
+      };
+    }
     return {
       id: SENNHEISER_DRIVER.id,
       driver: SENNHEISER_DRIVER,
@@ -429,12 +502,8 @@ export class DeviceManager {
     const granted = await requestPort().catch(() => null);
     if (!granted) return;
 
-    const driver = driverForService(granted.service.uuid);
-    if (!driver) return;
-
     rememberPreferredService(granted.service.uuid);
-    this.#select(driver.id);
-    await this.#devices[driver.id].adoptPort(granted.port);
+    await this.#adoptSerial(granted);
     await this.refreshAvailable();
   }
 
@@ -514,11 +583,7 @@ export class DeviceManager {
     const granted = await findGrantedPort(preferredService());
     if (!granted) return false;
 
-    const driver = driverForService(granted.service.uuid);
-    if (!driver) return false;
-
-    this.#select(driver.id);
-    await this.#devices[driver.id].adoptPort(granted.port);
+    await this.#adoptSerial(granted);
     if (this.#isConnected()) return true;
 
     // No serial port answered — a previously granted BLE device still can.
@@ -547,3 +612,11 @@ export class DeviceManager {
     await this.active.device.refresh();
   }
 }
+
+/**
+ * What a device's cache is filed under. A shared service holds more than one
+ * driver's devices, and a cache written by one must never be offered to
+ * another, so there the driver id is part of the key.
+ */
+const snapshotKey = (service: KnownService, driver: DeviceDriver<never, never>): string =>
+  service.generic ? `${service.uuid}#${driver.id}` : service.uuid;

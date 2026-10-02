@@ -9,6 +9,7 @@ import type { DeviceDriver, DriverSection, EqPresets, QuickSetting } from '@/cor
 import { servicesFor } from '@/core/transport';
 import { heymelodyArtwork } from './assets';
 import { HeyMelodyDevice } from './device';
+import { heymelodyProbe } from './probe';
 import { builtinPresets } from './eqModes';
 import type { HeyMelodyState } from './device';
 import { BATTERY_LABEL } from './protocol/battery';
@@ -37,6 +38,7 @@ export const HEYMELODY_DRIVER = {
   label: 'HeyMelody (OPPO / realme / OnePlus)',
   brand: 'heymelody',
   services: servicesFor('heymelody'),
+  probe: heymelodyProbe,
   profiles: [],
   create: (deps) => new HeyMelodyDevice(deps.openTransport),
   sections: (state) => {

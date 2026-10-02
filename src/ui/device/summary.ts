@@ -288,6 +288,30 @@ export function summarise(active: ActiveDevice): DeviceSummary {
     }
   }
 
+  if (active.id === 'samsung') {
+    const { driver, state } = active
+    const cells: BatteryCellSummary[] = [
+      { key: 'left', label: 'L' },
+      { key: 'right', label: 'R' },
+      { key: 'case', label: 'Case' },
+    ].flatMap(({ key, label }) => {
+      const level = state.battery[key as 'left' | 'right' | 'case']
+      return level === null ? [] : [{ label: label as BatteryCellSummary['label'], level, charging: state.charging[key as 'left' | 'right' | 'case'] }]
+    })
+    return {
+      model: state.info.model ?? fallbackName(state.status, 'Galaxy Buds'),
+      hasDevice: state.info.model !== null,
+      battery: lowest(cells),
+      charging: cells.some((entry) => entry.charging),
+      codec: driver.codecName(state),
+      detail: driver.statusLine(state),
+      artwork: driver.artwork(state),
+      worn: driver.worn(state),
+      firmware: state.info.firmware,
+      cells,
+    }
+  }
+
   const { driver, state } = active
   return {
     model: state.info.model ?? fallbackName(state.status, 'Sennheiser headphones'),

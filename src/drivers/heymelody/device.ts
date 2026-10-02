@@ -64,7 +64,7 @@ import {
   isWebSerialSupported,
   openSerialTransport,
 } from '@/core/transport';
-import type { ConnectionTarget, TransportOpener } from '@/core/transport';
+import type { ConnectionTarget, Transport, TransportOpener } from '@/core/transport';
 import { DeviceSession } from '@/core/session';
 import type { SessionHooks } from '@/core/session';
 import { StateStore } from '@/core/stateStore';
@@ -244,17 +244,33 @@ export class HeyMelodyDevice implements Persistable {
       return;
     }
     try {
-      await this.#session.connectTo(target, async () => {
-        // A connect that supersedes a live session skips onDrop, and these fields are only
-        // overwritten when the new pair answers — clear them so another pair's controls can't linger.
-        this.#confirmedEq.clear();
-        this.#patch({ features: new Map(), bassLevel: null, alertVolume: null, gestures: [], peers: [] });
-        await this.#subscribe();
-        await this.refresh();
-      });
+      await this.#session.connectTo(target, () => this.#afterConnect());
     } catch (error) {
       this.#patch({ status: 'disconnected', error: isUnreachable(error) ? null : describeError(error) });
     }
+  }
+
+  /**
+   * Takes over a transport that is already open — what `core/identify.ts` hands
+   * over once it has listened to a shared standard-SPP port and found
+   * HeyMelody (or found nothing, in which case this is still where such a port
+   * has always ended up).
+   */
+  async adoptTransport(transport: Transport): Promise<void> {
+    try {
+      await this.#session.adoptTransport(transport, () => this.#afterConnect());
+    } catch (error) {
+      this.#patch({ status: 'disconnected', error: isUnreachable(error) ? null : describeError(error) });
+    }
+  }
+
+  async #afterConnect(): Promise<void> {
+    // A connect that supersedes a live session skips onDrop, and these fields are only
+    // overwritten when the new pair answers — clear them so another pair's controls can't linger.
+    this.#confirmedEq.clear();
+    this.#patch({ features: new Map(), bassLevel: null, alertVolume: null, gestures: [], peers: [] });
+    await this.#subscribe();
+    await this.refresh();
   }
 
   /**

@@ -4,6 +4,7 @@ import { HeyMelodyDevice } from './device';
 import { Cmd, replyFor } from './protocol/cmd';
 import { SppFrameCodec, encodeSppFrame } from './sppFrame';
 import { FakeTransport } from '@/core/fakeTransport.test-helper';
+import { HandoffTransport } from '@/core/identify';
 import type { TransportOpener } from '@/core/transport';
 
 /** `adoptPort` is the test entry point — `connect()` would need the picker. */
@@ -52,6 +53,19 @@ describe('HeyMelodyDevice connect', () => {
     expect(device.state.ancLevel).toBe(50);
     expect(device.state.eqCurrentPreset).toBe(1);
     expect(device.state.capabilities).toEqual(new Set(['battery', 'anc', 'eq']));
+  });
+
+  it('connects the same way over a transport handed to it already open', async () => {
+    // What `core/identify.ts` does with a shared standard-SPP port once it has recognised HeyMelody.
+    const opener = heyMelodyOpener(FULL_REPLIES);
+    const handoff = new HandoffTransport();
+    handoff.bind(await opener(port, handoff.handlers));
+    const device = new HeyMelodyDevice(opener, { timeoutMs: 50, probeTimeoutMs: 50 });
+    await device.adoptTransport(handoff);
+
+    expect(device.state.status).toBe('connected');
+    expect(device.state.info.productId).toBe('06F010');
+    expect(device.state.battery).toEqual([{ device: 'left', level: 84, charging: true }]);
   });
 
   it('does not identify the device when QueryProductId reports a non-zero status', async () => {

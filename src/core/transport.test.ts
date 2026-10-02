@@ -4,6 +4,8 @@ import {
   AIROHA_SERVICE_UUID,
   HEYMELODY_LEGACY_SPP_UUID,
   HEYMELODY_SPP_UUID,
+  SAMSUNG_LEGACY_SPP_UUID,
+  SAMSUNG_SPP_UUID,
   KNOWN_SERVICES,
   M4_SERVICE_UUID,
   PIXELBUDS_MAESTRO_UUID,
@@ -18,6 +20,7 @@ import {
   listGrantedPorts,
   serviceForPort,
   servicesFor,
+  sharedServicesFor,
 } from './transport';
 
 /** Enough of a SerialPort for service resolution, which only reads getInfo(). */
@@ -77,8 +80,21 @@ describe('serviceForPort', () => {
     }
   });
 
-  it('routes the standard SPP service to the HeyMelody driver as a generic service', () => {
-    expect(serviceForPort(portWith(STANDARD_SPP_UUID))).toMatchObject({ brand: 'heymelody', generic: true });
+  it('routes the standard SPP service to HeyMelody first, as a generic service shared with Samsung', () => {
+    expect(serviceForPort(portWith(STANDARD_SPP_UUID))).toMatchObject({
+      brand: 'heymelody',
+      generic: true,
+      candidates: ['heymelody', 'samsung'],
+    });
+  });
+
+  it('routes both Galaxy Buds services to Samsung, neither generic', () => {
+    expect(serviceForPort(portWith(SAMSUNG_SPP_UUID))).toMatchObject({ brand: 'samsung', protocol: 'samsung-scsp' });
+    expect(serviceForPort(portWith(SAMSUNG_LEGACY_SPP_UUID))).toMatchObject({
+      brand: 'samsung',
+      protocol: 'samsung-scsp-legacy',
+    });
+    expect(serviceForPort(portWith(SAMSUNG_SPP_UUID))?.generic).toBeFalsy();
   });
 });
 
@@ -97,6 +113,14 @@ describe('Xiaomi service', () => {
 describe('listGrantedPorts', () => {
   afterEach(() => {
     vi.unstubAllGlobals();
+  });
+
+  it('lists Galaxy Buds ports ahead of the shared standard-SPP one', async () => {
+    vi.stubGlobal('navigator', {
+      serial: { getPorts: async () => [portWith(STANDARD_SPP_UUID), portWith(SAMSUNG_SPP_UUID)] },
+    });
+    const granted = await listGrantedPorts();
+    expect(granted.map((entry) => entry.service.uuid)).toEqual([SAMSUNG_SPP_UUID, STANDARD_SPP_UUID]);
   });
 
   it('lists generic services after brand-specific ones', async () => {
@@ -130,7 +154,18 @@ describe('KNOWN_SERVICES', () => {
 
   it('maps every service to a brand that has artwork', () => {
     for (const { brand } of KNOWN_SERVICES) {
-      expect(['sennheiser', 'sony', 'nothing', 'heymelody', 'pixelbuds', 'xiaomi']).toContain(brand);
+      expect(['sennheiser', 'sony', 'nothing', 'heymelody', 'pixelbuds', 'xiaomi', 'samsung']).toContain(brand);
+    }
+  });
+
+  it('lists candidates only on generic services, headed by the owning brand', () => {
+    for (const service of KNOWN_SERVICES) {
+      if (service.candidates) {
+        expect(service.generic).toBe(true);
+        expect(service.candidates[0]).toBe(service.brand);
+      } else {
+        expect(service.generic).toBeFalsy();
+      }
     }
   });
 
@@ -151,6 +186,18 @@ describe('servicesFor', () => {
 
   it('resolves heymelody services', () => {
     expect(servicesFor('heymelody')).toEqual([HEYMELODY_SPP_UUID, HEYMELODY_LEGACY_SPP_UUID, STANDARD_SPP_UUID]);
+  });
+
+  it('gives Samsung the two services that name Galaxy Buds outright, and not the shared one', () => {
+    expect(servicesFor('samsung')).toEqual([SAMSUNG_SPP_UUID, SAMSUNG_LEGACY_SPP_UUID]);
+  });
+});
+
+describe('sharedServicesFor', () => {
+  it('lists the generic services a brand can be behind without owning', () => {
+    expect(sharedServicesFor('samsung')).toEqual([STANDARD_SPP_UUID]);
+    expect(sharedServicesFor('heymelody')).toEqual([]);
+    expect(sharedServicesFor('sony')).toEqual([]);
   });
 });
 

@@ -35,6 +35,8 @@ import type { ComponentType } from 'react';
 import type { Brand } from './brand';
 import type { DeviceArtwork } from './artwork';
 import type { DeviceProfile } from './profiles';
+import type { ProtocolProbe } from './identify';
+import { KNOWN_SERVICES } from './transport';
 import type { TransportOpener } from './transport';
 import { SENNHEISER_DRIVER } from '@/drivers/sennheiser/driver';
 import { SONY_DRIVER } from '@/drivers/sony/driver';
@@ -43,6 +45,7 @@ import { SOUNDCORE_DRIVER } from '@/drivers/soundcore/driver';
 import { HEYMELODY_DRIVER } from '@/drivers/heymelody/driver';
 import { PIXELBUDS_DRIVER } from '@/drivers/pixelbuds/driver';
 import { XIAOMI_DRIVER } from '@/drivers/xiaomi/driver';
+import { SAMSUNG_DRIVER } from '@/drivers/samsung/driver';
 
 /**
  * Re-exported so this module stays the single address for "a driver".
@@ -66,6 +69,7 @@ export { SOUNDCORE_DRIVER } from '@/drivers/soundcore/driver';
 export { HEYMELODY_DRIVER } from '@/drivers/heymelody/driver';
 export { PIXELBUDS_DRIVER } from '@/drivers/pixelbuds/driver';
 export { XIAOMI_DRIVER } from '@/drivers/xiaomi/driver';
+export { SAMSUNG_DRIVER } from '@/drivers/samsung/driver';
 
 /**
  * Every driver id this app can produce, as a closed union.
@@ -99,7 +103,8 @@ export type DriverId =
   | typeof SOUNDCORE_DRIVER.id
   | typeof HEYMELODY_DRIVER.id
   | typeof PIXELBUDS_DRIVER.id
-  | typeof XIAOMI_DRIVER.id;
+  | typeof XIAOMI_DRIVER.id
+  | typeof SAMSUNG_DRIVER.id;
 
 /**
  * How a driver obtains its device's transport.
@@ -250,6 +255,16 @@ export interface DeviceDriver<TDevice, TState> {
   brand: Brand;
   /** RFCOMM service UUIDs that identify this driver's devices. */
   services: readonly string[];
+  /**
+   * Generic services this driver's devices can also be behind — standard SPP,
+   * which other brands answer on too. Never claimed by UUID: a port granted
+   * for one is listened to first (`core/identify.ts`) and handed to whichever
+   * candidate's `probe` recognises it. Distinct from `services` so a service
+   * still has exactly one owner.
+   */
+  sharedServices?: readonly string[];
+  /** How this protocol recognises itself on a shared service. Required wherever `sharedServices` or a generic `services` entry exists. */
+  probe?: ProtocolProbe;
   profiles: readonly DeviceProfile[];
   create(deps: DriverDeps): TDevice;
   /** The driver decides how capability works — statically or negotiated. */
@@ -369,9 +384,23 @@ export const DRIVERS: readonly DeviceDriver<never, never>[] = [
   HEYMELODY_DRIVER,
   PIXELBUDS_DRIVER,
   XIAOMI_DRIVER,
+  SAMSUNG_DRIVER,
 ] as unknown as readonly DeviceDriver<never, never>[];
 
 /** The driver that speaks a given RFCOMM service, or null if none does. */
 export function driverForService(uuid: string): DeviceDriver<never, never> | null {
   return DRIVERS.find((driver) => driver.services.includes(uuid)) ?? null;
+}
+
+/**
+ * Every driver that can be behind a service, most likely first — one entry for
+ * a service that names its device, several for a generic one. The order is
+ * the service's own `candidates`, so the table in `transport.ts` stays the one
+ * place it is written down.
+ */
+export function driversForService(uuid: string): DeviceDriver<never, never>[] {
+  const service = KNOWN_SERVICES.find((entry) => entry.uuid === uuid);
+  if (!service) return [];
+  const brands = service.candidates ?? [service.brand];
+  return brands.flatMap((brand) => DRIVERS.filter((driver) => driver.brand === brand));
 }

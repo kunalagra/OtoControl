@@ -618,6 +618,8 @@ export const IMPLEMENTED: Record<Brand, readonly FeatureId[]> = {
   heymelody: [F.Anc, F.Equalizer],
   pixelbuds: [F.Anc, F.Equalizer, F.Multipoint, F.WearDetection],
   xiaomi: [F.Anc, F.Equalizer],
+  // No profiles yet (models are told apart by SKU in the driver), so nothing reads this.
+  samsung: [F.Anc, F.Transparency, F.Equalizer],
 };
 
 /** The profile for a reported model string, or null when we know of no such model. */

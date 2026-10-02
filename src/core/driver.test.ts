@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { DRIVERS, SENNHEISER_DRIVER, SONY_DRIVER, XIAOMI_DRIVER, driverForService } from './driver';
+import { DRIVERS, SENNHEISER_DRIVER, SONY_DRIVER, XIAOMI_DRIVER, driverForService, driversForService } from './driver';
 import { initialState } from '@/drivers/sennheiser/state';
 import { initialSonyState } from '@/drivers/sony/sony';
 import {
@@ -8,6 +8,8 @@ import {
   KNOWN_SERVICES,
   M4_SERVICE_UUID,
   SONY_MDR_V1_UUID,
+  SAMSUNG_LEGACY_SPP_UUID,
+  SAMSUNG_SPP_UUID,
   SONY_MDR_V2_UUID,
   STANDARD_SPP_UUID,
   XIAOMI_SPP_UUID,
@@ -38,6 +40,32 @@ describe('driverForService', () => {
   });
 });
 
+describe('driversForService', () => {
+  it('names a single driver for a service that names its device', () => {
+    expect(driversForService(M4_SERVICE_UUID).map((driver) => driver.id)).toEqual(['sennheiser-gaia']);
+    expect(driversForService(SAMSUNG_SPP_UUID).map((driver) => driver.id)).toEqual(['samsung']);
+    expect(driversForService(SAMSUNG_LEGACY_SPP_UUID).map((driver) => driver.id)).toEqual(['samsung']);
+  });
+
+  it('lists every candidate for the shared standard-SPP service, HeyMelody first', () => {
+    expect(driversForService(STANDARD_SPP_UUID).map((driver) => driver.id)).toEqual(['heymelody', 'samsung']);
+  });
+
+  it('is empty for a service nothing speaks', () => {
+    expect(driversForService(AIROHA_SERVICE_UUID)).toEqual([]);
+  });
+
+  it('still resolves a shared service to its owner through driverForService', () => {
+    expect(driverForService(STANDARD_SPP_UUID)?.id).toBe('heymelody');
+  });
+
+  it('gives every candidate on a shared service a probe to recognise itself with', () => {
+    for (const driver of driversForService(STANDARD_SPP_UUID)) {
+      expect(driver.probe, driver.id).toBeDefined();
+    }
+  });
+});
+
 describe('DRIVERS', () => {
   it('gives every driver a unique id', () => {
     const ids = DRIVERS.map((driver) => driver.id);
@@ -62,6 +90,12 @@ describe('DRIVERS', () => {
     for (const { uuid } of KNOWN_SERVICES) {
       expect(covered.has(uuid)).toBe(true);
     }
+  });
+
+  it('claims a shared service for no one but its owner, and lists Samsung as a candidate instead', () => {
+    const samsung = DRIVERS.find((driver) => driver.id === 'samsung');
+    expect(samsung?.services).not.toContain(STANDARD_SPP_UUID);
+    expect(samsung?.sharedServices).toEqual([STANDARD_SPP_UUID]);
   });
 
   it("only lists profiles for the driver's own brand", () => {

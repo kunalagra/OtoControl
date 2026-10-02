@@ -13,6 +13,7 @@
 
 const STORAGE_KEY = 'otocontrol:known-devices';
 const PREFERRED_KEY = 'otocontrol:preferred-service';
+const IDENTIFIED_KEY = 'otocontrol:identified-driver';
 
 export type KnownNames = Record<string, string>;
 
@@ -51,6 +52,23 @@ export const preferredService = (): string | null => read<string | null>(PREFERR
 
 export const rememberPreferredService = (serviceUuid: string): void =>
   write(PREFERRED_KEY, serviceUuid);
+
+/**
+ * Which driver a shared service (standard SPP) was last identified as, so the
+ * port can be labelled and its cache restored before it has been listened to
+ * again. A hint only: every connect still listens, and the answer overwrites it.
+ */
+export const identifiedDriver = (serviceUuid: string): string | null => {
+  const value = read<Record<string, string>>(IDENTIFIED_KEY, {});
+  return typeof value === 'object' && value !== null ? (value[serviceUuid] ?? null) : null;
+};
+
+export function rememberIdentifiedDriver(serviceUuid: string, driverId: string): void {
+  const value = read<Record<string, string>>(IDENTIFIED_KEY, {});
+  const known = typeof value === 'object' && value !== null ? value : {};
+  if (known[serviceUuid] === driverId) return;
+  write(IDENTIFIED_KEY, { ...known, [serviceUuid]: driverId });
+}
 
 /** What to show in the picker before a device has ever been connected to. */
 export function deviceLabel(serviceUuid: string, brand: string): string {

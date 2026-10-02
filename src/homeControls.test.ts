@@ -11,6 +11,7 @@ import { describe, expect, it, vi } from 'vitest'
 import {
   HEYMELODY_DRIVER,
   NOTHING_DRIVER,
+  SAMSUNG_DRIVER,
   SENNHEISER_DRIVER,
   SONY_DRIVER,
   SOUNDCORE_DRIVER,
@@ -26,6 +27,7 @@ import { EQ_PRESETS as SOUNDCORE_PRESETS } from '@/drivers/soundcore/commands'
 import { initialSoundcoreState } from '@/drivers/soundcore/device'
 import { catalogEntryFor } from '@/drivers/heymelody/catalog'
 import { initialHeyMelodyState } from '@/drivers/heymelody/state'
+import { initialSamsungState } from '@/drivers/samsung/state'
 
 /** A device whose every method is a spy, whatever its name. */
 const spyDevice = () => {
@@ -227,5 +229,61 @@ describe('HeyMelody', () => {
     const { device } = spyDevice()
     const state = { ...initialHeyMelodyState, capabilities: new Set(['eq'] as const), eqCurrentPreset: 0 }
     expect(HEYMELODY_DRIVER.eqPresets!(device, state)!.presets.map((preset) => preset.active)).toEqual([true, false, false])
+  })
+})
+
+describe('Samsung Galaxy Buds', () => {
+  const known = (modelId: 'buds2Pro' | 'unknown' | 'budsPlus', extra: object = {}) => ({
+    ...initialSamsungState,
+    info: { ...initialSamsungState.info, modelId, model: 'Galaxy Buds' },
+    ...extra,
+  })
+
+  it('offers the six equalizer presets and marks the one in use', () => {
+    const { device, call } = spyDevice()
+    const presets = SAMSUNG_DRIVER.eqPresets!(device, known('buds2Pro', { eq: 3 }))!
+    expect(presets.presets.map((preset) => preset.name)).toEqual(['Normal', 'Bass boost', 'Soft', 'Dynamic', 'Clear', 'Treble boost'])
+    expect(presets.presets.filter((preset) => preset.active).map((preset) => preset.name)).toEqual(['Dynamic'])
+    presets.select('4')
+    expect(call('setEqPreset')).toHaveBeenCalledWith(4)
+  })
+
+  it('offers no equalizer for a model it cannot read, nor before one is known', () => {
+    const { device } = spyDevice()
+    expect(SAMSUNG_DRIVER.eqPresets!(device, known('unknown'))).toBeNull()
+    expect(SAMSUNG_DRIVER.eqPresets!(device, initialSamsungState)).toBeNull()
+  })
+
+  it('offers the touch lock as a toggle that calls setTouchLocked', () => {
+    const { device, call } = spyDevice()
+    const [lock] = SAMSUNG_DRIVER.quickSettings!(device, known('budsPlus', { touchLocked: false }))
+    if (lock.kind !== 'toggle') throw new Error('expected a toggle')
+    expect(lock.value).toBe(false)
+    lock.set(true)
+    expect(call('setTouchLocked')).toHaveBeenCalledWith(true)
+  })
+
+  it('offers no quick setting for a model it cannot read', () => {
+    const { device } = spyDevice()
+    expect(SAMSUNG_DRIVER.quickSettings!(device, known('unknown'))).toEqual([])
+  })
+
+  it('hides the tabs a known model lacks, and keeps every one while it is not known', () => {
+    expect(SAMSUNG_DRIVER.sections(initialSamsungState).map((section) => section.id)).toEqual(['noise', 'sound', 'system'])
+    expect(SAMSUNG_DRIVER.sections(known('unknown')).map((section) => section.id)).toEqual(['system'])
+    expect(SAMSUNG_DRIVER.sections(known('buds2Pro')).map((section) => section.id)).toEqual(['noise', 'sound', 'system'])
+  })
+
+  it('summarises the batteries in the status line', () => {
+    expect(
+      SAMSUNG_DRIVER.statusLine(known('buds2Pro', { battery: { left: 80, right: 75, case: 60 }, charging: { left: true, right: false, case: false } })),
+    ).toBe('L 80% ⚡ · R 75% · Case 60%')
+    expect(SAMSUNG_DRIVER.statusLine(initialSamsungState)).toBeNull()
+  })
+
+  it('counts as worn when either earbud is in an ear, and when nothing is known', () => {
+    expect(SAMSUNG_DRIVER.worn(initialSamsungState)).toBe(true)
+    expect(SAMSUNG_DRIVER.worn(known('buds2Pro', { placement: { left: 'case', right: 'idle' } }))).toBe(false)
+    expect(SAMSUNG_DRIVER.worn(known('buds2Pro', { placement: { left: 'case', right: 'wearing' } }))).toBe(true)
   })
 })

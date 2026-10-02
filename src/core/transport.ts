@@ -90,14 +90,41 @@ export const PIXELBUDS_MAESTRO_UUID = '25e97ff7-24ce-4c4c-8951-f764a708f7b5';
  */
 export const XIAOMI_SPP_UUID = '0000fd2d-0000-1000-8000-00805f9b34fb';
 
-export type ProtocolGeneration = 'gaia' | 'mdr-v1' | 'mdr-v2' | 'nothing-v1' | 'heymelody' | 'maestro' | 'xiaomi-rcsp';
+/**
+ * Samsung Galaxy Buds2 and later (through Buds4 / Buds4 Pro): GalaxyBudsClient's
+ * `Uuids.SppNew` and the vendor plugin's own socket (`lk/e.java:581`). The
+ * plugin's other UUID, `B4A9D6A0-…` (`on/i.java:93`), belongs to a separate
+ * Bixby audio connection and is not the control channel.
+ */
+export const SAMSUNG_SPP_UUID = '2e73a4ad-332d-41fc-90e2-16bef06523f2';
+
+/** The original 2019 Galaxy Buds' own service, speaking the older `FE…EE` framing. */
+export const SAMSUNG_LEGACY_SPP_UUID = '00001102-0000-1000-8000-00805f9b34fd';
+
+export type ProtocolGeneration =
+  | 'gaia'
+  | 'mdr-v1'
+  | 'mdr-v2'
+  | 'nothing-v1'
+  | 'heymelody'
+  | 'maestro'
+  | 'xiaomi-rcsp'
+  | 'samsung-scsp'
+  | 'samsung-scsp-legacy';
 
 export interface KnownService {
   uuid: string;
+  /** The brand that owns this service — for a generic one, the first of its `candidates`. */
   brand: Brand;
   protocol: ProtocolGeneration;
   /** Offered by devices of any brand; ranked after every brand-specific service. */
   generic?: boolean;
+  /**
+   * For a generic service: every brand that can be behind it, most likely
+   * first. A UUID cannot say which, so `core/identify.ts` listens to the port
+   * and picks. Absent on a brand-specific service, where the UUID is the answer.
+   */
+  candidates?: readonly Brand[];
 }
 
 /**
@@ -121,7 +148,10 @@ export const KNOWN_SERVICES: KnownService[] = [
   { uuid: HEYMELODY_LEGACY_SPP_UUID, brand: 'heymelody', protocol: 'heymelody' },
   { uuid: PIXELBUDS_MAESTRO_UUID, brand: 'pixelbuds', protocol: 'maestro' },
   { uuid: XIAOMI_SPP_UUID, brand: 'xiaomi', protocol: 'xiaomi-rcsp' },
-  { uuid: STANDARD_SPP_UUID, brand: 'heymelody', protocol: 'heymelody', generic: true },
+  { uuid: SAMSUNG_SPP_UUID, brand: 'samsung', protocol: 'samsung-scsp' },
+  { uuid: SAMSUNG_LEGACY_SPP_UUID, brand: 'samsung', protocol: 'samsung-scsp-legacy' },
+  // Galaxy Buds+, Live and Pro also answer on standard SPP, so this one is shared; HeyMelody stays first.
+  { uuid: STANDARD_SPP_UUID, brand: 'heymelody', protocol: 'heymelody', generic: true, candidates: ['heymelody', 'samsung'] },
 ];
 
 /**
@@ -144,6 +174,17 @@ export const KNOWN_SERVICES: KnownService[] = [
  */
 export const servicesFor = (brand: Brand): readonly string[] =>
   KNOWN_SERVICES.filter((service) => service.brand === brand).map((service) => service.uuid);
+
+/**
+ * The generic services a brand can also be behind, beyond the ones it owns.
+ * Kept apart from `servicesFor` so a service is still owned exactly once: a
+ * driver lists these as `sharedServices`, and only reaches them through
+ * `core/identify.ts`.
+ */
+export const sharedServicesFor = (brand: Brand): readonly string[] =>
+  KNOWN_SERVICES.filter((service) => service.candidates?.includes(brand) && service.brand !== brand).map(
+    (service) => service.uuid,
+  );
 
 const BAUD_RATE = 115200;
 

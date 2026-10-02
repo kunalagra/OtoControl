@@ -20,6 +20,7 @@ import {
   XIAOMI_DRIVER,
   NOTHING_DRIVER,
   PIXELBUDS_DRIVER,
+  SAMSUNG_DRIVER,
   SENNHEISER_DRIVER,
   SONY_DRIVER,
   SOUNDCORE_DRIVER,
@@ -35,6 +36,7 @@ import { EQ_PRESETS } from '@/drivers/soundcore/commands';
 import { initialHeyMelodyState } from '@/drivers/heymelody/state';
 import { initialPixelBudsState } from '@/drivers/pixelbuds/state';
 import { initialXiaomiState } from '@/drivers/xiaomi/state';
+import { initialSamsungState } from '@/drivers/samsung/state';
 import type { DeviceDriver } from '@/core/driver';
 import type { ActiveDevice } from '@/core/manager';
 import { summarise } from '@/ui/device/summary';
@@ -285,7 +287,7 @@ describe('summarise — worn', () => {
  */
 describe('summarise — cells and firmware', () => {
   const active = <TState>(
-    driver: typeof SENNHEISER_DRIVER | typeof SONY_DRIVER | typeof NOTHING_DRIVER | typeof SOUNDCORE_DRIVER | typeof HEYMELODY_DRIVER | typeof PIXELBUDS_DRIVER | typeof XIAOMI_DRIVER,
+    driver: typeof SENNHEISER_DRIVER | typeof SONY_DRIVER | typeof NOTHING_DRIVER | typeof SOUNDCORE_DRIVER | typeof HEYMELODY_DRIVER | typeof PIXELBUDS_DRIVER | typeof XIAOMI_DRIVER | typeof SAMSUNG_DRIVER,
     state: TState,
   ): ActiveDevice => ({ id: driver.id, driver, device: {} as never, state }) as ActiveDevice;
 
@@ -466,6 +468,33 @@ describe('summarise — cells and firmware', () => {
     expect(summary.hasDevice).toBe(false);
     expect(summary.firmware).toBeNull();
     expect(summary.cells).toEqual([]);
+  });
+
+  it('gives Galaxy Buds a cell per reporting bud and the case, skipping one that reports nothing', () => {
+    const summary = summarise(
+      active(SAMSUNG_DRIVER, {
+        ...initialSamsungState,
+        info: { ...initialSamsungState.info, model: 'Galaxy Buds2 Pro', firmware: 'R510XXE0ARF4' },
+        battery: { left: 70, right: null, case: 30 },
+        charging: { left: false, right: false, case: true },
+      }),
+    );
+    expect(summary.model).toBe('Galaxy Buds2 Pro');
+    expect(summary.hasDevice).toBe(true);
+    expect(summary.cells).toEqual([
+      { label: 'L', level: 70, charging: false },
+      { label: 'Case', level: 30, charging: true },
+    ]);
+    expect(summary.battery).toBe(30);
+    expect(summary.charging).toBe(true);
+    expect(summary.firmware).toBe('R510XXE0ARF4');
+  });
+
+  it('shows Galaxy Buds as no device until a model has been read', () => {
+    const summary = summarise(active(SAMSUNG_DRIVER, initialSamsungState));
+    expect(summary.hasDevice).toBe(false);
+    expect(summary.cells).toEqual([]);
+    expect(summary.battery).toBeNull();
   });
 
   it('reads the firmware each driver already holds, and null for the ones with none', () => {
@@ -739,5 +768,12 @@ describe('wearCaption', () => {
     expect(asDriver(SOUNDCORE_DRIVER).wearCaption).toBeUndefined();
     expect(asDriver(HEYMELODY_DRIVER).wearCaption).toBeUndefined();
     expect(asDriver(PIXELBUDS_DRIVER).wearCaption).toBeUndefined();
+  });
+
+  it('describes each Galaxy Buds earbud, and says nothing until placement is known', () => {
+    expect(SAMSUNG_DRIVER.wearCaption(initialSamsungState)).toBeNull();
+    expect(
+      SAMSUNG_DRIVER.wearCaption({ ...initialSamsungState, placement: { left: 'wearing', right: 'case' } }),
+    ).toBe('L in ear · R in case');
   });
 });
