@@ -1,0 +1,1557 @@
+{
+  "source": "HeyMelody 116.9.0 bundled whitelist (res/raw/heymelody_app_whitelist, compatWhiteList): per-model function.control entries that carry a `support` mask, i.e. the touch actions a model has and the functions each accepts (flag table: HeyTap K8/a.java f2769a and b()). `action` is HeyTap's UI action, mapped to the wire action by the generator (G8/g.java:596-641). Action codes and masks only.",
+  "devices": [
+    {
+      "productId": "067410",
+      "control": [
+        {
+          "action": 16,
+          "support": 516
+        },
+        {
+          "action": 17,
+          "support": 8805
+        },
+        {
+          "action": 18,
+          "support": 8801
+        },
+        {
+          "action": 5,
+          "support": 3584
+        }
+      ]
+    },
+    {
+      "productId": "063C10",
+      "control": [
+        {
+          "action": 16,
+          "support": 612
+        },
+        {
+          "action": 17,
+          "support": 613
+        },
+        {
+          "action": 18,
+          "support": 613
+        },
+        {
+          "action": 5,
+          "support": 3584
+        }
+      ]
+    },
+    {
+      "productId": "061410",
+      "control": [
+        {
+          "action": 2,
+          "support": 612
+        },
+        {
+          "action": 3,
+          "support": 513
+        },
+        {
+          "action": 5,
+          "support": 3584
+        },
+        {
+          "action": 11,
+          "support": 128
+        },
+        {
+          "action": 6,
+          "support": 4608
+        }
+      ]
+    },
+    {
+      "productId": "06E010",
+      "control": [
+        {
+          "action": 2,
+          "support": 8397413
+        },
+        {
+          "action": 3,
+          "support": 8397433
+        },
+        {
+          "action": 5,
+          "support": 1536
+        }
+      ]
+    },
+    {
+      "productId": "06B810",
+      "control": [
+        {
+          "action": 2,
+          "support": 8805
+        },
+        {
+          "action": 3,
+          "support": 8825
+        },
+        {
+          "action": 4,
+          "support": 536
+        }
+      ]
+    },
+    {
+      "productId": "06BC10",
+      "control": [
+        {
+          "action": 1,
+          "support": 516
+        },
+        {
+          "action": 2,
+          "support": 8805
+        },
+        {
+          "action": 3,
+          "support": 8801
+        },
+        {
+          "action": 5,
+          "support": 3584
+        }
+      ]
+    },
+    {
+      "productId": "066810",
+      "control": [
+        {
+          "action": 1,
+          "support": 516
+        },
+        {
+          "action": 2,
+          "support": 8805
+        },
+        {
+          "action": 3,
+          "support": 8801
+        },
+        {
+          "action": 5,
+          "support": 3584
+        }
+      ]
+    },
+    {
+      "productId": "068C10",
+      "control": [
+        {
+          "action": 1,
+          "support": 516
+        },
+        {
+          "action": 2,
+          "support": 8805
+        },
+        {
+          "action": 3,
+          "support": 8801
+        },
+        {
+          "action": 5,
+          "support": 3584
+        }
+      ]
+    },
+    {
+      "productId": "06C010",
+      "control": [
+        {
+          "action": 1,
+          "support": 516
+        },
+        {
+          "action": 2,
+          "support": 8805
+        },
+        {
+          "action": 3,
+          "support": 8801
+        },
+        {
+          "action": 5,
+          "support": 3584
+        }
+      ]
+    },
+    {
+      "productId": "066010",
+      "control": [
+        {
+          "action": 1,
+          "support": 516
+        },
+        {
+          "action": 2,
+          "support": 8805
+        },
+        {
+          "action": 3,
+          "support": 8801
+        },
+        {
+          "action": 6,
+          "support": 536
+        }
+      ]
+    },
+    {
+      "productId": "062010",
+      "control": [
+        {
+          "action": 1,
+          "support": 516
+        },
+        {
+          "action": 2,
+          "support": 612
+        },
+        {
+          "action": 3,
+          "support": 8705
+        },
+        {
+          "action": 5,
+          "support": 3584
+        }
+      ]
+    },
+    {
+      "productId": "064010",
+      "control": [
+        {
+          "action": 1,
+          "support": 516
+        },
+        {
+          "action": 2,
+          "support": 612
+        },
+        {
+          "action": 3,
+          "support": 8705
+        },
+        {
+          "action": 5,
+          "support": 3584
+        }
+      ]
+    },
+    {
+      "productId": "060410",
+      "control": [
+        {
+          "action": 2,
+          "support": 5
+        }
+      ]
+    },
+    {
+      "productId": "06C410",
+      "control": [
+        {
+          "action": 1,
+          "support": 516
+        },
+        {
+          "action": 2,
+          "support": 8397413
+        },
+        {
+          "action": 3,
+          "support": 8397409
+        },
+        {
+          "action": 5,
+          "support": 3584
+        }
+      ]
+    },
+    {
+      "productId": "06C810",
+      "control": [
+        {
+          "action": 1,
+          "support": 516
+        },
+        {
+          "action": 2,
+          "support": 8397413
+        },
+        {
+          "action": 3,
+          "support": 8397409
+        },
+        {
+          "action": 5,
+          "support": 3584
+        }
+      ]
+    },
+    {
+      "productId": "06E810",
+      "control": [
+        {
+          "action": 1,
+          "support": 516
+        },
+        {
+          "action": 2,
+          "support": 8805
+        },
+        {
+          "action": 3,
+          "support": 8801
+        },
+        {
+          "action": 5,
+          "support": 3584
+        }
+      ]
+    },
+    {
+      "productId": "06D810",
+      "control": [
+        {
+          "action": 1,
+          "support": 516
+        },
+        {
+          "action": 2,
+          "support": 8397413
+        },
+        {
+          "action": 3,
+          "support": 8397409
+        },
+        {
+          "action": 6,
+          "support": 536
+        }
+      ]
+    },
+    {
+      "productId": "067C10",
+      "control": [
+        {
+          "action": 1,
+          "support": 516
+        },
+        {
+          "action": 2,
+          "support": 8805
+        },
+        {
+          "action": 3,
+          "support": 8801
+        },
+        {
+          "action": 6,
+          "support": 536
+        }
+      ]
+    },
+    {
+      "productId": "06F010",
+      "control": [
+        {
+          "action": 1,
+          "support": 516
+        },
+        {
+          "action": 2,
+          "support": 8805
+        },
+        {
+          "action": 3,
+          "support": 8801
+        },
+        {
+          "action": 6,
+          "support": 536
+        }
+      ]
+    },
+    {
+      "productId": "06B050",
+      "control": [
+        {
+          "action": 1,
+          "support": 516
+        },
+        {
+          "action": 2,
+          "support": 8805
+        },
+        {
+          "action": 3,
+          "support": 8801
+        },
+        {
+          "action": 6,
+          "support": 536
+        }
+      ]
+    },
+    {
+      "productId": "069010",
+      "control": [
+        {
+          "action": 1,
+          "support": 516
+        },
+        {
+          "action": 2,
+          "support": 8805
+        },
+        {
+          "action": 3,
+          "support": 8801
+        },
+        {
+          "action": 6,
+          "support": 536
+        }
+      ]
+    },
+    {
+      "productId": "065C10",
+      "control": [
+        {
+          "action": 1,
+          "support": 516
+        },
+        {
+          "action": 2,
+          "support": 8805
+        },
+        {
+          "action": 3,
+          "support": 8801
+        },
+        {
+          "action": 6,
+          "support": 536
+        }
+      ]
+    },
+    {
+      "productId": "064C10",
+      "control": [
+        {
+          "action": 1,
+          "support": 516
+        },
+        {
+          "action": 2,
+          "support": 8805
+        },
+        {
+          "action": 3,
+          "support": 8801
+        },
+        {
+          "action": 4,
+          "support": 536
+        }
+      ]
+    },
+    {
+      "productId": "067010",
+      "control": [
+        {
+          "action": 1,
+          "support": 516
+        },
+        {
+          "action": 2,
+          "support": 8805
+        },
+        {
+          "action": 3,
+          "support": 8801
+        },
+        {
+          "action": 4,
+          "support": 536
+        }
+      ]
+    },
+    {
+      "productId": "067810",
+      "control": [
+        {
+          "action": 1,
+          "support": 516
+        },
+        {
+          "action": 2,
+          "support": 8805
+        },
+        {
+          "action": 3,
+          "support": 8801
+        },
+        {
+          "action": 4,
+          "support": 536
+        }
+      ]
+    },
+    {
+      "productId": "063810",
+      "control": [
+        {
+          "action": 1,
+          "support": 516
+        },
+        {
+          "action": 2,
+          "support": 612
+        },
+        {
+          "action": 3,
+          "support": 8705
+        },
+        {
+          "action": 6,
+          "support": 4632
+        }
+      ]
+    },
+    {
+      "productId": "066C10",
+      "control": [
+        {
+          "action": 1,
+          "support": 516
+        },
+        {
+          "action": 2,
+          "support": 8805
+        },
+        {
+          "action": 3,
+          "support": 8801
+        },
+        {
+          "action": 4,
+          "support": 536
+        }
+      ]
+    },
+    {
+      "productId": "063410",
+      "control": [
+        {
+          "action": 2,
+          "support": 612
+        },
+        {
+          "action": 3,
+          "support": 8705
+        },
+        {
+          "action": 4,
+          "support": 536
+        }
+      ]
+    },
+    {
+      "productId": "069850",
+      "control": [
+        {
+          "action": 1,
+          "support": 516
+        },
+        {
+          "action": 2,
+          "support": 8805
+        },
+        {
+          "action": 3,
+          "support": 8801
+        },
+        {
+          "action": 6,
+          "support": 536
+        }
+      ]
+    },
+    {
+      "productId": "068810",
+      "control": [
+        {
+          "action": 1,
+          "support": 516
+        },
+        {
+          "action": 2,
+          "support": 8805
+        },
+        {
+          "action": 3,
+          "support": 8801
+        },
+        {
+          "action": 4,
+          "support": 536
+        }
+      ]
+    },
+    {
+      "productId": "064410",
+      "control": [
+        {
+          "action": 1,
+          "support": 516
+        },
+        {
+          "action": 2,
+          "support": 8805
+        },
+        {
+          "action": 3,
+          "support": 8801
+        },
+        {
+          "action": 4,
+          "support": 536
+        }
+      ]
+    },
+    {
+      "productId": "061810",
+      "control": [
+        {
+          "action": 2,
+          "support": 613
+        },
+        {
+          "action": 3,
+          "support": 8705
+        },
+        {
+          "action": 4,
+          "support": 536
+        }
+      ]
+    },
+    {
+      "productId": "062810",
+      "control": [
+        {
+          "action": 1,
+          "support": 516
+        },
+        {
+          "action": 2,
+          "support": 612
+        },
+        {
+          "action": 3,
+          "support": 8705
+        },
+        {
+          "action": 4,
+          "support": 536
+        }
+      ]
+    },
+    {
+      "productId": "06B450",
+      "control": [
+        {
+          "action": 1,
+          "support": 516
+        },
+        {
+          "action": 2,
+          "support": 8805
+        },
+        {
+          "action": 3,
+          "support": 8801
+        },
+        {
+          "action": 6,
+          "support": 536
+        }
+      ]
+    },
+    {
+      "productId": "06AC50",
+      "control": [
+        {
+          "action": 1,
+          "support": 516
+        },
+        {
+          "action": 2,
+          "support": 8805
+        },
+        {
+          "action": 3,
+          "support": 8801
+        },
+        {
+          "action": 6,
+          "support": 536
+        }
+      ]
+    },
+    {
+      "productId": "069C10",
+      "control": [
+        {
+          "action": 1,
+          "support": 516
+        },
+        {
+          "action": 2,
+          "support": 8805
+        },
+        {
+          "action": 3,
+          "support": 8801
+        },
+        {
+          "action": 6,
+          "support": 536
+        }
+      ]
+    },
+    {
+      "productId": "068410",
+      "control": [
+        {
+          "action": 1,
+          "support": 516
+        },
+        {
+          "action": 2,
+          "support": 8805
+        },
+        {
+          "action": 3,
+          "support": 8801
+        },
+        {
+          "action": 4,
+          "support": 536
+        }
+      ]
+    },
+    {
+      "productId": "065010",
+      "control": [
+        {
+          "action": 1,
+          "support": 516
+        },
+        {
+          "action": 2,
+          "support": 612
+        },
+        {
+          "action": 3,
+          "support": 8705
+        },
+        {
+          "action": 6,
+          "support": 4632
+        }
+      ]
+    },
+    {
+      "productId": "065810",
+      "control": [
+        {
+          "action": 1,
+          "support": 516
+        },
+        {
+          "action": 2,
+          "support": 8805
+        },
+        {
+          "action": 3,
+          "support": 8801
+        },
+        {
+          "action": 4,
+          "support": 536
+        }
+      ]
+    },
+    {
+      "productId": "063010",
+      "control": [
+        {
+          "action": 1,
+          "support": 516
+        },
+        {
+          "action": 2,
+          "support": 8805
+        },
+        {
+          "action": 3,
+          "support": 8801
+        },
+        {
+          "action": 4,
+          "support": 536
+        }
+      ]
+    },
+    {
+      "productId": "060C10",
+      "control": [
+        {
+          "action": 2,
+          "support": 741
+        },
+        {
+          "action": 3,
+          "support": 513
+        }
+      ]
+    },
+    {
+      "productId": "061C10",
+      "control": [
+        {
+          "action": 2,
+          "support": 613
+        },
+        {
+          "action": 3,
+          "support": 8705
+        },
+        {
+          "action": 4,
+          "support": 536
+        }
+      ]
+    },
+    {
+      "productId": "06F450",
+      "control": [
+        {
+          "action": 1,
+          "support": 516
+        },
+        {
+          "action": 2,
+          "support": 8805
+        },
+        {
+          "action": 3,
+          "support": 8801
+        },
+        {
+          "action": 6,
+          "support": 536
+        }
+      ]
+    },
+    {
+      "productId": "06A010",
+      "control": [
+        {
+          "action": 1,
+          "support": 516
+        },
+        {
+          "action": 2,
+          "support": 8805
+        },
+        {
+          "action": 3,
+          "support": 8801
+        },
+        {
+          "action": 6,
+          "support": 536
+        }
+      ]
+    },
+    {
+      "productId": "06A850",
+      "control": [
+        {
+          "action": 1,
+          "support": 516
+        },
+        {
+          "action": 2,
+          "support": 8805
+        },
+        {
+          "action": 3,
+          "support": 8801
+        },
+        {
+          "action": 6,
+          "support": 536
+        }
+      ]
+    },
+    {
+      "productId": "068010",
+      "control": [
+        {
+          "action": 1,
+          "support": 516
+        },
+        {
+          "action": 2,
+          "support": 8805
+        },
+        {
+          "action": 3,
+          "support": 8801
+        },
+        {
+          "action": 6,
+          "support": 4608
+        }
+      ]
+    },
+    {
+      "productId": "06A450",
+      "control": [
+        {
+          "action": 1,
+          "support": 516
+        },
+        {
+          "action": 2,
+          "support": 8805
+        },
+        {
+          "action": 3,
+          "support": 8801
+        },
+        {
+          "action": 6,
+          "support": 536
+        }
+      ]
+    },
+    {
+      "productId": "064810",
+      "control": [
+        {
+          "action": 1,
+          "support": 516
+        },
+        {
+          "action": 2,
+          "support": 8805
+        },
+        {
+          "action": 3,
+          "support": 8801
+        },
+        {
+          "action": 4,
+          "support": 536
+        }
+      ]
+    },
+    {
+      "productId": "062410",
+      "control": [
+        {
+          "action": 1,
+          "support": 516
+        },
+        {
+          "action": 2,
+          "support": 612
+        },
+        {
+          "action": 3,
+          "support": 8705
+        },
+        {
+          "action": 4,
+          "support": 536
+        }
+      ]
+    },
+    {
+      "productId": "050C10",
+      "control": [
+        {
+          "action": 26,
+          "support": 4608
+        }
+      ]
+    },
+    {
+      "productId": "067414",
+      "control": [
+        {
+          "action": 1,
+          "support": 516
+        },
+        {
+          "action": 2,
+          "support": 8397413
+        },
+        {
+          "action": 3,
+          "support": 8397409
+        },
+        {
+          "action": 5,
+          "support": 3584
+        }
+      ]
+    },
+    {
+      "productId": "064014",
+      "control": [
+        {
+          "action": 16,
+          "support": 516
+        },
+        {
+          "action": 17,
+          "support": 8805
+        },
+        {
+          "action": 18,
+          "support": 8801
+        },
+        {
+          "action": 5,
+          "support": 3584
+        }
+      ]
+    },
+    {
+      "productId": "062014",
+      "control": [
+        {
+          "action": 16,
+          "support": 516
+        },
+        {
+          "action": 17,
+          "support": 8805
+        },
+        {
+          "action": 18,
+          "support": 8801
+        }
+      ]
+    },
+    {
+      "productId": "063414",
+      "control": [
+        {
+          "action": 16,
+          "support": 516
+        },
+        {
+          "action": 17,
+          "support": 8805
+        },
+        {
+          "action": 18,
+          "support": 8801
+        }
+      ]
+    },
+    {
+      "productId": "063014",
+      "control": [
+        {
+          "action": 16,
+          "support": 516
+        },
+        {
+          "action": 17,
+          "support": 8805
+        },
+        {
+          "action": 18,
+          "support": 8801
+        }
+      ]
+    },
+    {
+      "productId": "060C14",
+      "control": [
+        {
+          "action": 3,
+          "support": 33
+        },
+        {
+          "action": 11,
+          "support": 128
+        }
+      ]
+    },
+    {
+      "productId": "065414",
+      "control": [
+        {
+          "action": 1,
+          "support": 516
+        },
+        {
+          "action": 2,
+          "support": 8805
+        },
+        {
+          "action": 3,
+          "support": 8801
+        },
+        {
+          "action": 5,
+          "support": 3584
+        }
+      ]
+    },
+    {
+      "productId": "063C14",
+      "control": [
+        {
+          "action": 1,
+          "support": 516
+        },
+        {
+          "action": 2,
+          "support": 8805
+        },
+        {
+          "action": 3,
+          "support": 8801
+        },
+        {
+          "action": 5,
+          "support": 3584
+        }
+      ]
+    },
+    {
+      "productId": "066414",
+      "control": [
+        {
+          "action": 1,
+          "support": 516
+        },
+        {
+          "action": 2,
+          "support": 8805
+        },
+        {
+          "action": 3,
+          "support": 8801
+        },
+        {
+          "action": 5,
+          "support": 3584
+        }
+      ]
+    },
+    {
+      "productId": "064C14",
+      "control": [
+        {
+          "action": 1,
+          "support": 516
+        },
+        {
+          "action": 2,
+          "support": 8805
+        },
+        {
+          "action": 3,
+          "support": 8801
+        },
+        {
+          "action": 6,
+          "support": 536
+        }
+      ]
+    },
+    {
+      "productId": "061014",
+      "control": [
+        {
+          "action": 1,
+          "support": 612
+        },
+        {
+          "action": 2,
+          "support": 613
+        },
+        {
+          "action": 3,
+          "support": 613
+        },
+        {
+          "action": 11,
+          "support": 128
+        },
+        {
+          "action": 6,
+          "support": 4608
+        }
+      ]
+    },
+    {
+      "productId": "060814",
+      "control": [
+        {
+          "action": 2,
+          "support": 101
+        }
+      ]
+    },
+    {
+      "productId": "068814",
+      "control": [
+        {
+          "action": 2,
+          "support": 101
+        }
+      ]
+    },
+    {
+      "productId": "062814",
+      "control": [
+        {
+          "action": 1,
+          "support": 516
+        },
+        {
+          "action": 2,
+          "support": 8805
+        },
+        {
+          "action": 3,
+          "support": 8801
+        },
+        {
+          "action": 6,
+          "support": 4608
+        }
+      ]
+    },
+    {
+      "productId": "066814",
+      "control": [
+        {
+          "action": 1,
+          "support": 516
+        },
+        {
+          "action": 2,
+          "support": 8397413
+        },
+        {
+          "action": 3,
+          "support": 8397409
+        },
+        {
+          "action": 5,
+          "support": 3584
+        }
+      ]
+    },
+    {
+      "productId": "067014",
+      "control": [
+        {
+          "action": 1,
+          "support": 516
+        },
+        {
+          "action": 2,
+          "support": 8397413
+        },
+        {
+          "action": 3,
+          "support": 8397409
+        },
+        {
+          "action": 6,
+          "support": 536
+        }
+      ]
+    },
+    {
+      "productId": "064414",
+      "control": [
+        {
+          "action": 1,
+          "support": 516
+        },
+        {
+          "action": 2,
+          "support": 8805
+        },
+        {
+          "action": 3,
+          "support": 8801
+        },
+        {
+          "action": 6,
+          "support": 536
+        }
+      ]
+    },
+    {
+      "productId": "065014",
+      "control": [
+        {
+          "action": 1,
+          "support": 516
+        },
+        {
+          "action": 2,
+          "support": 8805
+        },
+        {
+          "action": 3,
+          "support": 8801
+        },
+        {
+          "action": 6,
+          "support": 536
+        }
+      ]
+    },
+    {
+      "productId": "062414",
+      "control": [
+        {
+          "action": 1,
+          "support": 516
+        },
+        {
+          "action": 2,
+          "support": 8805
+        },
+        {
+          "action": 3,
+          "support": 8801
+        },
+        {
+          "action": 6,
+          "support": 4608
+        }
+      ]
+    },
+    {
+      "productId": "066054",
+      "control": [
+        {
+          "action": 1,
+          "support": 516
+        },
+        {
+          "action": 2,
+          "support": 8805
+        },
+        {
+          "action": 3,
+          "support": 8801
+        },
+        {
+          "action": 6,
+          "support": 536
+        }
+      ]
+    },
+    {
+      "productId": "064814",
+      "control": [
+        {
+          "action": 1,
+          "support": 516
+        },
+        {
+          "action": 2,
+          "support": 8805
+        },
+        {
+          "action": 3,
+          "support": 8801
+        },
+        {
+          "action": 6,
+          "support": 4608
+        }
+      ]
+    },
+    {
+      "productId": "061814",
+      "control": [
+        {
+          "action": 1,
+          "support": 516
+        },
+        {
+          "action": 2,
+          "support": 613
+        },
+        {
+          "action": 3,
+          "support": 609
+        },
+        {
+          "action": 6,
+          "support": 4608
+        }
+      ]
+    },
+    {
+      "productId": "061414",
+      "control": [
+        {
+          "action": 1,
+          "support": 516
+        },
+        {
+          "action": 2,
+          "support": 613
+        },
+        {
+          "action": 3,
+          "support": 609
+        },
+        {
+          "action": 6,
+          "support": 4608
+        }
+      ]
+    },
+    {
+      "productId": "065854",
+      "control": [
+        {
+          "action": 1,
+          "support": 516
+        },
+        {
+          "action": 2,
+          "support": 8805
+        },
+        {
+          "action": 3,
+          "support": 8801
+        },
+        {
+          "action": 6,
+          "support": 536
+        }
+      ]
+    },
+    {
+      "productId": "062C14",
+      "control": [
+        {
+          "action": 1,
+          "support": 516
+        },
+        {
+          "action": 2,
+          "support": 8805
+        },
+        {
+          "action": 3,
+          "support": 8801
+        },
+        {
+          "action": 6,
+          "support": 4608
+        }
+      ]
+    },
+    {
+      "productId": "061C14",
+      "control": [
+        {
+          "action": 1,
+          "support": 516
+        },
+        {
+          "action": 2,
+          "support": 8805
+        },
+        {
+          "action": 3,
+          "support": 8801
+        }
+      ]
+    },
+    {
+      "productId": "060414",
+      "control": [
+        {
+          "action": 2,
+          "support": 101
+        }
+      ]
+    },
+    {
+      "productId": "068414",
+      "control": [
+        {
+          "action": 2,
+          "support": 101
+        }
+      ]
+    },
+    {
+      "productId": "051014",
+      "control": [
+        {
+          "action": 1,
+          "support": 4
+        },
+        {
+          "action": 2,
+          "support": 64
+        },
+        {
+          "action": 3,
+          "support": 32
+        },
+        {
+          "action": 4,
+          "support": 1
+        }
+      ]
+    },
+    {
+      "productId": "050C14",
+      "control": [
+        {
+          "action": 26,
+          "support": 4608
+        }
+      ]
+    }
+  ]
+}

@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
+import { catalogEntryFor } from '../catalog';
+
 import { decodeGestures, encodeGestures, functionChoices, functionLabel, prevNextScheme } from './gesture';
 
 const rec = (deviceType: number, button: number, action: number, fn: number) => ({ deviceType, button, action, fn });
@@ -51,5 +53,43 @@ describe('function labels and choices', () => {
   it('always includes the code already set, even an unknown one', () => {
     const table = [rec(1, 1, 3, 25)];
     expect(functionChoices(table[0], table, 'oppo')).toContainEqual({ fn: 25, label: 'Function 25' });
+  });
+});
+
+describe('per-model touch masks', () => {
+  const buds3Pro = catalogEntryFor('06A850');
+  const table = [rec(1, 1, 1, 1), rec(1, 1, 2, 6), rec(1, 1, 3, 3), rec(1, 1, 6, 11), rec(4, 6, 2, 29)];
+  const fns = (record: ReturnType<typeof rec>, catalog = buds3Pro) =>
+    functionChoices(record, table, 'oppo', catalog).map((c) => c.fn);
+
+  it('offers only what the model accepts on each action (Enco Buds3 Pro)', () => {
+    expect(fns(table[0])).toEqual([0, 1]); // single tap: no volume
+    expect(fns(table[1])).toEqual([0, 1, 5, 6, 3, 17]);
+    expect(fns(table[2])).toEqual([0, 5, 6, 3, 17]);
+    expect(fns(table[3])).toEqual([0, 11, 12]);
+  });
+
+  it('labels previous/next with the current codes', () => {
+    expect(functionChoices(table[1], table, 'oppo', buds3Pro)).toEqual(
+      expect.arrayContaining([{ fn: 5, label: 'Previous' }, { fn: 6, label: 'Next' }]),
+    );
+  });
+
+  it('uses the legacy previous/next codes on OnePlus Buds', () => {
+    const buds = { ...catalogEntryFor('060414')!, touchSupport: [{ action: 2, support: 32 | 64 }] };
+    expect(functionChoices(rec(1, 1, 2, 0), [rec(1, 1, 2, 0)], 'oneplus', buds)).toEqual([
+      { fn: 4, label: 'Previous' },
+      { fn: 5, label: 'Next' },
+      { fn: 0, label: 'None' }, // the current value, kept though the mask leaves it out
+    ]);
+  });
+
+  it('keeps the code already set even when the mask excludes it', () => {
+    expect(fns(rec(1, 1, 1, 11))).toEqual([0, 1, 11]);
+  });
+
+  it('leaves the call button and unmasked actions to the generic lists', () => {
+    expect(fns(table[4])).toEqual([0, 28, 29]);
+    expect(fns(rec(1, 1, 4, 1))).toEqual(functionChoices(rec(1, 1, 4, 1), table, 'oppo').map((c) => c.fn));
   });
 });

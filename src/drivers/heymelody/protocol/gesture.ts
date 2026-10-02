@@ -5,7 +5,7 @@
  *
  * Function codes are not uniform across firmware: previous/next moved from 4/5 to 5/6 and 4
  * became the realme voice assistant, so the choices offered are limited to what the table or
- * the brand settles.
+ * the brand settles — or, when the catalog has it, by the model's own per-action mask.
  */
 
 import type { HeyMelodyCatalogEntry } from '../catalog.generated';
@@ -44,6 +44,7 @@ const FIXED_LABEL: Record<number, string> = {
   10: 'Switch track',
   11: 'Volume up',
   12: 'Volume down',
+  13: 'Switch device',
   17: 'Game mode',
   28: 'Reject call',
   29: 'Answer / hang up',
@@ -78,11 +79,40 @@ export function functionLabel(fn: number, scheme: PrevNextScheme, brand: Brand):
   return FIXED_LABEL[fn] ?? `Function ${fn}`;
 }
 
+/**
+ * HeyTap's function flags (`K8/a.java` `f2769a`, labels in `b()`), in its display order,
+ * with the wire code each one writes (`a()`). Previous/next and the assistant depend on
+ * the model, so they are resolved in `maskedCodes`; flags with no wire code here are skipped.
+ */
+const FLAG_ORDER = [512, 128, 4, 32, 64, 1, 8, 16, 1024, 2048, 4096, 8192];
+const FLAG_CODE: Record<number, number> = { 512: 0, 128: 8, 4: 1, 8: 11, 16: 12, 1024: 7, 2048: 10, 4096: 13, 8192: 17 };
+
+/** HeyTap's `c.I()`: only these two keep the legacy previous 4 / next 5. */
+const LEGACY_TRACK_MODELS = new Set(['OnePlus Buds', 'OnePlus Buds Z']);
+
+function maskedCodes(support: number, brand: Brand, legacy: boolean): number[] {
+  return FLAG_ORDER.filter((flag) => (support & flag) !== 0).map((flag) => {
+    if (flag === 32) return legacy ? 4 : 5;
+    if (flag === 64) return legacy ? 5 : 6;
+    if (flag === 1) return brand === 'realme' ? 4 : 3;
+    return FLAG_CODE[flag];
+  });
+}
+
 export function functionChoices(
   record: GestureRecord,
   records: readonly GestureRecord[],
   brand: Brand,
+  catalog: HeyMelodyCatalogEntry | null = null,
 ): { fn: number; label: string }[] {
+  const support = catalog?.touchSupport?.find((entry) => entry.action === record.action)?.support;
+  if (support !== undefined && record.button !== CALL_BUTTON) {
+    const legacy = LEGACY_TRACK_MODELS.has(catalog!.name);
+    const codes = maskedCodes(support, brand, legacy);
+    if (!codes.includes(record.fn)) codes.push(record.fn);
+    const scheme = legacy ? 'legacy' : 'current';
+    return [...new Set(codes)].map((fn) => ({ fn, label: functionLabel(fn, scheme, brand) }));
+  }
   const scheme = prevNextScheme(records, brand);
   let codes: number[];
   if (record.button === CALL_BUTTON) {

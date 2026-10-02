@@ -9,7 +9,7 @@ interface Props {
   state: HeyMelodyState
 }
 
-/** The touch-control table, grouped by side; each gesture picks from the functions its firmware is known to accept. */
+/** The touch-control table, grouped by side; each gesture picks from the functions its model accepts, when the catalog knows them. */
 export function TouchControls({ device, state }: Props) {
   const { gestures } = state
   const brand = state.info.catalog?.brand ?? null
@@ -28,7 +28,7 @@ export function TouchControls({ device, state }: Props) {
             {gestures
               .filter((record) => record.deviceType === side)
               .map((record) => {
-                const choices = functionChoices(record, gestures, brand)
+                const choices = functionChoices(record, gestures, brand, state.info.catalog)
                 const items = choices.map(({ fn, label }) => ({ value: String(fn), label }))
                 const name = ACTION_LABEL[record.action] ?? `Action ${record.action}`
                 return (
