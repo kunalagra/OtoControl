@@ -362,6 +362,49 @@ function sentCommands(transport: FakeTransport): number[] {
 }
 
 describe('HeyMelodyDevice capability-driven connect', () => {
+  it('identifies a device that ignores QueryProductId until the HeyTap handshake has run', async () => {
+    // HeyTap sends 0x0100, then vendor id 0x0102, before 0x0103 (`commands/i.smali` 0x8100 case).
+    const seen = new Set<number>();
+    const replies = new Map(FULL_REPLIES);
+    replies.set(Cmd.QueryCapability, BITMAP_REPLY);
+    replies.set(Cmd.SendVendorId, [0x00]);
+    const open: TransportOpener = async (p, handlers) => {
+      const transport = (await heyMelodyOpener(replies)(p, handlers)) as FakeTransport;
+      const respond = transport.onWrite!;
+      const decoder = new SppFrameCodec().createDecoder();
+      transport.onWrite = (bytes) => {
+        const [frame] = decoder.push(bytes);
+        if (!frame) return;
+        if (frame.cmd === Cmd.QueryProductId && !(seen.has(Cmd.QueryCapability) && seen.has(Cmd.SendVendorId))) return;
+        seen.add(frame.cmd);
+        respond(bytes);
+      };
+      return transport;
+    };
+    const device = new HeyMelodyDevice(open, { timeoutMs: 50, probeTimeoutMs: 50 });
+    await device.adoptPort(port);
+    expect(device.state.info.productId).toBe('06F010');
+    expect(device.state.info.model).toBe('OPPO Enco Air4s');
+  });
+
+  it('sends HeyTap\'s vendor id, 0x079A little-endian, before QueryProductId', async () => {
+    let transport!: FakeTransport;
+    const replies = new Map(FULL_REPLIES);
+    replies.set(Cmd.QueryCapability, BITMAP_REPLY);
+    const open: TransportOpener = async (p, handlers) => {
+      transport = (await heyMelodyOpener(replies)(p, handlers)) as FakeTransport;
+      return transport;
+    };
+    const device = new HeyMelodyDevice(open, { timeoutMs: 50, probeTimeoutMs: 50 });
+    await device.adoptPort(port);
+    const decoder = new SppFrameCodec().createDecoder();
+    const frames = transport.written.flatMap((bytes) => decoder.push(bytes));
+    const at = (cmd: number) => frames.findIndex((frame) => frame.cmd === cmd);
+    expect(at(Cmd.QueryCapability)).toBeLessThan(at(Cmd.SendVendorId));
+    expect(at(Cmd.SendVendorId)).toBeLessThan(at(Cmd.QueryProductId));
+    expect(Array.from(frames[at(Cmd.SendVendorId)].payload)).toEqual([0x9a, 0x07]);
+  });
+
   it('polls only what the bitmap reports and passes find/eqCustom through', async () => {
     const replies = new Map(FULL_REPLIES);
     replies.set(Cmd.QueryCapability, BITMAP_REPLY);

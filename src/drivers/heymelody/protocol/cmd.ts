@@ -1,6 +1,8 @@
 /** Command ids (realme `Protocol.java`, HeyTap `OppoProtocol` index). Replies are `cmd | 0x8000`. */
 export const Cmd = {
   QueryCapability: 0x0100,
+  /** HeyTap's "query vendor id": the app sends its own id, `0x079A` LE. */
+  SendVendorId: 0x0102,
   QueryProductId: 0x0103,
   QueryVersion: 0x0105,
   Battery: 0x0106,

@@ -274,8 +274,11 @@ export class HeyMelodyDevice implements Persistable {
   }
 
   async #refreshAll(client: HeyMelodyClient): Promise<void> {
-    const identified = await this.#readProductId(client);
+    // HeyTap's order (`commands/i.smali`, the 0x8100 case): bitmap, then vendor id, then productId.
+    // Some firmware (Enco Buds3 Pro) leaves a productId query sent before that unanswered.
     const commands = await this.#readCommands(client);
+    await this.#sendVendorId(client);
+    const identified = await this.#readProductId(client);
     // The link dropped mid-connect: onDrop already reset state and set the real reason.
     if (this.#session.client !== client) return;
     if (!identified && !commands) {
@@ -289,6 +292,15 @@ export class HeyMelodyDevice implements Persistable {
     const capabilities = commands ? await this.#pollReported(client, commands) : await this.#probeAll(client);
     if (this.#session.client !== client) return;
     this.#patch({ capabilities });
+  }
+
+  /** Best-effort: HeyTap sends this before asking for the productId, and nothing reads the reply. */
+  async #sendVendorId(client: HeyMelodyClient): Promise<void> {
+    try {
+      await client.request(Cmd.SendVendorId, [0x9a, 0x07], { timeoutMs: this.#probeTimeoutMs });
+    } catch (error) {
+      console.debug('[heymelody] SendVendorId unanswered', error);
+    }
   }
 
   async #readProductId(client: HeyMelodyClient): Promise<boolean> {
