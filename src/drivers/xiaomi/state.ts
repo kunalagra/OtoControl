@@ -7,10 +7,10 @@
  */
 
 import type { ConnectionStatus } from '@/core/connection';
-import type { AncModeValue, BatteryCell } from './commands';
+import type { AncModeValue, BatteryCell, CustomEq, GestureRecord } from './commands';
 
 /** What the earbuds were seen to support. Probed, not assumed — see `device.ts`. */
-export type XiaomiCapability = 'version' | 'battery' | 'anc' | 'strength' | 'eq' | 'wear' | 'find';
+export type XiaomiCapability = 'version' | 'battery' | 'anc' | 'strength' | 'eq' | 'customEq' | 'wear' | 'find' | 'gestures';
 
 export interface XiaomiInfo {
   /**
@@ -24,10 +24,16 @@ export interface XiaomiInfo {
   pid: number | null;
   /** One version per byte pair of the firmware record. */
   firmware: string[];
+  /** The unit's colour id (`GetInfo` TLV 13), which picks its product render. */
+  colour: number | null;
 }
 
-/** How the auth handshake ended; a tester reads this from the System tab. */
-export type HandshakeOutcome = 'complete' | 'skipped';
+/**
+ * How the auth handshake ended; a tester reads this from the System tab.
+ * `complete`: the earbuds' own confirm arrived. `partial`: they answered ours but
+ * sent no confirm. `skipped`: they took no part.
+ */
+export type HandshakeOutcome = 'complete' | 'partial' | 'skipped';
 
 export interface XiaomiState {
   status: ConnectionStatus;
@@ -42,6 +48,12 @@ export interface XiaomiState {
   eqPreset: number | null;
   /** True when in-ear detection is on. */
   wearDetection: boolean | null;
+  /** The gesture table, one record per tap code the earbuds listed. Live-only: re-read on connect. */
+  gestures: GestureRecord[];
+  /** Long-press noise-control cycle bitmasks, `[left, right]`. Live-only. */
+  longPressCycle: [number, number] | null;
+  /** The custom EQ curve as last read back. Live-only. */
+  customEq: CustomEq | null;
   /** Live-only: find-my-earbuds is ringing. */
   finding: boolean;
   capabilities: Set<XiaomiCapability>;
@@ -52,13 +64,16 @@ export interface XiaomiState {
 export const initialXiaomiState: XiaomiState = {
   status: 'disconnected',
   error: null,
-  info: { model: null, btName: null, vid: null, pid: null, firmware: [] },
+  info: { model: null, btName: null, vid: null, pid: null, firmware: [], colour: null },
   battery: [],
   ancMode: null,
   ncStrength: null,
   transparencyStrength: null,
   eqPreset: null,
   wearDetection: null,
+  gestures: [],
+  longPressCycle: null,
+  customEq: null,
   finding: false,
   capabilities: new Set(),
   handshake: null,

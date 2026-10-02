@@ -22,6 +22,25 @@ const VECTORS: Array<[string, string]> = [
   ['0102030405060708090A0B0C0D0E0F10', 'FACD31A7EC313D13A4CEC64D52D27E21'],
 ];
 
+/**
+ * Both directions of a real handshake: the official app against a REDMI Buds 8 Pro
+ * (PID 0x50E3), from the btsnoop-derived RFCOMM capture in
+ * T0F1Q2007/redmi-buds-6-active-linux-software (`chan28.txt`). The earbuds' answer to
+ * the app's challenge, and the app's answer to the earbuds', are both E21 of the
+ * challenge they answer — which is what makes this a hardware known answer rather than
+ * a transcription check.
+ */
+const CAPTURED: Array<[string, string, string]> = [
+  ['the earbuds answering the app', '7cbaf504e25f9d1a3433dc226e354689', '22e1c4476946e0eaafea84486d4ad0fe'],
+  ['the app answering the earbuds', 'ee3e69a0ee621d52d57929286b07151d', '73b1af5133764b4920a00535f14f54b1'],
+];
+
+describe('challengeResponse on a real capture', () => {
+  it.each(CAPTURED)('matches %s', (_who, challenge, answer) => {
+    expect(hex(challengeResponse(bytes(challenge)))).toBe(answer.toUpperCase());
+  });
+});
+
 describe('challengeResponse', () => {
   it.each(VECTORS)('answers %s', (challenge, expected) => {
     expect(hex(challengeResponse(bytes(challenge)))).toBe(expected);

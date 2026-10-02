@@ -36,6 +36,7 @@ describe('XIAOMI_DRIVER.sections', () => {
     expect(ids(withCapabilities('battery'))).toEqual(['system']);
     expect(ids(withCapabilities('anc'))).toEqual(['noise', 'system']);
     expect(ids(withCapabilities('eq'))).toEqual(['sound', 'system']);
+    expect(ids(withCapabilities('customEq'))).toEqual(['sound', 'system']);
   });
 });
 
@@ -59,6 +60,28 @@ describe('XIAOMI_DRIVER summary hooks', () => {
 
   it('uses the placeholder frame rather than another model’s picture', () => {
     expect(XIAOMI_DRIVER.artwork(initialXiaomiState).hero).toBe('');
+  });
+
+  it('serves the catalog render for the connected model, in its own colour', () => {
+    const state = { ...initialXiaomiState, info: { ...initialXiaomiState.info, vid: 0x2717, pid: 0x506c, colour: 2 } };
+    expect(XIAOMI_DRIVER.artwork(state).hero).toContain('black');
+  });
+});
+
+describe('XIAOMI_DRIVER.eqPreview', () => {
+  const curve = { min: -6, max: 6, bands: [62, 125].map((frequency, i) => ({ frequency, gain: i })) };
+
+  it('draws the custom curve while the Custom preset plays, against the reported limits', () => {
+    expect(XIAOMI_DRIVER.eqPreview({ ...initialXiaomiState, eqPreset: 0x0a, customEq: curve })).toEqual({
+      preset: 'Custom',
+      gains: [0, 1],
+      range: { min: -6, max: 6 },
+    });
+  });
+
+  it('has no curve for a built-in preset or before one has been read', () => {
+    expect(XIAOMI_DRIVER.eqPreview({ ...initialXiaomiState, eqPreset: 5, customEq: curve })).toBeNull();
+    expect(XIAOMI_DRIVER.eqPreview({ ...initialXiaomiState, eqPreset: 0x0a })).toBeNull();
   });
 });
 
@@ -92,6 +115,12 @@ describe('XIAOMI_DRIVER.eqPresets', () => {
   it('returns nothing for a model that answered no EQ read', () => {
     const { device } = spyDevice();
     expect(XIAOMI_DRIVER.eqPresets(device, withCapabilities('battery'))).toBeNull();
+  });
+
+  it('lists the presets the catalog gives the connected model', () => {
+    const { device } = spyDevice();
+    const state = { ...withCapabilities('eq'), eqPreset: 21, info: { ...initialXiaomiState.info, vid: 0x2717, pid: 0x50f2 } };
+    expect(XIAOMI_DRIVER.eqPresets(device, state)!.presets.map((preset) => preset.name)).toEqual(['Balanced', 'Bass', 'Voice', 'Treble', 'Volume', 'Custom']);
   });
 
   it('marks the active preset and applies a pick', () => {

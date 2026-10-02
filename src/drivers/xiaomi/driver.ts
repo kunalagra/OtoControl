@@ -11,6 +11,7 @@ import type { AncModeValue } from './commands';
 import { XiaomiDevice } from './device';
 import type { XiaomiState } from './device';
 import { eqPresetOptions } from './eqPresets';
+import { CUSTOM_EQ_PRESET, modelGates } from './models';
 import { XiaomiNoise } from './sections/XiaomiNoise';
 import { XiaomiSound } from './sections/XiaomiSound';
 import { XiaomiSystem } from './sections/XiaomiSystem';
@@ -39,7 +40,7 @@ export const XIAOMI_DRIVER = {
     const known = state.capabilities.size > 0;
     return XIAOMI_SECTIONS.filter((section) => {
       if (section.id === 'noise') return !known || state.capabilities.has('anc');
-      if (section.id === 'sound') return !known || state.capabilities.has('eq');
+      if (section.id === 'sound') return !known || state.capabilities.has('eq') || state.capabilities.has('customEq');
       return true;
     });
   },
@@ -51,11 +52,17 @@ export const XIAOMI_DRIVER = {
   },
   // The protocol reports no wear state, only whether detection is enabled, so it is always "unknown".
   worn: (_state: XiaomiState) => true,
-  artwork: (_state: XiaomiState) => xiaomiArtwork(),
+  artwork: (state: XiaomiState) => xiaomiArtwork(state.info.vid, state.info.pid, state.info.colour),
+  /** The custom curve while the Custom preset plays, against the limits the earbuds report; no curve is known for the others. */
+  eqPreview: (state: XiaomiState) =>
+    state.customEq && state.eqPreset === CUSTOM_EQ_PRESET
+      ? { preset: 'Custom', gains: state.customEq.bands.map((band) => band.gain), range: { min: state.customEq.min, max: state.customEq.max } }
+      : null,
   eqPresets: (device: XiaomiDevice, state: XiaomiState): EqPresets | null => {
     if (state.capabilities.size > 0 && !state.capabilities.has('eq')) return null;
+    const { effects } = modelGates(state.info);
     return {
-      presets: eqPresetOptions(state.eqPreset).map((preset) => ({ id: String(preset.id), name: preset.name, active: state.eqPreset === preset.id })),
+      presets: eqPresetOptions(effects, state.eqPreset).map((preset) => ({ id: String(preset.id), name: preset.name, active: state.eqPreset === preset.id })),
       select: (id: string) => void device.setEqPreset(Number(id)),
     };
   },

@@ -38,14 +38,38 @@ describe('Xiaomi Noise section', () => {
   });
 
   it('shows the transparency strengths in transparency mode, narrowed for a Redmi Buds 3 Pro', () => {
+    // Xiaomi Buds 3 Pro (PID 0x5025): the catalog lists Regular and Voice only.
     const html = render(XiaomiNoise, {
       ancMode: 2,
       capabilities: new Set(['anc', 'strength']),
-      info: { ...initialXiaomiState.info, btName: 'Redmi Buds 3 Pro' },
+      info: { ...initialXiaomiState.info, vid: 0x2717, pid: 0x5025 },
     });
     expect(html).toContain('Regular');
     expect(html).toContain('Voice');
     expect(html).not.toContain('Ambient');
+  });
+
+  it('shows a depth slider, not named buttons, for a model that lists a 20-step gear', () => {
+    // REDMI Buds 8 Pro (PID 0x50E3).
+    const html = render(XiaomiNoise, {
+      ancMode: 1,
+      ncStrength: 19,
+      capabilities: new Set(['anc', 'strength']),
+      info: { ...initialXiaomiState.info, vid: 0x2717, pid: 0x50e3 },
+    });
+    expect(html).toContain('Noise cancelling strength');
+    expect(html).toContain('data-slot="slider"');
+    expect(html).not.toContain('Balanced');
+  });
+
+  it('offers no strength choice for a model whose catalog lists one gear', () => {
+    // Redmi Buds 6 Lite (PID 0x508B).
+    const html = render(XiaomiNoise, {
+      ancMode: 1,
+      capabilities: new Set(['anc', 'strength']),
+      info: { ...initialXiaomiState.info, vid: 0x2717, pid: 0x508b },
+    });
+    expect(html).not.toContain('strength');
   });
 
   it('says so when a probed model has no noise control', () => {
@@ -64,6 +88,35 @@ describe('Xiaomi Sound section', () => {
     for (const name of ['Standard', 'Treble', 'Bass', 'Voice']) expect(html).toContain(name);
   });
 
+  it('lists a model’s own presets in the catalog’s order', () => {
+    // REDMI Buds 8 (PID 0x50F2): Balanced, Bass, Voice, Treble, Volume, Custom.
+    const html = render(XiaomiSound, {
+      eqPreset: 21,
+      capabilities: new Set(['eq']),
+      info: { ...initialXiaomiState.info, vid: 0x2717, pid: 0x50f2 },
+    });
+    for (const name of ['Balanced', 'Bass', 'Voice', 'Treble', 'Volume', 'Custom']) expect(html).toContain(name);
+    expect(html).not.toContain('Standard');
+  });
+
+  it('shows one slider per band for the custom curve, and says a change switches to Custom', () => {
+    const bands = [62, 125, 250, 500, 1000, 2000, 4000, 8000, 12000, 16000].map((frequency) => ({ frequency, gain: 0 }));
+    const html = render(XiaomiSound, {
+      eqPreset: 0,
+      capabilities: new Set(['eq', 'customEq']),
+      customEq: { min: -6, max: 6, bands },
+    });
+    expect(html).toContain('Custom curve');
+    expect(html.match(/data-slot="slider"/g)).toHaveLength(10);
+    expect(html).toContain('62 Hz');
+    expect(html).toContain('16 kHz');
+    expect(html).toContain('switches the equalizer to Custom');
+  });
+
+  it('keeps the curve card only for a model that has one', () => {
+    expect(render(XiaomiSound, { capabilities: new Set(['eq']) })).not.toContain('Custom curve');
+  });
+
   it('says so when a probed model has no equalizer', () => {
     expect(render(XiaomiSound, { capabilities: new Set(['anc']) })).toContain('no equalizer');
   });
@@ -72,7 +125,7 @@ describe('Xiaomi Sound section', () => {
 describe('Xiaomi System section', () => {
   it('shows identity, firmware and how the handshake went', () => {
     const html = render(XiaomiSystem, {
-      info: { model: 'Redmi Buds 4', btName: 'Redmi Buds 4 Pro', vid: 0x2717, pid: 0x5034, firmware: ['1.2.3.4'] },
+      info: { model: 'Redmi Buds 4', btName: 'Redmi Buds 4 Pro', vid: 0x2717, pid: 0x5034, firmware: ['1.2.3.4'], colour: null },
       handshake: 'skipped',
     });
     expect(html).toContain('Redmi Buds 4');
@@ -106,6 +159,31 @@ describe('Xiaomi System section', () => {
     expect(idle).toContain('Both');
     expect(render(XiaomiSystem, { capabilities: new Set(['find']), finding: true })).toContain('Stop ringing');
     expect(render(XiaomiSystem, { capabilities: new Set(['battery']) })).not.toContain('Find my earbuds');
+  });
+
+  it('shows touch controls per tap and side, from the catalog’s actions', () => {
+    const html = render(XiaomiSystem, {
+      capabilities: new Set(['gestures']),
+      info: { ...initialXiaomiState.info, vid: 0x2717, pid: 0x506c },
+      gestures: [
+        { tap: 1, left: 1, right: 1 },
+        { tap: 3, left: 6, right: 0 },
+      ],
+      longPressCycle: [6, 6],
+    });
+    expect(html).toContain('Touch controls');
+    expect(html).toContain('Double tap');
+    expect(html).toContain('Press and hold');
+    expect(html).toContain('Left cycles');
+    expect(html).not.toContain('Single tap');
+  });
+
+  it('omits touch controls for a model that reported none', () => {
+    expect(render(XiaomiSystem, { capabilities: new Set(['anc']) })).not.toContain('Touch controls');
+  });
+
+  it('says a handshake was partial', () => {
+    expect(render(XiaomiSystem, { handshake: 'partial' })).toContain('Partial');
   });
 
   it('has the protocol log and ends with the shared tail', () => {

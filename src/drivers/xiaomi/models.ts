@@ -1,80 +1,124 @@
 /**
- * Which model this is, and what is known about it before it has been probed.
+ * Which model this is, and what it can do before anything has been probed.
  *
- * The wire protocol identifies a model by VID/PID (the `GetInfo` reply's type-3
- * record), the same pair the vendor app keys its cloud catalog on. The names
- * below are that catalog's own (`android-testing/xiaomi/samples/
- * xiaomi_product_list.sample.json`, fetched unauthenticated from the vendor's
- * live host); it holds nine products, so an unknown PID is the normal case for
- * a newer model and falls back to the name the earbuds report themselves.
+ * The earbuds identify themselves by VID/PID (`GetInfo` TLV 3), the pair the
+ * vendor app keys its cloud catalog on. `catalog.generated.ts` is that
+ * catalog's own capability data (see `scripts/fetch-xiaomi-catalog.py`): the
+ * authoritative list of what each model has — noise-control gears, EQ presets,
+ * which actions each gesture accepts, whether it can be found. A model newer
+ * than the bundled catalog is the normal case for fresh hardware; it falls back
+ * to the name the earbuds report, the common option sets Gadgetbridge's
+ * coordinators share, and whatever the probes find.
  *
- * What a model can do is mostly *probed* (`device.ts`). The hints here carry
- * only what Gadgetbridge's per-model coordinators record and a probe cannot
- * tell: which option lists a model offers.
+ * What a model *does* answer is still probed (`device.ts`): the catalog says
+ * what is on offer, the earbuds say what is on.
  */
 
-import { NC_STRENGTH_LABEL, TRANSPARENCY_STRENGTH_LABEL } from './commands';
+import { XIAOMI_CATALOG } from './catalog.generated';
+import type { XiaomiCatalogEntry } from './catalog.generated';
+import { NC_STRENGTH_LABEL, Tap, TRANSPARENCY_STRENGTH_LABEL } from './commands';
 
-/** Xiaomi's Bluetooth vendor id, on every product in the catalog sample. */
+/** Xiaomi's Bluetooth vendor id, on every product in the catalog. */
 export const XIAOMI_VID = 0x2717;
 
-const MODELS: Record<number, string> = {
-  0x5025: 'Xiaomi Buds 3 Pro',
-  0x5026: 'Xiaomi Buds 3',
-  0x5034: 'Redmi Buds 4',
-  0x5035: 'Xiaomi Buds 4 Pro',
-  0x5095: 'Redmi Buds 6S',
-  0x50db: 'Xiaomi Clip-on Earbuds',
-  0x50f2: 'REDMI Buds 8',
-  0x5113: 'Xiaomi Air 5',
-  0x511c: 'REDMI Buds 8S',
-};
+const pidKey = (pid: number): string => pid.toString(16).padStart(4, '0');
+
+/** The catalog entry for a VID/PID, or null for a model it does not list. */
+export function catalogEntry(vid: number | null, pid: number | null): XiaomiCatalogEntry | null {
+  if (vid !== XIAOMI_VID || pid === null) return null;
+  return XIAOMI_CATALOG[pidKey(pid)] ?? null;
+}
 
 /** The catalog's name for a VID/PID, or null for a model it does not list. */
-export function catalogName(vid: number | null, pid: number | null): string | null {
-  if (vid !== XIAOMI_VID || pid === null) return null;
-  return MODELS[pid] ?? null;
-}
+export const catalogName = (vid: number | null, pid: number | null): string | null => catalogEntry(vid, pid)?.name ?? null;
 
-export interface ModelHints {
-  /** False for the `Active` line, which has no noise control at all. */
+/** The vendor app's `Function` ids this driver gates on (`device/manager/export/Function.java`). */
+const FUNC = { find: 5001, wear: 3002 } as const;
+const NOISE_FUNCS = [1001, 1002, 1003, 1004, 1005, 1006, 1007] as const;
+
+/** What the common models list: Gadgetbridge's coordinators share these (Standard, Treble, Bass, Voice). */
+const COMMON_EFFECTS = [0x00, 0x06, 0x05, 0x01];
+const COMMON_GEAR = [0, 1, 2];
+/** Action ids a gesture takes when the catalog names none: Gadgetbridge's `RedmiBudsGestureAction`. */
+const COMMON_ACTIONS = [1, 2, 3, 4, 5];
+
+/** The custom-EQ preset id: selecting it is what makes the chip apply a written curve. */
+export const CUSTOM_EQ_PRESET = 0x0a;
+
+export interface ModelGates {
+  /** False for models with no noise control at all, such as the `Active` line. */
   noiseControl: boolean;
-  /** Noise-cancelling strength ids this model offers, in display order. */
-  ncStrengths: number[];
-  /** Transparency strength ids this model offers, in display order. */
-  transparencyStrengths: number[];
+  /** Noise-cancelling strength ids offered, in display order; fewer than two means no choice. */
+  ncGear: number[];
+  tpGear: number[];
+  /** EQ preset ids offered, in display order. */
+  effects: number[];
+  customEq: boolean;
+  find: boolean;
+  /** Per tap code, the action ids it accepts; null when the model is unknown and the table decides. */
+  taps: Map<number, number[]> | null;
+  /** Whether long press can cycle noise-control modes. */
+  longPressCycle: boolean;
 }
 
-const DEFAULT_HINTS: ModelHints = {
-  noiseControl: true,
-  ncStrengths: [0, 1, 2],
-  transparencyStrengths: [0, 1, 2],
-};
+export interface ModelIdentity {
+  vid: number | null;
+  pid: number | null;
+  btName: string | null;
+}
 
-/**
- * Per-name overrides, from Gadgetbridge's `devices/redmibuds/*Coordinator`:
- * the Redmi Buds 3 Pro lists only Regular and Voice transparency and adds an
- * Adaptive noise-cancelling strength; the `Active` models list no ambient
- * sound modes.
- */
-const HINTS: ReadonlyArray<[RegExp, Partial<ModelHints>]> = [
-  [/Redmi Buds 3 Pro/i, { ncStrengths: [0, 1, 2, 3], transparencyStrengths: [0, 1] }],
-  [/Buds \d+ Active/i, { noiseControl: false }],
-];
+/** The `Active` models list no ambient sound modes (Gadgetbridge); used only for a model the catalog lacks. */
+const NO_NOISE_CONTROL = /Buds \d+ Active/i;
 
-export function modelHints(...names: Array<string | null>): ModelHints {
-  for (const name of names) {
-    if (!name) continue;
-    const match = HINTS.find(([pattern]) => pattern.test(name));
-    if (match) return { ...DEFAULT_HINTS, ...match[1] };
+export function modelGates({ vid, pid, btName }: ModelIdentity): ModelGates {
+  const entry = catalogEntry(vid, pid);
+  if (!entry) {
+    return {
+      noiseControl: !(btName && NO_NOISE_CONTROL.test(btName)),
+      ncGear: COMMON_GEAR,
+      tpGear: COMMON_GEAR,
+      effects: COMMON_EFFECTS,
+      customEq: false,
+      find: true,
+      taps: null,
+      longPressCycle: true,
+    };
   }
-  return DEFAULT_HINTS;
+  const funcs = new Set(entry.funcs);
+  const taps = new Map<number, number[]>();
+  for (const [tap, choices] of Object.entries(entry.taps ?? {})) {
+    taps.set(Number(tap), choices.actions.length > 0 ? choices.actions : COMMON_ACTIONS);
+  }
+  const effects = entry.effects ?? [];
+  return {
+    noiseControl: NOISE_FUNCS.some((id) => funcs.has(id)),
+    ncGear: entry.ncGear ?? [],
+    tpGear: entry.tpGear ?? [],
+    effects,
+    customEq: effects.includes(CUSTOM_EQ_PRESET),
+    find: funcs.has(FUNC.find),
+    taps,
+    longPressCycle: entry.taps?.[String(Tap.Long)]?.cycle ?? false,
+  };
+}
+
+/** The product render for this model and the unit's own colour (`GetInfo` TLV 13), else its default colour. */
+export function catalogImage(vid: number | null, pid: number | null, colour: number | null): string | null {
+  const entry = catalogEntry(vid, pid);
+  if (!entry) return null;
+  return (colour !== null ? entry.images[String(colour)] : undefined) ?? entry.images[String(entry.defaultColour)] ?? Object.values(entry.images)[0] ?? null;
 }
 
 export interface StrengthOption {
   id: number;
   label: string;
 }
+
+/**
+ * A gear with more than four steps is a depth scale (the models that list 0-19
+ * are the ones whose official app shows a slider), not a set of named strengths.
+ */
+export const isDepthScale = (gear: readonly number[]): boolean => gear.length > 4;
 
 export const ncStrengthOptions = (ids: readonly number[]): StrengthOption[] =>
   ids.map((id) => ({ id, label: NC_STRENGTH_LABEL[id] ?? `Level ${id}` }));

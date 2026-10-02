@@ -7,11 +7,18 @@ import { BATTERY_LABEL } from '../commands'
 import type { XiaomiDevice, XiaomiState } from '../device'
 import type { XiaomiCapability } from '../state'
 import { ProtocolLog } from './ProtocolLog'
+import { XiaomiTouchControls } from './XiaomiTouchControls'
 
 interface Props {
   device: XiaomiDevice
   state: XiaomiState
 }
+
+const HANDSHAKE_LABEL = {
+  complete: 'Complete',
+  partial: 'Partial — the earbuds answered but sent no confirm',
+  skipped: 'Skipped — the earbuds did not take part',
+} as const
 
 const hex4 = (value: number): string => value.toString(16).padStart(4, '0')
 
@@ -53,11 +60,13 @@ export function XiaomiSystem({ device, state }: Props) {
           {state.handshake && (
             <p>
               <span className="text-muted-foreground">Handshake </span>
-              {state.handshake === 'complete' ? 'Complete' : 'Skipped — the earbuds did not take part'}
+              {HANDSHAKE_LABEL[state.handshake]}
             </p>
           )}
         </CardContent>
       </Card>
+
+      {state.capabilities.has('gestures') && <XiaomiTouchControls device={device} state={state} />}
 
       {state.capabilities.has('wear') && state.wearDetection !== null && (
         <Card data-size="sm">
@@ -142,6 +151,8 @@ const CAPABILITY_NAMES: ReadonlyArray<[XiaomiCapability, string]> = [
   ['anc', 'Noise control'],
   ['strength', 'Noise control strength'],
   ['eq', 'EQ presets'],
+  ['customEq', 'Custom EQ'],
+  ['gestures', 'Touch controls'],
 ]
 
 /** The features this connection actually answered. */

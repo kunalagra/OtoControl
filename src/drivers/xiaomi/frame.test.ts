@@ -107,3 +107,32 @@ describe('createDeframer', () => {
     expect(frame.payload).toEqual(payload);
   });
 });
+
+describe('createDeframer on a real capture', () => {
+  // Frames from the official app against a REDMI Buds 8 Pro (PID 0x50E3), as two reads that split and join them:
+  // see the design spec's verification section.
+  const CAPTURE =
+    'fedcbac450001200017cbaf504e25f9d1a3433dc226e354689ef' + // app: challenge
+    'fedcba0450001300000122e1c4476946e0eaafea84486d4ad0feef' + // earbuds: answer
+    'fedcbac4510003010100ef' + // app: confirm
+    'fedcbac05000120001ee3e69a0ee621d52d57929286b07151def' + // earbuds: their challenge
+    'fedcba040e000200ffef' + // an ACK, as the app sends them
+    'fedcbac7f4000608' + '04000b0202ef'; // earbuds: a strength notification
+
+  const raw = Uint8Array.from(CAPTURE.match(/../g)!.map((pair) => parseInt(pair, 16)));
+
+  it('reads every frame whole, in order, however the reads fall', () => {
+    for (const split of [0, 7, 25, 60, raw.length]) {
+      const deframer = createDeframer();
+      const frames = [...deframer.push(raw.subarray(0, split)), ...deframer.push(raw.subarray(split))];
+      expect(frames.map((frame) => [frame.type, frame.opcode, frame.seq])).toEqual([
+        [0xc4, 0x50, 0x00],
+        [0x04, 0x50, 0x00],
+        [0xc4, 0x51, 0x01],
+        [0xc0, 0x50, 0x00],
+        [0x04, 0x0e, 0xff],
+        [0xc7, 0xf4, 0x08],
+      ]);
+    }
+  });
+});

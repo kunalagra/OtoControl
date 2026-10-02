@@ -14,6 +14,7 @@ import {
   ConfigId,
   Opcode,
   QUERY_OPCODES,
+  UNCHANGED,
   decodeConfig,
   decodeInfo,
   decodeRunInfo,
@@ -23,13 +24,16 @@ import {
   encodeGetInfo,
   encodeGetRunInfo,
   encodeSetAncMode,
+  encodeSetCustomEq,
   encodeSetEqPreset,
+  encodeSetGesture,
+  encodeSetLongPressCycle,
   encodeSetStrength,
   encodeSetWearDetection,
 } from './commands';
 import type { AncModeValue, ConfigState, FindTarget, StrengthTargetValue } from './commands';
 import type { XiaomiFrame } from './frame';
-import { catalogName, modelHints } from './models';
+import { CUSTOM_EQ_PRESET, catalogEntry, catalogName, modelGates } from './models';
 import { XIAOMI_SNAPSHOT_VERSION, applyDurable, captureDurable, initialXiaomiState } from './state';
 import type { XiaomiCapability, XiaomiState } from './state';
 // Re-exported so `core/manager.ts` can import it from this module, the same
@@ -60,8 +64,18 @@ const PROBE_TIMEOUT_MS = 400;
  */
 const SETTLE_MS = 500;
 
-/** How long to wait, after our confirm, for the earbuds' own confirm. */
+/**
+ * How long to wait, after our confirm, for the earbuds' own confirm. A capture of
+ * the official app has theirs arriving ~140 ms after ours.
+ */
 const CONFIRM_WAIT_MS = 1500;
+
+/**
+ * The shorter wait when the earbuds answered nothing of ours: a device that takes no
+ * part in the handshake must not stall connect, but one that only *starts* its own
+ * (MiBudsClient's Redmi Buds 6 Play) still gets a moment to.
+ */
+const IDLE_CONFIRM_WAIT_MS = 300;
 
 /** How much of the conversation `protocolLog` keeps. */
 const PROTOCOL_LOG_MAX = 400;
@@ -256,7 +270,7 @@ export class XiaomiDevice implements Persistable {
         return;
       }
       case Opcode.NotifyConfig:
-        this.#applyConfig(decodeConfig(frame.payload, true));
+        this.#applyConfig(decodeConfig(frame.payload));
         return;
       default:
         return;
@@ -266,9 +280,12 @@ export class XiaomiDevice implements Persistable {
   /**
    * The handshake: our challenge, our confirm, then the earbuds' own challenge
    * and confirm, which `#onInbound` answers as they arrive. Every step is
-   * best-effort, because some models skip it (MiBudsController) or answer only
-   * the last step (MiBudsClient); a model that needs it and does not get it
-   * simply fails the `GetInfo` read that follows.
+   * best-effort and none can fail the connect: some models skip it
+   * (MiBudsController) or only start their own half (MiBudsClient), while others
+   * (Gadgetbridge, a Redmi Buds 6 Lite script, an official-app capture) run the
+   * whole exchange. A model that needs it and does not get it simply fails the
+   * `GetInfo` read that follows. Nothing seen on hardware disconnects or errors
+   * on an unexpected `0x50`; the worst case is the silence this handles.
    */
   async #handshake(): Promise<void> {
     const client = this.#session.client;
@@ -286,12 +303,12 @@ export class XiaomiDevice implements Persistable {
     const confirmed = await Promise.race([
       this.#confirmed.then(() => true),
       new Promise<boolean>((resolve) => {
-        timer = setTimeout(() => resolve(false), this.#confirmWaitMs);
+        timer = setTimeout(() => resolve(false), answered ? this.#confirmWaitMs : Math.min(this.#confirmWaitMs, IDLE_CONFIRM_WAIT_MS));
       }),
     ]);
     clearTimeout(timer);
     if (this.#session.client !== client) return;
-    this.#patch({ handshake: confirmed || answered ? 'complete' : 'skipped' });
+    this.#patch({ handshake: confirmed ? 'complete' : answered ? 'partial' : 'skipped' });
   }
 
   // --- refresh -----------------------------------------------------------
@@ -318,15 +335,18 @@ export class XiaomiDevice implements Persistable {
       this.#patch({ error: NOT_XIAOMI_ERROR });
       return;
     }
-    const capabilities = new Set<XiaomiCapability>(['find']);
     const { info } = this.#store.state;
+    // What the vendor catalog says this model has; what the earbuds then answer is what is on.
+    const gates = modelGates(info);
+    const known = catalogEntry(info.vid, info.pid) !== null;
+    const capabilities = new Set<XiaomiCapability>();
+    if (gates.find) capabilities.add('find');
     if (info.firmware.length > 0) capabilities.add('version');
     if (this.#store.state.battery.length > 0) capabilities.add('battery');
-    const hints = modelHints(info.btName, info.model);
 
     try {
       const run = decodeRunInfo(await client.request(Opcode.GetRunInfo, encodeGetRunInfo(), { timeoutMs: this.#probeTimeoutMs }));
-      if (run.ancMode !== null && hints.noiseControl) {
+      if (run.ancMode !== null && gates.noiseControl) {
         capabilities.add('anc');
         this.#patch({ ancMode: run.ancMode });
       }
@@ -338,15 +358,38 @@ export class XiaomiDevice implements Persistable {
       console.debug('[xiaomi] run info unavailable', error);
     }
 
-    const strength = await this.#readConfig(client, ConfigId.Strength);
-    if (strength && hints.noiseControl && (strength.ncStrength !== undefined || strength.transparencyStrength !== undefined)) {
-      capabilities.add('strength');
-      this.#applyConfig(strength);
+    if (gates.noiseControl && (gates.ncGear.length > 1 || gates.tpGear.length > 1)) {
+      const strength = await this.#readConfig(client, ConfigId.Strength);
+      if (strength && (strength.ncStrength !== undefined || strength.transparencyStrength !== undefined)) {
+        capabilities.add('strength');
+        this.#applyConfig(strength);
+      }
     }
-    const eq = await this.#readConfig(client, ConfigId.EqPreset);
-    if (eq?.eqPreset !== undefined) {
-      capabilities.add('eq');
-      this.#applyConfig(eq);
+    if (gates.effects.length > 0) {
+      const eq = await this.#readConfig(client, ConfigId.EqPreset);
+      if (eq?.eqPreset !== undefined) {
+        capabilities.add('eq');
+        this.#applyConfig(eq);
+      }
+    }
+    if (gates.taps === null || gates.taps.size > 0) {
+      const gestures = await this.#readConfig(client, ConfigId.Gestures);
+      if (gestures?.gestures && gestures.gestures.length > 0) {
+        capabilities.add('gestures');
+        this.#applyConfig(gestures);
+      }
+    }
+    if (gates.longPressCycle) {
+      const cycle = await this.#readConfig(client, ConfigId.LongPressCycle);
+      if (cycle) this.#applyConfig(cycle);
+    }
+    // A model the catalog lacks is probed for the curve; a listed one only when it lists custom EQ.
+    if (gates.customEq || !known) {
+      const curve = await this.#readConfig(client, ConfigId.CustomEq);
+      if (curve?.customEq) {
+        capabilities.add('customEq');
+        this.#applyConfig(curve);
+      }
     }
 
     if (this.#session.client !== client) return;
@@ -366,6 +409,7 @@ export class XiaomiDevice implements Persistable {
             vid: identity.vid,
             pid: identity.pid,
             firmware: identity.firmware,
+            colour: identity.colour,
           },
           battery: identity.battery,
         });
@@ -377,9 +421,14 @@ export class XiaomiDevice implements Persistable {
     return false;
   }
 
+  /**
+   * One config read. A config the model lacks comes back as a successful reply with
+   * an empty value (seen on a Redmi Buds 6 Active, Gadgetbridge #4343), which decodes
+   * to nothing, so "answered" is judged by what the reply carries, not by the status.
+   */
   async #readConfig(client: XiaomiClient, id: number): Promise<ConfigState | null> {
     try {
-      return decodeConfig(await client.request(Opcode.GetConfig, encodeGetConfig(id), { timeoutMs: this.#probeTimeoutMs }), false);
+      return decodeConfig(await client.request(Opcode.GetConfig, encodeGetConfig(id), { timeoutMs: this.#probeTimeoutMs }));
     } catch (error) {
       console.debug(`[xiaomi] config 0x${id.toString(16)} did not read`, error);
       return null;
@@ -392,6 +441,13 @@ export class XiaomiDevice implements Persistable {
     if (config.transparencyStrength !== undefined) patch.transparencyStrength = config.transparencyStrength;
     if (config.eqPreset !== undefined) patch.eqPreset = config.eqPreset;
     if (config.ancMode !== undefined) patch.ancMode = config.ancMode;
+    if (config.gestures) {
+      // A reply may list only some taps; keep the rest as they were.
+      const listed = new Set(config.gestures.map((record) => record.tap));
+      patch.gestures = [...this.#store.state.gestures.filter((record) => !listed.has(record.tap)), ...config.gestures];
+    }
+    if (config.longPressCycle) patch.longPressCycle = config.longPressCycle;
+    if (config.customEq) patch.customEq = config.customEq;
     this.#patch(patch);
   }
 
@@ -441,6 +497,68 @@ export class XiaomiDevice implements Persistable {
       if (on) await client.request(Opcode.SetConfig, encodeFind(false, 3));
       await client.request(Opcode.SetConfig, encodeFind(on, which));
     });
+  }
+
+  /**
+   * Writes one side of one gesture. The other side is sent as it was read rather
+   * than as the "unchanged" marker, so the write does not lean on what the marker
+   * means; the table is then re-read to show what the earbuds actually kept.
+   */
+  setGesture(tap: number, side: 'left' | 'right', action: number): Promise<void> {
+    const gestures = this.#store.state.gestures;
+    const current = gestures.find((record) => record.tap === tap);
+    if (!current) return Promise.resolve();
+    const record = { ...current, [side]: action };
+    return this.#write(
+      'gestures',
+      gestures.map((entry) => (entry.tap === tap ? record : entry)),
+      async (client) => {
+        await client.request(Opcode.SetConfig, encodeSetGesture(tap, record.left, record.right));
+        const read = await this.#readConfig(client, ConfigId.Gestures);
+        if (read) this.#applyConfig(read);
+      },
+    );
+  }
+
+  /** The long-press noise-control cycle for one side; the other keeps its mask, or the "unchanged" marker if never read. */
+  setLongPressCycle(side: 'left' | 'right', mask: number): Promise<void> {
+    const current = this.#store.state.longPressCycle;
+    const next: [number, number] = side === 'left' ? [mask, current?.[1] ?? UNCHANGED] : [current?.[0] ?? UNCHANGED, mask];
+    return this.#write('longPressCycle', next, (client) => client.request(Opcode.SetConfig, encodeSetLongPressCycle(...next)));
+  }
+
+  /**
+   * Writes the whole custom curve, one gain per band, clamped to the limits the earbuds
+   * reported. The custom preset is selected first: a script run against a Redmi Buds 6
+   * Lite found the chip ignores a curve written while another preset is playing. The
+   * curve is then read back and compared, because the write form is the vendor app's
+   * "preview" one and nothing here can show it persists (see the design spec).
+   */
+  async setCustomEq(gains: readonly number[]): Promise<void> {
+    const client = this.#session.client;
+    const previous = this.#store.state.customEq;
+    if (!client || !previous) return;
+    const bands = previous.bands.map((band, i) => ({
+      frequency: band.frequency,
+      gain: Math.max(previous.min, Math.min(previous.max, Math.round(gains[i] ?? band.gain))),
+    }));
+    const previousPreset = this.#store.state.eqPreset;
+    this.#patch({ customEq: { ...previous, bands } });
+    try {
+      if (previousPreset !== CUSTOM_EQ_PRESET) {
+        await client.request(Opcode.SetConfig, encodeSetEqPreset(CUSTOM_EQ_PRESET));
+        this.#patch({ eqPreset: CUSTOM_EQ_PRESET });
+      }
+      await client.request(Opcode.SetConfig, encodeSetCustomEq(bands));
+      const read = (await this.#readConfig(client, ConfigId.CustomEq))?.customEq;
+      if (read) {
+        // Whatever the earbuds hold is the truth, kept or not.
+        this.#patch({ customEq: read });
+        if (read.bands.some((band, i) => band.gain !== bands[i]?.gain)) this.#patch({ error: 'The earbuds did not keep the curve.' });
+      }
+    } catch (error) {
+      this.#patch({ customEq: previous, eqPreset: previousPreset, error: describeError(error) });
+    }
   }
 
   // --- teardown ----------------------------------------------------------

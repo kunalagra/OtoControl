@@ -1,20 +1,17 @@
 import { EQ_PRESET_LABEL } from './commands';
 
-/**
- * The presets every model lists in Gadgetbridge's coordinators: Standard,
- * Treble, Bass, Voice. Models add others (Balanced, Volume, Custom); those
- * are not offered up front, because a preset a model does not have would be
- * refused, but the one a model is *playing* is always shown.
- */
-const COMMON_PRESETS = [0x00, 0x06, 0x05, 0x01] as const;
-
 export interface EqPresetOption {
   id: number;
   name: string;
 }
 
-export function eqPresetOptions(current: number | null): EqPresetOption[] {
-  const ids: number[] = [...COMMON_PRESETS];
-  if (current !== null && !ids.includes(current)) ids.push(current);
+/**
+ * The presets a model offers, in the vendor catalog's order (`effects`), plus the
+ * one it is *playing* if the list lacks it — a preset the earbuds already hold is
+ * always shown. Ids no source names are labelled by their number rather than
+ * guessed at.
+ */
+export function eqPresetOptions(effects: readonly number[], current: number | null): EqPresetOption[] {
+  const ids = current !== null && !effects.includes(current) ? [...effects, current] : [...effects];
   return ids.map((id) => ({ id, name: EQ_PRESET_LABEL[id] ?? `Preset ${id}` }));
 }

@@ -1,9 +1,11 @@
+import { useState } from 'react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Slider } from '@/components/ui/slider'
 import { SegmentButton } from '@/ui/controls/SegmentButton'
 import { AncMode, StrengthTarget } from '../commands'
 import type { AncModeValue } from '../commands'
 import type { XiaomiDevice, XiaomiState } from '../device'
-import { modelHints, ncStrengthOptions, transparencyStrengthOptions } from '../models'
+import { isDepthScale, modelGates, ncStrengthOptions, transparencyStrengthOptions } from '../models'
 
 interface Props {
   device: XiaomiDevice
@@ -30,7 +32,7 @@ export function XiaomiNoise({ device, state }: Props) {
     )
   }
 
-  const hints = modelHints(state.info.btName, state.info.model)
+  const gates = modelGates(state.info)
   const showStrength = state.capabilities.has('strength')
 
   return (
@@ -60,43 +62,87 @@ export function XiaomiNoise({ device, state }: Props) {
         </CardContent>
       </Card>
 
-      {showStrength && state.ancMode === AncMode.NoiseCancelling && (
-        <Card data-size="sm">
-          <CardHeader>
-            <CardTitle>Noise cancelling strength</CardTitle>
-          </CardHeader>
-          <CardContent className="grid grid-cols-2 gap-1.5 sm:grid-cols-4">
-            {ncStrengthOptions(hints.ncStrengths).map(({ id, label }) => (
-              <SegmentButton
-                key={id}
-                label={label}
-                pressed={state.ncStrength === id}
-                disabled={disabled}
-                onSelect={() => void device.setStrength(StrengthTarget.NoiseCancelling, id)}
-              />
-            ))}
-          </CardContent>
-        </Card>
+      {showStrength && state.ancMode === AncMode.NoiseCancelling && gates.ncGear.length > 1 && (
+        <Gear
+          title="Noise cancelling strength"
+          gear={gates.ncGear}
+          options={ncStrengthOptions(gates.ncGear)}
+          value={state.ncStrength}
+          disabled={disabled}
+          onSelect={(level) => void device.setStrength(StrengthTarget.NoiseCancelling, level)}
+        />
       )}
 
-      {showStrength && state.ancMode === AncMode.Transparency && (
-        <Card data-size="sm">
-          <CardHeader>
-            <CardTitle>Transparency mode</CardTitle>
-          </CardHeader>
-          <CardContent className="grid grid-cols-2 gap-1.5 sm:grid-cols-3">
-            {transparencyStrengthOptions(hints.transparencyStrengths).map(({ id, label }) => (
-              <SegmentButton
-                key={id}
-                label={label}
-                pressed={state.transparencyStrength === id}
-                disabled={disabled}
-                onSelect={() => void device.setStrength(StrengthTarget.Transparency, id)}
-              />
-            ))}
-          </CardContent>
-        </Card>
+      {showStrength && state.ancMode === AncMode.Transparency && gates.tpGear.length > 1 && (
+        <Gear
+          title="Transparency mode"
+          gear={gates.tpGear}
+          options={transparencyStrengthOptions(gates.tpGear)}
+          value={state.transparencyStrength}
+          disabled={disabled}
+          onSelect={(level) => void device.setStrength(StrengthTarget.Transparency, level)}
+        />
       )}
     </div>
+  )
+}
+
+/** A handful of named strengths as buttons, or — for the models that list a 20-step gear — a depth slider. */
+function Gear({
+  title,
+  gear,
+  options,
+  value,
+  disabled,
+  onSelect,
+}: {
+  title: string
+  gear: number[]
+  options: Array<{ id: number; label: string }>
+  value: number | null
+  disabled: boolean
+  onSelect: (level: number) => void
+}) {
+  const [draft, setDraft] = useState<number | null>(null)
+  if (isDepthScale(gear)) {
+    const min = Math.min(...gear)
+    const max = Math.max(...gear)
+    const shown = draft ?? value ?? min
+    return (
+      <Card data-size="sm">
+        <CardHeader>
+          <CardTitle>{title}</CardTitle>
+        </CardHeader>
+        <CardContent className="flex items-center gap-3">
+          <Slider
+            value={[shown]}
+            min={min}
+            max={max}
+            step={1}
+            disabled={disabled}
+            aria-label={title}
+            onValueChange={(next) => setDraft(Array.isArray(next) ? next[0] : next)}
+            onValueCommitted={(committed) => {
+              // The committed value, not `draft`: keyboard input fires change and commit together.
+              onSelect(Array.isArray(committed) ? committed[0] : committed)
+              setDraft(null)
+            }}
+          />
+          <span className="w-8 shrink-0 text-right text-xs tabular-nums">{shown}</span>
+        </CardContent>
+      </Card>
+    )
+  }
+  return (
+    <Card data-size="sm">
+      <CardHeader>
+        <CardTitle>{title}</CardTitle>
+      </CardHeader>
+      <CardContent className="grid grid-cols-2 gap-1.5 sm:grid-cols-4">
+        {options.map(({ id, label }) => (
+          <SegmentButton key={id} label={label} pressed={value === id} disabled={disabled} onSelect={() => onSelect(id)} />
+        ))}
+      </CardContent>
+    </Card>
   )
 }

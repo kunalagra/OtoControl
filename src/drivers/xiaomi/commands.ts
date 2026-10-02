@@ -34,9 +34,15 @@ export const QUERY_OPCODES: ReadonlySet<number> = new Set([Opcode.GetInfo, Opcod
 
 /** Config ids (u16 BE on the wire; every one used here fits a byte). */
 export const ConfigId = {
+  /** Gesture table: `[tap, left, right]` triplets. */
+  Gestures: 0x02,
   EqPreset: 0x07,
   Find: 0x09,
+  /** Long-press noise-control cycle: `[left, right]` bitmasks. */
+  LongPressCycle: 0x0a,
   Strength: 0x0b,
+  /** The 10-band custom EQ curve. */
+  CustomEq: 0x37,
 } as const;
 
 /** The mask asking for every attribute, as Gadgetbridge sends it for info and run info. */
@@ -94,6 +100,50 @@ export type FindTarget = 1 | 2 | 3;
 
 export const encodeFind = (enable: boolean, which: FindTarget): number[] =>
   configUnit(ConfigId.Find, [enable ? 0x01 : 0x00, which]);
+
+/** Leaves one side of a pair as it is: Gadgetbridge's value for "not this one". */
+export const UNCHANGED = 0xff;
+
+/** Tap codes, as config 2 carries them; Gadgetbridge's `RedmiBudsTapType`. */
+export const Tap = { Single: 4, Double: 1, Triple: 2, Long: 3, Slide: 5 } as const;
+export type TapCode = (typeof Tap)[keyof typeof Tap];
+
+export const encodeSetGesture = (tap: number, left: number, right: number): number[] =>
+  configUnit(ConfigId.Gestures, [tap, left, right]);
+
+export const encodeSetLongPressCycle = (left: number, right: number): number[] =>
+  configUnit(ConfigId.LongPressCycle, [left, right]);
+
+/**
+ * One EQ band, in dB. Sign-magnitude on the wire: `0x80 | |dB|` below zero
+ * (vendor `DeviceConfigCustomEq.java:84-87`, Gadgetbridge `RedmiBudsEqualizerBandLevel`).
+ */
+export const gainToByte = (db: number): number => (db < 0 ? 0x80 | Math.min(-db, 0x7f) : Math.min(db, 0x7f));
+export const byteToGain = (byte: number): number => (byte & 0x80 ? -(byte & 0x7f) : byte);
+
+export interface EqBand {
+  /** Centre frequency in Hz, as the earbuds report it. */
+  frequency: number;
+  gain: number;
+}
+
+/** What a model without a read-back falls back to; the rates the earbuds report on every capture seen. */
+export const DEFAULT_EQ_FREQUENCIES = [62, 125, 250, 500, 1000, 2000, 4000, 8000, 12000, 16000] as const;
+
+/**
+ * The curve write Gadgetbridge sends (`RedmiBudsProtocol.encodeSetCustomEqualizer`):
+ * sub-command 5, then `01 01`, the band count, and `[frequency u16][gain]` per band.
+ * It is the vendor app's "preview" form (`DeviceConfigCustomEq` op 8), shorter than its
+ * "save" form (op 4); see the design spec's verification section for why this one.
+ */
+export const encodeSetCustomEq = (bands: readonly EqBand[]): number[] =>
+  configUnit(ConfigId.CustomEq, [
+    0x05,
+    0x01,
+    0x01,
+    bands.length,
+    ...bands.flatMap(({ frequency, gain }) => [(frequency >> 8) & 0xff, frequency & 0xff, gainToByte(gain)]),
+  ]);
 
 // --- decoders -----------------------------------------------------------------
 
@@ -172,11 +222,13 @@ export interface XiaomiIdentity {
   vid: number | null;
   pid: number | null;
   battery: BatteryCell[];
+  /** The unit's colour id (TLV 13), which picks its product render. */
+  colour: number | null;
 }
 
-/** The `GetInfo` reply: name (0), firmware (1), VID/PID (3), battery (7). */
+/** The `GetInfo` reply: name (0), firmware (1), VID/PID (3), battery (7), colour (13). */
 export function decodeInfo(payload: Uint8Array): XiaomiIdentity {
-  const identity: XiaomiIdentity = { btName: null, firmware: [], vid: null, pid: null, battery: [] };
+  const identity: XiaomiIdentity = { btName: null, firmware: [], vid: null, pid: null, battery: [], colour: null };
   for (const { type, value } of parseTlvs(payload)) {
     if (type === 0 && value.length > 0) {
       identity.btName = new TextDecoder().decode(value).replace(/\0+$/, '') || null;
@@ -188,6 +240,8 @@ export function decodeInfo(payload: Uint8Array): XiaomiIdentity {
       identity.pid = (value[2] << 8) | value[3];
     } else if (type === 7) {
       identity.battery = decodeBattery(value);
+    } else if (type === 13 && value.length === 1) {
+      identity.colour = value[0];
     }
   }
   return identity;
@@ -224,31 +278,79 @@ export function decodeStatusPush(payload: Uint8Array): StatusPush {
   return push;
 }
 
+export interface GestureRecord {
+  tap: number;
+  left: number;
+  right: number;
+}
+
+export interface CustomEq {
+  /** Gain limits in dB, as the earbuds report them (±6 on every capture seen). */
+  min: number;
+  max: number;
+  bands: EqBand[];
+}
+
 export interface ConfigState {
   ncStrength?: number;
   transparencyStrength?: number;
   eqPreset?: number;
-  /** Only a notification names the mode the strength belongs to. */
   ancMode?: AncModeValue;
+  gestures?: GestureRecord[];
+  /** `[left, right]` long-press cycle bitmasks. */
+  longPressCycle?: [number, number];
+  customEq?: CustomEq;
+}
+
+/**
+ * The custom-EQ read-back: `[01][mode][max][min][eqId][nameLen][name…][count]` then
+ * `[frequency u16][gain]` per band. Layout from the vendor app's
+ * `DeviceConfigCustomEq.valueToParams` and a real capture (`01 0a 06 06 00 00 0a`,
+ * ten bands from 62 Hz to 16 kHz). A limit of 0 means the app's default of 10.
+ */
+function decodeCustomEq(value: Uint8Array): CustomEq | null {
+  if (value.length < 7 || value[0] !== 1) return null;
+  const nameLength = value[5];
+  const countAt = 6 + nameLength;
+  if (countAt >= value.length) return null;
+  const count = value[countAt];
+  const bands: EqBand[] = [];
+  for (let at = countAt + 1; bands.length < count && at + 2 < value.length; at += 3) {
+    bands.push({ frequency: (value[at] << 8) | value[at + 1], gain: byteToGain(value[at + 2]) });
+  }
+  if (bands.length === 0) return null;
+  return { max: value[2] || 10, min: -(value[3] || 10), bands };
 }
 
 /**
  * Folds config units from a `GetConfig` reply or a `NotifyConfig` push.
  *
- * Config `0x0B` is `[target, level]` in a reply (target 1 noise cancelling, 2
- * transparency) but `[mode, level]` in a notification, where the mode is the
- * one now active and the level belongs to it (WinMi-Buds `EarbudState.Apply`).
- * Mode 0 (off) has no level, so a notification for it only moves the mode.
+ * Config `0x0B` is `[mode, level]` in both: the mode now active (0 off, 1
+ * noise cancelling, 2 transparency) and that mode's strength id. A capture of
+ * the official app shows the same pair in a get reply (`04 00 0B 02 02`) and in
+ * a notification (`04 00 0B 02 01`), and `[0, 0]` while off, so a reply names
+ * the mode too. Some models report a strength beyond the 0-3 names (a depth
+ * step up to 19 on the models whose catalog lists a 20-step gear).
  */
-export function decodeConfig(payload: Uint8Array, notification: boolean): ConfigState {
+export function decodeConfig(payload: Uint8Array): ConfigState {
   const state: ConfigState = {};
   for (const { id, value } of parseConfigUnits(payload)) {
     if (id === ConfigId.EqPreset && value.length >= 1) {
       state.eqPreset = value[0];
     } else if (id === ConfigId.Strength && value.length >= 2) {
+      if (isAncMode(value[0])) state.ancMode = value[0];
       if (value[0] === StrengthTarget.NoiseCancelling) state.ncStrength = value[1];
       else if (value[0] === StrengthTarget.Transparency) state.transparencyStrength = value[1];
-      if (notification && isAncMode(value[0])) state.ancMode = value[0];
+    } else if (id === ConfigId.Gestures && value.length >= 3) {
+      state.gestures = [];
+      for (let at = 0; at + 2 < value.length; at += 3) {
+        state.gestures.push({ tap: value[at], left: value[at + 1], right: value[at + 2] });
+      }
+    } else if (id === ConfigId.LongPressCycle && value.length >= 2) {
+      state.longPressCycle = [value[0], value[1]];
+    } else if (id === ConfigId.CustomEq) {
+      const curve = decodeCustomEq(value);
+      if (curve) state.customEq = curve;
     }
   }
   return state;
