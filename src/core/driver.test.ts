@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { DRIVERS, SENNHEISER_DRIVER, SONY_DRIVER, driverForService } from './driver';
+import { DRIVERS, SENNHEISER_DRIVER, SONY_DRIVER, XIAOMI_DRIVER, driverForService } from './driver';
 import { initialState } from '@/drivers/sennheiser/state';
 import { initialSonyState } from '@/drivers/sony/sony';
 import {
@@ -9,6 +9,8 @@ import {
   M4_SERVICE_UUID,
   SONY_MDR_V1_UUID,
   SONY_MDR_V2_UUID,
+  STANDARD_SPP_UUID,
+  XIAOMI_SPP_UUID,
 } from '@/core/transport';
 import { KNOWN_GATT_SERVICES } from '@/core/gattTransport';
 
@@ -20,6 +22,11 @@ describe('driverForService', () => {
   it('resolves both Sony generations to the same MDR driver', () => {
     expect(driverForService(SONY_MDR_V1_UUID)?.id).toBe('sony-mdr');
     expect(driverForService(SONY_MDR_V2_UUID)?.id).toBe('sony-mdr');
+  });
+
+  it('resolves the Xiaomi 0xFD2D service to the Xiaomi driver, leaving standard SPP to HeyMelody', () => {
+    expect(driverForService(XIAOMI_SPP_UUID)?.id).toBe('xiaomi-rcsp');
+    expect(driverForService(STANDARD_SPP_UUID)?.id).toBe('heymelody');
   });
 
   it('returns null for a service no driver claims', () => {
@@ -63,6 +70,8 @@ describe('DRIVERS', () => {
       'sony-mdr': 'sony',
       'nothing-spp': 'nothing',
       'soundcore-gatt': 'soundcore',
+      heymelody: 'heymelody',
+      'xiaomi-rcsp': 'xiaomi',
     };
     for (const driver of DRIVERS) {
       for (const profile of driver.profiles) {
@@ -175,6 +184,7 @@ describe('create', () => {
     // default that themselves).
     expect(SENNHEISER_DRIVER.create({}).state.status).not.toBeUndefined();
     expect(SONY_DRIVER.create({}).state.status).not.toBeUndefined();
+    expect(XIAOMI_DRIVER.create({}).state.status).not.toBeUndefined();
   });
 });
 

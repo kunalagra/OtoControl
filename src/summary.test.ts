@@ -17,6 +17,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   HEYMELODY_DRIVER,
+  XIAOMI_DRIVER,
   NOTHING_DRIVER,
   PIXELBUDS_DRIVER,
   SENNHEISER_DRIVER,
@@ -33,6 +34,7 @@ import { initialSoundcoreState } from '@/drivers/soundcore/device';
 import { EQ_PRESETS } from '@/drivers/soundcore/commands';
 import { initialHeyMelodyState } from '@/drivers/heymelody/state';
 import { initialPixelBudsState } from '@/drivers/pixelbuds/state';
+import { initialXiaomiState } from '@/drivers/xiaomi/state';
 import type { DeviceDriver } from '@/core/driver';
 import type { ActiveDevice } from '@/core/manager';
 import { summarise } from '@/ui/device/summary';
@@ -283,7 +285,7 @@ describe('summarise — worn', () => {
  */
 describe('summarise — cells and firmware', () => {
   const active = <TState>(
-    driver: typeof SENNHEISER_DRIVER | typeof SONY_DRIVER | typeof NOTHING_DRIVER | typeof SOUNDCORE_DRIVER | typeof HEYMELODY_DRIVER | typeof PIXELBUDS_DRIVER,
+    driver: typeof SENNHEISER_DRIVER | typeof SONY_DRIVER | typeof NOTHING_DRIVER | typeof SOUNDCORE_DRIVER | typeof HEYMELODY_DRIVER | typeof PIXELBUDS_DRIVER | typeof XIAOMI_DRIVER,
     state: TState,
   ): ActiveDevice => ({ id: driver.id, driver, device: {} as never, state }) as ActiveDevice;
 
@@ -433,6 +435,37 @@ describe('summarise — cells and firmware', () => {
     expect(summary.charging).toBe(true);
     expect(summary.model).toBe('Pixel Buds');
     expect(summary.hasDevice).toBe(false);
+  });
+
+  it('maps Xiaomi’s cells onto the short headings and takes the first firmware version', () => {
+    const summary = summarise(
+      active(XIAOMI_DRIVER, {
+        ...initialXiaomiState,
+        info: { ...initialXiaomiState.info, model: 'Redmi Buds 4', vid: 0x2717, firmware: ['1.2.3.4', '5.6.7.8'] },
+        battery: [
+          { device: 'left', level: 80, charging: true },
+          { device: 'right', level: 75, charging: false },
+          { device: 'case', level: 40, charging: false },
+        ],
+      }),
+    );
+    expect(summary.model).toBe('Redmi Buds 4');
+    expect(summary.hasDevice).toBe(true);
+    expect(summary.cells.map((entry) => [entry.label, entry.level])).toEqual([
+      ['L', 80],
+      ['R', 75],
+      ['Case', 40],
+    ]);
+    expect(summary.battery).toBe(40);
+    expect(summary.charging).toBe(true);
+    expect(summary.firmware).toBe('1.2.3.4');
+  });
+
+  it('has no Xiaomi device until something identified itself', () => {
+    const summary = summarise(active(XIAOMI_DRIVER, initialXiaomiState));
+    expect(summary.hasDevice).toBe(false);
+    expect(summary.firmware).toBeNull();
+    expect(summary.cells).toEqual([]);
   });
 
   it('reads the firmware each driver already holds, and null for the ones with none', () => {

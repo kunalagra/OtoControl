@@ -16,6 +16,7 @@ import {
   SOUNDCORE_DRIVER,
   HEYMELODY_DRIVER,
   PIXELBUDS_DRIVER,
+  XIAOMI_DRIVER,
   driverForService,
 } from '@/core/driver';
 import type { DriverId } from '@/core/driver';
@@ -26,6 +27,8 @@ import { HeyMelodyDevice } from '@/drivers/heymelody/device';
 import type { HeyMelodyState } from '@/drivers/heymelody/device';
 import { PixelBudsDevice } from '@/drivers/pixelbuds/device';
 import type { PixelBudsState } from '@/drivers/pixelbuds/device';
+import { XiaomiDevice } from '@/drivers/xiaomi/device';
+import type { XiaomiState } from '@/drivers/xiaomi/device';
 import type { DeviceState } from '@/drivers/sennheiser/state';
 import type { SonyState } from '@/drivers/sony/sony';
 import type { NothingState } from '@/drivers/nothing/device';
@@ -108,7 +111,8 @@ export type ActiveDevice =
   | { id: Extract<DriverId, 'nothing-spp'>; driver: typeof NOTHING_DRIVER; device: NothingDevice; state: NothingState }
   | { id: Extract<DriverId, 'soundcore-gatt'>; driver: typeof SOUNDCORE_DRIVER; device: SoundcoreDevice; state: SoundcoreState }
   | { id: Extract<DriverId, 'heymelody'>; driver: typeof HEYMELODY_DRIVER; device: HeyMelodyDevice; state: HeyMelodyState }
-  | { id: Extract<DriverId, 'pixelbuds'>; driver: typeof PIXELBUDS_DRIVER; device: PixelBudsDevice; state: PixelBudsState };
+  | { id: Extract<DriverId, 'pixelbuds'>; driver: typeof PIXELBUDS_DRIVER; device: PixelBudsDevice; state: PixelBudsState }
+  | { id: Extract<DriverId, 'xiaomi-rcsp'>; driver: typeof XIAOMI_DRIVER; device: XiaomiDevice; state: XiaomiState };
 
 /**
  * Whether the app knows of any device.
@@ -162,6 +166,7 @@ export class DeviceManager {
   readonly #soundcore = this.#devices[SOUNDCORE_DRIVER.id] as SoundcoreDevice;
   readonly #heymelody = this.#devices[HEYMELODY_DRIVER.id] as HeyMelodyDevice;
   readonly #pixelbuds = this.#devices[PIXELBUDS_DRIVER.id] as PixelBudsDevice;
+  readonly #xiaomi = this.#devices[XIAOMI_DRIVER.id] as XiaomiDevice;
 
   /**
    * Which driver's device the UI should render, keyed by driver id, or null
@@ -380,6 +385,14 @@ export class DeviceManager {
         driver: PIXELBUDS_DRIVER,
         device: this.#pixelbuds,
         state: this.#pixelbuds.state,
+      };
+    }
+    if (driverId === XIAOMI_DRIVER.id) {
+      return {
+        id: XIAOMI_DRIVER.id,
+        driver: XIAOMI_DRIVER,
+        device: this.#xiaomi,
+        state: this.#xiaomi.state,
       };
     }
     return {

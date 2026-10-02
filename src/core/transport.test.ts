@@ -13,6 +13,7 @@ import {
   SONY_MDR_V1_UUID,
   SONY_MDR_V2_UUID,
   STANDARD_SPP_UUID,
+  XIAOMI_SPP_UUID,
   isUnreachable,
   listGrantedPorts,
   serviceForPort,
@@ -81,6 +82,18 @@ describe('serviceForPort', () => {
   });
 });
 
+describe('Xiaomi service', () => {
+  it('routes the 0xFD2D service to the Xiaomi driver, not as a generic service', () => {
+    const service = serviceForPort(portWith(XIAOMI_SPP_UUID));
+    expect(service).toMatchObject({ brand: 'xiaomi', protocol: 'xiaomi-rcsp' });
+    expect(service?.generic).toBeFalsy();
+  });
+
+  it('keeps the standard SPP service on HeyMelody', () => {
+    expect(serviceForPort(portWith(STANDARD_SPP_UUID))).toMatchObject({ brand: 'heymelody' });
+  });
+});
+
 describe('listGrantedPorts', () => {
   afterEach(() => {
     vi.unstubAllGlobals();
@@ -92,6 +105,14 @@ describe('listGrantedPorts', () => {
     });
     const granted = await listGrantedPorts();
     expect(granted.map((entry) => entry.service.uuid)).toEqual([HEYMELODY_SPP_UUID, STANDARD_SPP_UUID]);
+  });
+
+  it('lists the Xiaomi service before the generic one', async () => {
+    vi.stubGlobal('navigator', {
+      serial: { getPorts: async () => [portWith(STANDARD_SPP_UUID), portWith(XIAOMI_SPP_UUID)] },
+    });
+    const granted = await listGrantedPorts();
+    expect(granted.map((entry) => entry.service.uuid)).toEqual([XIAOMI_SPP_UUID, STANDARD_SPP_UUID]);
   });
 });
 
@@ -109,7 +130,7 @@ describe('KNOWN_SERVICES', () => {
 
   it('maps every service to a brand that has artwork', () => {
     for (const { brand } of KNOWN_SERVICES) {
-      expect(['sennheiser', 'sony', 'nothing', 'heymelody', 'pixelbuds']).toContain(brand);
+      expect(['sennheiser', 'sony', 'nothing', 'heymelody', 'pixelbuds', 'xiaomi']).toContain(brand);
     }
   });
 
@@ -122,6 +143,10 @@ describe('servicesFor', () => {
   it('resolves pixelbuds services', () => {
     expect(servicesFor('pixelbuds')).toEqual([PIXELBUDS_MAESTRO_UUID]);
     expect(PIXELBUDS_MAESTRO_UUID).toBe('25e97ff7-24ce-4c4c-8951-f764a708f7b5');
+  });
+
+  it('resolves the xiaomi service, and only that one', () => {
+    expect(servicesFor('xiaomi')).toEqual([XIAOMI_SPP_UUID]);
   });
 
   it('resolves heymelody services', () => {

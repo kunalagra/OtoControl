@@ -81,7 +81,16 @@ export const STANDARD_SPP_UUID = '00001101-0000-1000-8000-00805f9b34fb';
  */
 export const PIXELBUDS_MAESTRO_UUID = '25e97ff7-24ce-4c4c-8951-f764a708f7b5';
 
-export type ProtocolGeneration = 'gaia' | 'mdr-v1' | 'mdr-v2' | 'nothing-v1' | 'heymelody' | 'maestro';
+/**
+ * Xiaomi / Redmi earbuds' control service: the vendor app's `UUID_SPP_MIUI`
+ * (`0xFD2D`, Xiaomi's 16-bit service UUID), the first it tries
+ * (`e7/i.java:308-319`), and the one Gadgetbridge connects to for Redmi Buds.
+ * Not the standard SPP UUID, so it does not compete with HeyMelody's generic
+ * fallback. See `docs/superpowers/specs/2026-10-02-xiaomi-driver-design.md` §3.
+ */
+export const XIAOMI_SPP_UUID = '0000fd2d-0000-1000-8000-00805f9b34fb';
+
+export type ProtocolGeneration = 'gaia' | 'mdr-v1' | 'mdr-v2' | 'nothing-v1' | 'heymelody' | 'maestro' | 'xiaomi-rcsp';
 
 export interface KnownService {
   uuid: string;
@@ -111,6 +120,7 @@ export const KNOWN_SERVICES: KnownService[] = [
   { uuid: HEYMELODY_SPP_UUID, brand: 'heymelody', protocol: 'heymelody' },
   { uuid: HEYMELODY_LEGACY_SPP_UUID, brand: 'heymelody', protocol: 'heymelody' },
   { uuid: PIXELBUDS_MAESTRO_UUID, brand: 'pixelbuds', protocol: 'maestro' },
+  { uuid: XIAOMI_SPP_UUID, brand: 'xiaomi', protocol: 'xiaomi-rcsp' },
   { uuid: STANDARD_SPP_UUID, brand: 'heymelody', protocol: 'heymelody', generic: true },
 ];
 

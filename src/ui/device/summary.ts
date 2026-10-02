@@ -259,6 +259,35 @@ export function summarise(active: ActiveDevice): DeviceSummary {
     }
   }
 
+  if (active.id === 'xiaomi-rcsp') {
+    const { driver, state } = active
+    const CELL_LABEL: Record<(typeof state.battery)[number]['device'], BatteryCellSummary['label']> = {
+      left: 'L',
+      right: 'R',
+      case: 'Case',
+    }
+    const cells: BatteryCellSummary[] = state.battery.map((entry) => ({
+      label: CELL_LABEL[entry.device],
+      level: entry.level,
+      charging: entry.charging,
+    }))
+    return {
+      model: state.info.model ?? fallbackName(state.status, 'Xiaomi earbuds'),
+      // A valid VID/PID with no name (a model newer than the catalog, and no Bluetooth name) still
+      // means a real device answered.
+      hasDevice: state.info.model !== null || state.info.vid !== null,
+      battery: lowest(cells),
+      charging: cells.some((entry) => entry.charging),
+      codec: driver.codecName(state),
+      detail: driver.statusLine(state),
+      artwork: driver.artwork(state),
+      worn: driver.worn(state),
+      // The firmware record can hold two versions; the hero chip shows the first.
+      firmware: state.info.firmware[0] ?? null,
+      cells,
+    }
+  }
+
   const { driver, state } = active
   return {
     model: state.info.model ?? fallbackName(state.status, 'Sennheiser headphones'),

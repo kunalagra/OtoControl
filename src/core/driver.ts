@@ -42,6 +42,7 @@ import { NOTHING_DRIVER } from '@/drivers/nothing/driver';
 import { SOUNDCORE_DRIVER } from '@/drivers/soundcore/driver';
 import { HEYMELODY_DRIVER } from '@/drivers/heymelody/driver';
 import { PIXELBUDS_DRIVER } from '@/drivers/pixelbuds/driver';
+import { XIAOMI_DRIVER } from '@/drivers/xiaomi/driver';
 
 /**
  * Re-exported so this module stays the single address for "a driver".
@@ -64,6 +65,7 @@ export { NOTHING_DRIVER } from '@/drivers/nothing/driver';
 export { SOUNDCORE_DRIVER } from '@/drivers/soundcore/driver';
 export { HEYMELODY_DRIVER } from '@/drivers/heymelody/driver';
 export { PIXELBUDS_DRIVER } from '@/drivers/pixelbuds/driver';
+export { XIAOMI_DRIVER } from '@/drivers/xiaomi/driver';
 
 /**
  * Every driver id this app can produce, as a closed union.
@@ -96,7 +98,8 @@ export type DriverId =
   | typeof NOTHING_DRIVER.id
   | typeof SOUNDCORE_DRIVER.id
   | typeof HEYMELODY_DRIVER.id
-  | typeof PIXELBUDS_DRIVER.id;
+  | typeof PIXELBUDS_DRIVER.id
+  | typeof XIAOMI_DRIVER.id;
 
 /**
  * How a driver obtains its device's transport.
@@ -365,6 +368,7 @@ export const DRIVERS: readonly DeviceDriver<never, never>[] = [
   SOUNDCORE_DRIVER,
   HEYMELODY_DRIVER,
   PIXELBUDS_DRIVER,
+  XIAOMI_DRIVER,
 ] as unknown as readonly DeviceDriver<never, never>[];
 
 /** The driver that speaks a given RFCOMM service, or null if none does. */
