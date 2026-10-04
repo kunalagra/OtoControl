@@ -99,6 +99,20 @@ describe('PixelBudsDevice connect', () => {
 
   // The firmware allows one SubscribeRuntimeInfo per channel: a second one ends the first (PixelBudsMacOS
   // ARCHITECTURE.md, hardware-observed), so a refresh must not subscribe again.
+  it('follows a hosting-bud hand-over to the new channel and keeps its streams', async () => {
+    const { device, buds } = await connected();
+    const before = buds.requests.length;
+    buds.announce(21);
+    expect(device.state.channel).toBe(21);
+    const resent = buds.requests.slice(before);
+    expect(resent.map((request) => [request.channelId, request.methodId])).toEqual(
+      expect.arrayContaining([
+        [21, rpcHash(Method.SubscribeRuntimeInfo)],
+        [21, rpcHash(Method.SubscribeToSettingsChanges)],
+      ]),
+    );
+  });
+
   it('subscribes once per link, however often it refreshes', async () => {
     const { device, buds } = await connected();
     await device.refresh();

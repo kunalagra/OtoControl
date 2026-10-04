@@ -297,7 +297,9 @@ export class SamsungDevice implements Persistable {
     }
     this.#patch({ info: { ...this.#store.state.info, sku: sku || null } });
     if (matched) this.#setModel(matched, 'sku');
-    else if (this.#modelSource === null || this.#modelSource === 'assumed') this.#setModel(UNKNOWN_MODERN, 'assumed');
+    // Only a pair nothing has named yet falls back to unknown: a reconnect that reads an empty SKU must not
+    // forget the model an earlier connect (or the snapshot) already established.
+    else if (this.#store.state.info.modelId === null) this.#setModel(UNKNOWN_MODERN, 'assumed');
   }
 
   async #readVersion(client: SamsungClient): Promise<void> {

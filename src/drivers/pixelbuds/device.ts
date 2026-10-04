@@ -126,6 +126,7 @@ export class PixelBudsDevice implements Persistable {
       wire: (client) => {
         this.#appendLog('connect', new Uint8Array());
         client.onRaw((bytes, direction) => this.#appendLog(direction, bytes));
+        client.onChannelChange((channel) => this.#patch({ channel }));
       },
       onStatus: (status, error) => this.#patch({ status, error }),
       onDrop: (reason) => {

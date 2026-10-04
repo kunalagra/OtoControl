@@ -357,6 +357,20 @@ describe('SamsungDevice drop and disconnect', () => {
     expect(device.state.eq).toBe(3);
   });
 
+  it('keeps a model it already knows when a reconnect reads an empty SKU', async () => {
+    // Ear type 99 is in no table, so only the SKU can name the pair.
+    const replies = new Map([[0x22, sku('SM-R510')]]);
+    const harness = buds({ pushes: [extended({ 1: 99 })], replies });
+    const device = new SamsungDevice(harness.open, OPTIONS);
+    await device.adoptPort(port);
+    expect(device.state.info.model).toBe('Galaxy Buds2 Pro');
+
+    await device.disconnect();
+    replies.set(0x22, new Array(28).fill(0));
+    await device.adoptPort(port);
+    expect(device.state.info.model).toBe('Galaxy Buds2 Pro');
+  });
+
   it('closes the transport on disconnect', async () => {
     const harness = buds({ pushes: [extended()] });
     const device = new SamsungDevice(harness.open, OPTIONS);

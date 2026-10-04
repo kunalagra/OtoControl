@@ -12,7 +12,6 @@ import { NoDevice } from '../sections/NoDevice'
 import { TileMorph } from '../sections/TileMorph'
 import { useTheme } from '../theme'
 import { useDevices } from '../useDevice'
-import { ConnectionMenu } from './ConnectionMenu'
 import { Nav } from './Nav'
 import { TopBar } from './TopBar'
 
@@ -71,7 +70,6 @@ export function AppShell() {
         sections={empty ? [] : nav}
         active={section.id}
         onSelect={setActiveId}
-        footer={empty ? null : <ConnectionMenu manager={manager} active={active} />}
       />
 
       <main className="flex min-w-0 flex-1 flex-col md:overflow-y-auto">

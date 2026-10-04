@@ -49,6 +49,8 @@ export interface FakeBuds {
   transport(): FakeTransport;
   /** Pushes a server-stream message as though the buds sent it. */
   push(method: string, payload: ArrayLike<number>): void;
+  /** Announces `channel` unprompted, as the buds do when the hosting bud changes; it serves requests from then on. */
+  announce(channel: number): void;
 }
 
 const deviceFrame = (packet: Parameters<typeof encodeRpcPacket>[0]): Uint8Array =>
@@ -126,6 +128,19 @@ export function fakeBuds(script: BudsScript): FakeBuds {
     transport: () => {
       if (!live) throw new Error('not opened yet');
       return live;
+    },
+    announce: (channel) => {
+      script.channel = channel;
+      if (!live) throw new Error('not opened yet');
+      live.receive(
+        deviceFrame({
+          type: PacketType.Response,
+          channelId: channel,
+          serviceId: rpcHash(MAESTRO_SERVICE),
+          methodId: rpcHash(Method.GetSoftwareInfo),
+          callId: ANNOUNCE_CALL_ID,
+        }),
+      );
     },
     push: (method, payload) => {
       live?.receive(

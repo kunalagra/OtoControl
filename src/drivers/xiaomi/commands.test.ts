@@ -200,6 +200,15 @@ describe('decodeStatusPush', () => {
   it('is empty for a payload with neither', () => {
     expect(decodeStatusPush(u8(2, 99, 1))).toEqual({ battery: null, ancMode: null });
   });
+
+  it('keeps the buds when a battery push carries no case byte', () => {
+    // The vendor app parses whatever length arrives (f7/f.java:162-167); the info TLV is already read this way.
+    const push = decodeStatusPush(u8(3, 0, 0x80 | 55, 60));
+    expect(push.battery).toEqual([
+      { device: 'left', level: 55, charging: true },
+      { device: 'right', level: 60, charging: false },
+    ]);
+  });
 });
 
 /** Bytes from a real capture of the official app talking to a REDMI Buds 8 Pro (PID 0x50E3); see the design spec. */

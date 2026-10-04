@@ -257,3 +257,51 @@ describe('raw tap and damage', () => {
     expect(seen).toEqual([]);
   });
 });
+
+describe('hosting-bud hand-over', () => {
+  it('follows the buds to the channel they announce next, carrying open streams across', async () => {
+    const r = rig();
+    r.deliver(announce(19));
+    await r.client.discoverChannel();
+    const got: number[][] = [];
+    const cancel = r.client.subscribe(Method.SubscribeRuntimeInfo, (payload) => got.push(Array.from(payload)));
+    const pending = r.client.call(Method.GetHardwareInfo).catch((error: Error) => error);
+    await tick();
+
+    // The other bud takes over Maestro and announces its own channel (tedsluis CAP-065/066).
+    r.deliver(announce(21));
+    expect(r.client.channel).toBe(21);
+    expect(await pending).toBeInstanceOf(Error);
+    expect(r.sent.at(-1)).toMatchObject({ type: PacketType.Request, channelId: 21, methodId: rpcHash(Method.SubscribeRuntimeInfo) });
+
+    r.deliver({ type: PacketType.ServerStream, channelId: 21, serviceId: SERVICE, methodId: rpcHash(Method.SubscribeRuntimeInfo), payload: Uint8Array.of(7) });
+    expect(got).toEqual([[7]]);
+    cancel();
+    expect(r.sent.at(-1)).toMatchObject({ type: PacketType.ClientError, channelId: 21, methodId: rpcHash(Method.SubscribeRuntimeInfo) });
+
+    r.client.call(Method.GetSoftwareInfo).catch(() => undefined);
+    await tick();
+    expect(r.sent.at(-1)).toMatchObject({ type: PacketType.Request, channelId: 21, methodId: rpcHash(Method.GetSoftwareInfo) });
+  });
+
+  it('ignores a repeat announcement on the channel it already uses', async () => {
+    const r = rig();
+    r.deliver(announce(19));
+    await r.client.discoverChannel();
+    r.client.subscribe(Method.SubscribeRuntimeInfo, () => {});
+    const before = r.sent.length;
+    r.deliver(announce(19));
+    expect(r.client.channel).toBe(19);
+    expect(r.sent).toHaveLength(before);
+  });
+});
+
+describe('HDLC control byte', () => {
+  it('drops a frame whose control byte is not 0x03, as pbpctrl does', async () => {
+    const r = rig();
+    r.transport.receive(encodeFrame(hdlcAddress(Peer.LeftBtCore, Peer.MaestroA), encodeRpcPacket(announce(19)), 0x13));
+    expect(r.client.channel).toBeNull();
+    r.deliver(announce(19));
+    expect(r.client.channel).toBe(19);
+  });
+});

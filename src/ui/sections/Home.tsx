@@ -370,7 +370,9 @@ export function BatteryTile({ summary, connected, className }: BatteryTileProps)
   const cells = summary.cells
   // One cell is the whole device, so it gets the number; more than one gets a
   // row each, and a single number for three batteries would say nothing.
-  const single = cells.length === 1
+  // Only a cell that *is* the whole device: a lone L or R (its pair in the case or out of reach) keeps its row and
+  // name, or the tile would show one earbud's level as the device's battery.
+  const single = cells.length === 1 && cells[0].label === 'Battery'
   // Nothing live to show means a dash, whatever the cell count — which is the
   // one case where the numeral appears without a single cell behind it. The
   // same is true of a *connected* device that reports no cell at all: a WF-C500
@@ -379,7 +381,7 @@ export function BatteryTile({ summary, connected, className }: BatteryTileProps)
   // with a caption and nothing in it — which reads as a tile that failed, not as
   // a battery we cannot read (DESIGN-GUIDE §7: show "—" with a caption when a
   // value is unknown).
-  const showNumber = cells.length <= 1 || !connected
+  const showNumber = cells.length === 0 || single || !connected
   const value = connected ? summary.battery : null
 
   return (
@@ -477,13 +479,15 @@ function CellRow({ cell }: { cell: BatteryCellSummary }) {
   return (
     <div data-slot="battery-cell" className="flex items-center gap-2">
       <span className="w-7 shrink-0 text-[11px] font-medium">{cell.label}</span>
-      <SegmentMeter
-        value={cell.level}
-        segments={BATTERY_SEGMENTS}
-        tone="inverted"
-        className="min-w-0 flex-1"
-      />
-      <span className="w-9 shrink-0 text-right text-[11px] tabular-nums">{cell.level}%</span>
+      {/* No level comes back for a bud in its case, so no bar: an empty one would read as a flat battery. The
+          spacer keeps the trailing column where every other row has it. */}
+      {cell.inCase ? (
+        <span aria-hidden className="min-w-0 flex-1" />
+      ) : (
+        <SegmentMeter value={cell.level} segments={BATTERY_SEGMENTS} tone="inverted" className="min-w-0 flex-1" />
+      )}
+      {/* One width for "100%" and "In case", so the bars of every row end at the same point. */}
+      <span className="w-12 shrink-0 text-right text-[11px] tabular-nums">{cell.inCase ? 'In case' : `${cell.level}%`}</span>
       {/* The bolt is not the whole story: a cell that is charging says so. */}
       {cell.charging && (
         <>

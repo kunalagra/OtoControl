@@ -269,9 +269,15 @@ export class XiaomiDevice implements Persistable {
         this.#patch(patch);
         return;
       }
-      case Opcode.NotifyConfig:
-        this.#applyConfig(decodeConfig(frame.payload));
+      case Opcode.NotifyConfig: {
+        const config = decodeConfig(frame.payload);
+        this.#applyConfig(config);
+        // A model that only reveals its strength after connect (it was read with noise control off) gains the control now.
+        if ((config.ncStrength !== undefined || config.transparencyStrength !== undefined) && !this.#store.state.capabilities.has('strength')) {
+          this.#patch({ capabilities: new Set([...this.#store.state.capabilities, 'strength']) });
+        }
         return;
+      }
       default:
         return;
     }
@@ -360,7 +366,9 @@ export class XiaomiDevice implements Persistable {
 
     if (gates.noiseControl && (gates.ncGear.length > 1 || gates.tpGear.length > 1)) {
       const strength = await this.#readConfig(client, ConfigId.Strength);
-      if (strength && (strength.ncStrength !== undefined || strength.transparencyStrength !== undefined)) {
+      // With noise control off the read is `[mode 0, level 0]`: no strength yet, but the model has one, so the
+      // control is offered and fills in from the next push. A model without it answers an empty value instead.
+      if (strength && (strength.ancMode !== undefined || strength.ncStrength !== undefined || strength.transparencyStrength !== undefined)) {
         capabilities.add('strength');
         this.#applyConfig(strength);
       }

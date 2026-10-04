@@ -770,6 +770,33 @@ describe('BatteryTile', () => {
     expect(slot(tile, 'battery-value')).toBeNull()
   })
 
+  it('shows a bud in the case as a row of its own, not the worn bud as the whole device', () => {
+    const { container } = renderTile({
+      battery: 100,
+      cells: [
+        { label: 'L', level: 0, charging: false, inCase: true },
+        { label: 'R', level: 100, charging: false },
+      ],
+    })
+    const tile = container.firstElementChild as HTMLElement
+    const rows = all(tile, 'battery-cell')
+    expect(rows).toHaveLength(2)
+    expect(text(rows[0])).toContain('In case')
+    expect(text(rows[0])).not.toContain('0%')
+    // No level comes back for a bud in its case, so it gets no bar at all.
+    expect(slot(rows[0], 'segment-meter')).toBeNull()
+    expect(slot(rows[1], 'segment-meter')).not.toBeNull()
+    expect(text(rows[1])).toContain('100%')
+    expect(slot(tile, 'battery-value')).toBeNull()
+  })
+
+  it('names a lone earbud cell instead of showing it as the whole device', () => {
+    const { container } = renderTile({ battery: 90, cells: [{ label: 'R', level: 90, charging: false }] })
+    const tile = container.firstElementChild as HTMLElement
+    expect(all(tile, 'battery-cell')).toHaveLength(1)
+    expect(slot(tile, 'battery-value')).toBeNull()
+  })
+
   it('gives the rows the whole strip when there is no single number to show', () => {
     // Two cells means no headline number, and the half of the strip that holds
     // it was left in place, empty — pushing L and R to the right.

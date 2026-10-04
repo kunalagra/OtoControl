@@ -272,7 +272,7 @@ export interface StatusPush {
 export function decodeStatusPush(payload: Uint8Array): StatusPush {
   const push: StatusPush = { battery: null, ancMode: null };
   for (const { type, value } of parseTlvs(payload)) {
-    if (type === 0 && value.length >= 3) push.battery = decodeBattery(value);
+    if (type === 0 && value.length >= 1) push.battery = decodeBattery(value);
     else if (type === 4 && value.length >= 1 && isAncMode(value[0])) push.ancMode = value[0];
   }
   return push;

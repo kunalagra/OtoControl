@@ -227,6 +227,27 @@ describe('XiaomiDevice connect', () => {
     expect(device.state.info.model).toBe('Redmi Buds 5 Pro');
   });
 
+  it('offers strength when it connects with noise control off, and reads it once a push carries it', async () => {
+    // With ANC off a strength read answers [mode 0, level 0] (capture chan28.txt): no strength value yet.
+    const h = harness(withConfigs(FULL, { 0x0b: [4, 0, 0x0b, 0, 0], 0x07: [3, 0, 7, 5] }));
+    const device = new XiaomiDevice(h.opener, OPTIONS);
+    await device.adoptPort(port);
+    expect(device.state.capabilities.has('strength')).toBe(true);
+    expect(device.state.ncStrength).toBeNull();
+
+    h.earbudsSend(0xf4, [4, 0, 0x0b, 1, 2], FrameType.EarbudsNotify);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(device.state.ncStrength).toBe(2);
+    expect(device.state.capabilities.has('strength')).toBe(true);
+  });
+
+  it('keeps strength hidden on a model whose strength read comes back empty', async () => {
+    const h = harness(withConfigs(FULL, { 0x07: [3, 0, 7, 5] }));
+    const device = new XiaomiDevice(h.opener, OPTIONS);
+    await device.adoptPort(port);
+    expect(device.state.capabilities.has('strength')).toBe(false);
+  });
+
   it('names an unlisted model from its Bluetooth name, probes it fully, and hides noise control on an Active', async () => {
     const name = Array.from(new TextEncoder().encode('Redmi Buds 9 Active'));
     const replies = new Map(CONFIGS).set(0x02, [name.length + 1, 0, ...name, 5, 3, 0x27, 0x17, 0x60, 0x00, 4, 7, 50, 60, 255]);

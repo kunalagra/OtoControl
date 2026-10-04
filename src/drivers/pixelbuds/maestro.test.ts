@@ -55,10 +55,14 @@ describe('requests', () => {
     );
   });
 
-  it('writes the gesture loop with only the true bools', () => {
+  it('writes all four gesture-loop bools, false included, as the official app does', () => {
     expect(
       hex(encodeWriteSetting({ setting: SettingId.AncLoop, value: { active: true, off: false, aware: true, adaptive: true } })),
-    ).toBe('22 08 62 06 08 01 18 01 20 01');
+    ).toBe('22 0a 62 08 08 01 10 00 18 01 20 01');
+    // The app's captured write `4:{12:{1:1 2:1 3:1 4:0}}` (tedsluis PROTOCOL.md:1609-1610), byte for byte.
+    expect(
+      hex(encodeWriteSetting({ setting: SettingId.AncLoop, value: { active: true, off: true, aware: true, adaptive: false } })),
+    ).toBe('22 0a 62 08 08 01 10 01 18 01 20 00');
   });
 });
 

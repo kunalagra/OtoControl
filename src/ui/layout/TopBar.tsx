@@ -1,15 +1,9 @@
-import { RiMore2Line } from '@remixicon/react'
-
 import { Button } from '@/components/ui/button'
-import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { cn } from '@/lib/utils'
 import type { ActiveDevice, DeviceManager } from '@/core/manager'
 
 import { summarise } from '../device/summary'
-import { ConnectionControls } from './ConnectionControls'
-import { DeviceSelect, MIN_DEVICES_TO_SWITCH } from './DeviceSelect'
-import { StatusToken } from './StatusToken'
-import { useActionMenu } from './useActionMenu'
+import { DeviceMenu } from './DeviceMenu'
 
 interface TopBarProps {
   manager: DeviceManager
@@ -34,26 +28,23 @@ interface TopBarProps {
  * page's heading. The visual result is the guide's — name, then chevron — with
  * the two as separate nodes.
  *
- * Both phone controls carry the 44px floor from spec §8 as `min-h-11 min-w-11`
- * hit slop rather than as a taller visual (DESIGN-GUIDE §5.2), since the bar is
- * 52px and there is no room for 44px buttons in it.
+ * Every connection action — state, switching, adding, refresh, disconnect —
+ * lives in `DeviceMenu` beside the name, on every width. The bar keeps one
+ * button of its own: Reconnect, while a known device is away.
  */
 export function TopBar({ manager, active }: TopBarProps) {
   const summary = summarise(active)
   const status = active.state.status
   // The one action worth a button in the bar: a known device that has gone
-  // away. Everything else lives in the rail's connection menu (and, on a phone,
-  // behind ⋯).
+  // away. Everything else lives in the device menu beside the name.
   const reconnectable = manager.hasDevice && status === 'disconnected'
-  const menu = useActionMenu()
 
   /**
    * The bar's own name, which is the device's when there is one.
    *
    * `summarise` answers "No device" for an absent model, which is the right
    * answer for a field called `model` and the wrong one for this row: the
-   * status token beside it already says NO DEVICE (spec §4.4), and the mockup
-   * puts the *state* in the token and the *thing* on the left. With nothing
+   * empty state below it says so, and the bar names the *thing*. With nothing
    * granted the thing is the app — the one name on the page that is true.
    */
   const title = manager.hasDevice ? summary.model : 'OtoControl'
@@ -84,57 +75,16 @@ export function TopBar({ manager, active }: TopBarProps) {
         >
           {title}
         </h1>
-        {/* One device is a dropdown with one entry, so the switcher only
-            appears when there is something to switch to. */}
-        {manager.available.length >= MIN_DEVICES_TO_SWITCH && (
-          <DeviceSelect manager={manager} active={active} variant="chevron" />
-        )}
+        {/* With nothing granted the empty state below holds Add device, so
+            there is no menu to open yet. */}
+        {manager.hasDevice && <DeviceMenu manager={manager} active={active} />}
       </div>
 
-      <div className="flex shrink-0 items-center gap-2 md:gap-3">
-        <StatusToken status={status} hasDevice={manager.hasDevice} />
-
-        {reconnectable && (
-          <ReconnectButton
-            manager={manager}
-            slot="top-bar-reconnect-phone"
-            // The 44px floor as an invisible hit area around a pill-sized
-            // button, like the ⋯ beside it — a 44px white block would outweigh
-            // the status token it sits next to.
-            className="relative after:absolute after:-inset-x-1 after:-inset-y-2 md:hidden"
-          />
-        )}
-
-        {/* Phone: the connection set, behind one button. With no device the
-            empty state already holds both pickers, so there is no menu. */}
-        {manager.hasDevice && (
-          <Popover open={menu.open} onOpenChange={menu.onOpenChange}>
-            <PopoverTrigger
-              render={
-                <Button
-                  variant="ghost"
-                  size="icon-sm"
-                  aria-label="More actions"
-                  // The 44px floor as hit slop around a 32px box, not a 44px box
-                  // around a 44px glyph — see the switcher above.
-                  className="text-muted-foreground min-h-11 min-w-11 md:hidden"
-                >
-                  <RiMore2Line />
-                </Button>
-              }
-            />
-            <PopoverContent align="end" className="w-60 p-2" onClick={menu.closeOnAction}>
-              <ConnectionControls manager={manager} active={active} />
-            </PopoverContent>
-          </Popover>
-        )}
-
-        {/* Desktop: the status token and, while a known device is away, one
-            Reconnect. The rail's connection menu holds the rest. */}
-        <div data-slot="top-bar-pills" className="hidden items-center gap-2 md:flex">
-          {reconnectable && <ReconnectButton manager={manager} />}
+      {reconnectable && (
+        <div className="flex shrink-0 items-center">
+          <ReconnectButton manager={manager} />
         </div>
-      </div>
+      )}
     </header>
   )
 }

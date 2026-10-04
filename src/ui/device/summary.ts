@@ -75,6 +75,8 @@ export interface BatteryCellSummary {
   label: 'Battery' | 'L' | 'R' | 'Case'
   level: number
   charging: boolean
+  /** An earbud resting in its case that reports no level: a row that says so, not a 0%. */
+  inCase?: true
 }
 
 /**
@@ -110,8 +112,10 @@ const cell = (
     : [{ label, level: value.level, charging: value.charging }]
 
 /** The one number that limits you: the lowest cell actually reporting. */
-const lowest = (cells: BatteryCellSummary[]): number | null =>
-  cells.length ? Math.min(...cells.map((entry) => entry.level)) : null
+const lowest = (cells: BatteryCellSummary[]): number | null => {
+  const reporting = cells.filter((entry) => !entry.inCase)
+  return reporting.length ? Math.min(...reporting.map((entry) => entry.level)) : null
+}
 
 export function summarise(active: ActiveDevice): DeviceSummary {
   // The `DriverId` literal, rather than reading `.id` back off the Sony
@@ -175,12 +179,19 @@ export function summarise(active: ActiveDevice): DeviceSummary {
     // dropping it from the pair would leave the *other* bud first — filing the
     // right earbud's 80% under "L". Each side is therefore dropped on its own
     // terms and keeps its own name.
-    const cells: BatteryCellSummary[] = state.battery
-      ? [
-          ...cell('L', state.battery.left.present ? state.battery.left : null),
-          ...cell('R', state.battery.right.present ? state.battery.right : null),
-        ]
+    //
+    // While the other one still reports, a bud in the case stays as an "in case" row: dropping it left the worn
+    // bud as the only cell, which the tile then showed as the whole device's battery.
+    const dual = state.battery
+    const side = (label: 'L' | 'R', entry: { present: boolean; level: number; charging: boolean }): BatteryCellSummary[] =>
+      entry.present ? cell(label, entry) : [{ label, level: 0, charging: false, inCase: true }]
+    const cells: BatteryCellSummary[] = dual
+      ? dual.left.present || dual.right.present
+        ? [...side('L', dual.left), ...side('R', dual.right)]
+        : []
       : cell('Battery', state.singleBattery?.present ? state.singleBattery : null)
+    // The case, for the models that report it (`CaseBatteryLevel` in their function list).
+    if (state.caseBattery?.present) cells.push(...cell('Case', state.caseBattery))
     return {
       model: state.info.model ?? fallbackName(state.status, 'Sony headphones'),
       hasDevice: state.info.model !== null,

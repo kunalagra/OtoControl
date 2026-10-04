@@ -22,7 +22,7 @@ afterEach(cleanup)
 
 /**
  * jsdom's `navigator` has no Web Bluetooth, which is the one thing
- * `ConnectionControls` asks the browser about — and the Bluetooth button is
+ * `AddDevice` asks the browser about — and the Bluetooth button is
  * disabled without it. Declaring the key is the whole of the stub: the picker
  * is only ever called from a click the fake manager never follows.
  */
@@ -106,47 +106,37 @@ describe('NoDevice — one dotted hero', () => {
   })
 })
 
-describe('NoDevice — the two ways in', () => {
-  it('offers a default serial button and an outline Bluetooth one', () => {
-    // DESIGN-GUIDE §5.13, and the same pairing the top bar and the old frame
-    // used: serial is the way most people connect, Bluetooth is the way the
-    // earbuds that have no serial service answer.
-    const { container } = render(<NoDevice {...fake()} />)
-    const serial = buttonNamed(container, 'Connect over serial')
-    const bluetooth = buttonNamed(container, 'Connect over Bluetooth')
-    expect(serial.className).toContain('bg-foreground')
-    expect(bluetooth.className).toContain('bg-surface-raised')
-  })
-
-  it('calls the manager, so the hero is the same logic the menu is', () => {
-    // Spec §3.2 says "reusing ConnectionControls logic". Reusing the *component*
-    // is what keeps the promise: a second hand-written pair of buttons would be
-    // the first place the two could disagree about which transport a device
-    // needs.
+describe('NoDevice — the way in', () => {
+  it('leads with Add device, which opens the serial picker most brands answer on', () => {
     const { manager, active } = fake()
     const { container } = render(<NoDevice manager={manager} active={active} />)
-    fireEvent.click(buttonNamed(container, 'Connect over serial'))
-    fireEvent.click(buttonNamed(container, 'Connect over Bluetooth'))
+    const add = buttonNamed(container, 'Add device')
+    expect(add.className).toContain('bg-foreground')
+    fireEvent.click(add)
     expect(manager.connect).toHaveBeenCalledTimes(1)
+    expect(manager.connectBluetooth).not.toHaveBeenCalled()
+  })
+
+  it('keeps Bluetooth behind "My device isn\u2019t listed", for the brands that need it', () => {
+    // People reached for Bluetooth first, and it is only right for Soundcore and some Nothing models.
+    const { manager, active } = fake()
+    const { container } = render(<NoDevice manager={manager} active={active} />)
+    expect(buttonNamed(container, 'Connect over Bluetooth')).toBeUndefined()
+    fireEvent.click(buttonNamed(container, 'My device isn\u2019t listed'))
+    expect(text(hero(container))).toContain('Soundcore')
+    fireEvent.click(buttonNamed(container, 'Connect over Bluetooth'))
     expect(manager.connectBluetooth).toHaveBeenCalledTimes(1)
   })
 
-  it('keeps both ways in a 44px target on a phone', () => {
-    // Spec §8, and the two controls this screen exists for. The desktop's 36px
-    // is the guide's own height; the phone's 44 is the accessibility rule's, and
-    // it is grown onto the buttons rather than added as slop — two buttons
-    // stacked edge to edge have no neighbour to borrow the overflow from.
+  it('keeps Add device a 44px target on a phone', () => {
     const { container } = render(<NoDevice {...fake()} />)
-    for (const label of ['Connect over serial', 'Connect over Bluetooth']) {
-      expect(buttonNamed(container, label).className).toContain('min-h-11')
-    }
+    expect(buttonNamed(container, 'Add device').className).toContain('min-h-11')
   })
 
-  it('disables both rather than hiding one while connecting', () => {
-    // A picker that vanishes mid-connect leaves nothing to retry with.
+  it('disables Add device rather than hiding it while connecting', () => {
+    // A button that vanishes mid-connect leaves nothing to retry with.
     const { container } = render(<NoDevice {...fake('connecting')} />)
     expect(buttonNamed(container, 'Connecting').disabled).toBe(true)
-    expect(buttonNamed(container, 'Connect over Bluetooth').disabled).toBe(true)
   })
 
   it('names the missing browser instead of offering a button that cannot work', () => {

@@ -87,12 +87,13 @@ export function encodeWriteSetting(change: SettingChange): Uint8Array {
       value = pb.varint(SettingId.AncState, change.value);
       break;
     case SettingId.AncLoop:
-      // Plain proto3 bools, not a oneof: `false` is left out, as pbpctrl's encoder does.
+      // All four bools, `false` included: the official app writes them explicitly (tedsluis PROTOCOL.md:1609-1610),
+      // and a capture outranks pbpctrl's proto3 encoder, which leaves `false` out.
       value = pb.bytes(SettingId.AncLoop, [
-        ...(change.value.active ? pb.bool(1, true) : []),
-        ...(change.value.off ? pb.bool(2, true) : []),
-        ...(change.value.aware ? pb.bool(3, true) : []),
-        ...(change.value.adaptive ? pb.bool(4, true) : []),
+        ...pb.bool(1, change.value.active),
+        ...pb.bool(2, change.value.off),
+        ...pb.bool(3, change.value.aware),
+        ...pb.bool(4, change.value.adaptive),
       ]);
       break;
     case SettingId.UserEq:

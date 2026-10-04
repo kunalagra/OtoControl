@@ -15,7 +15,7 @@
  */
 
 import type { Transport } from '@/core/transport';
-import { createHdlcDecoder, encodeFrame } from './hdlc';
+import { CONTROL_UI, createHdlcDecoder, encodeFrame } from './hdlc';
 import { MAESTRO_SERVICE, Method } from './maestro';
 import {
   addressForChannel,
@@ -62,6 +62,8 @@ interface Pending {
 }
 
 interface Stream {
+  serviceId: number;
+  methodId: number;
   onMessage(payload: Uint8Array): void;
   /** The server closed the stream with this status (or it errored). */
   onEnd(status: number): void;
@@ -91,6 +93,7 @@ export class PixelBudsClient {
   #queue: Promise<unknown> = Promise.resolve();
   #queued = new Set<QueuedRequest>();
   #rawListeners = new Set<RawListener>();
+  #channelListeners = new Set<(channel: number) => void>();
   #timeoutMs: number;
   #discoveryWaitMs: number;
   #channelProbeMs: number;
@@ -117,6 +120,8 @@ export class PixelBudsClient {
   handleData(chunk: Uint8Array): void {
     for (const listener of this.#rawListeners) listener(chunk, 'rx');
     for (const frame of this.#decoder.push(chunk)) {
+      // Maestro only ever uses unnumbered-information frames; pbpctrl drops anything else (`codec.rs:46-48`).
+      if (frame.control !== CONTROL_UI) continue;
       try {
         this.#dispatch(decodeRpcPacket(frame.data));
       } catch (error) {
@@ -126,10 +131,13 @@ export class PixelBudsClient {
   }
 
   #dispatch(packet: RpcPacket): void {
-    if (this.#channel === null && CANDIDATE_CHANNELS.some((candidate) => candidate.channel === packet.channelId)) {
+    const candidate = CANDIDATE_CHANNELS.some((entry) => entry.channel === packet.channelId);
+    if (this.#channel === null && candidate) {
       this.#channel = packet.channelId;
       for (const waiter of this.#channelWaiters) waiter(packet.channelId);
       this.#channelWaiters.clear();
+    } else if (candidate && packet.callId === ANNOUNCE_CALL_ID && packet.channelId !== this.#channel) {
+      this.#handOver(packet.channelId);
     }
 
     const key = callKey(packet.channelId, packet.serviceId, packet.methodId);
@@ -151,6 +159,36 @@ export class PixelBudsClient {
     this.#pending.delete(key);
     if (packet.status === RpcStatus.Ok && packet.type === PacketType.Response) pending.resolve(packet.payload);
     else pending.reject(new RpcError(pending.what, packet.status || RpcStatus.Unknown));
+  }
+
+  /**
+   * The hosting bud changed: the buds close Maestro on the old bud and announce the
+   * other's channel (tedsluis CAP-065/066, design spec §9). Calls still waiting on the
+   * old channel cannot be answered there, so they fail now rather than time out; open
+   * streams are requested again on the new channel and keep their listeners.
+   */
+  #handOver(channel: number): void {
+    const previous = this.#channel;
+    this.#channel = channel;
+    for (const [key, pending] of this.#pending) {
+      if (!key.startsWith(`${previous}:`)) continue;
+      clearTimeout(pending.timer);
+      this.#pending.delete(key);
+      pending.reject(new Error(`${pending.what} was cut off when the buds moved to channel ${channel}`));
+    }
+    for (const [key, stream] of [...this.#streams]) {
+      if (!key.startsWith(`${previous}:`)) continue;
+      this.#streams.delete(key);
+      this.#streams.set(callKey(channel, stream.serviceId, stream.methodId), stream);
+      this.#send({ type: PacketType.Request, channelId: channel, serviceId: stream.serviceId, methodId: stream.methodId });
+    }
+    for (const listener of this.#channelListeners) listener(channel);
+  }
+
+  /** Called with the new channel after a hand-over; not on the first discovery. */
+  onChannelChange(listener: (channel: number) => void): () => void {
+    this.#channelListeners.add(listener);
+    return () => this.#channelListeners.delete(listener);
   }
 
   // --- channel discovery -----------------------------------------------------------
@@ -244,12 +282,16 @@ export class PixelBudsClient {
     if (channel === null) throw new PixelBudsChannelError();
     const serviceId = rpcHash(service);
     const methodId = rpcHash(method);
-    const key = callKey(channel, serviceId, methodId);
-    this.#streams.set(key, { onMessage, onEnd });
+    const stream: Stream = { serviceId, methodId, onMessage, onEnd };
+    this.#streams.set(callKey(channel, serviceId, methodId), stream);
     this.#send({ type: PacketType.Request, channelId: channel, serviceId, methodId });
     return () => {
-      if (!this.#streams.delete(key)) return;
-      this.#send({ type: PacketType.ClientError, channelId: channel, serviceId, methodId, status: RpcStatus.Cancelled });
+      // Looked up by identity: a hand-over may have moved the stream to another channel since.
+      const entry = [...this.#streams].find(([, value]) => value === stream);
+      if (!entry) return;
+      this.#streams.delete(entry[0]);
+      const current = Number(entry[0].split(':')[0]);
+      this.#send({ type: PacketType.ClientError, channelId: current, serviceId, methodId, status: RpcStatus.Cancelled });
     };
   }
 

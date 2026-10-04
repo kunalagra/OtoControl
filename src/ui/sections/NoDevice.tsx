@@ -2,7 +2,7 @@ import { RiHeadphoneLine } from '@remixicon/react'
 
 import { Card } from '@/components/ui/card'
 import type { DeviceManager, ActiveDevice } from '@/core/manager'
-import { ConnectionControls } from '../layout/ConnectionControls'
+import { AddDevice } from '../layout/DeviceMenu'
 
 interface Props {
   manager: DeviceManager
@@ -19,10 +19,9 @@ interface Props {
  * place the dotted texture belongs, so this is the one screen where a page with
  * no data on it still has a showpiece (DESIGN-GUIDE §1.4).
  *
- * The two buttons are `ConnectionControls` itself rather than a pair written
- * again here, for the reason `TopBar` reuses it too: the transports a device can
- * answer on, the disabled states, and the browser that has neither are one
- * question with one answer, and this screen is not a place to answer it again.
+ * The way in is `AddDevice`, the same block the device menu holds, so the
+ * first device and the next one are added the same way: serial first, and
+ * Bluetooth behind "My device isn't listed".
  */
 export function NoDevice({ manager, active }: Props) {
   // Nothing to connect *with*, so there is nothing to offer: the hero keeps its
@@ -59,7 +58,7 @@ export function NoDevice({ manager, active }: Props) {
           // A menu is a column; this is a pair of buttons, and 320px is as wide
           // as a button should be at any of the widths this renders at.
           <div className="mt-1 w-full max-w-xs">
-            <ConnectionControls manager={manager} active={active} />
+            <AddDevice manager={manager} status={active.state.status} />
           </div>
         )}
       </div>

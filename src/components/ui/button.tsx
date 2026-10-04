@@ -42,7 +42,7 @@ const buttonVariants = cva(
         // `min-h-11 min-w-11` — hit slop where the button has room around it
         // (the top bar's own controls), the taller button where it fills its row
         // and slop would land on a neighbour's tap (the two pickers, the preset
-        // chips). Both spellings are in `ConnectionControls` and `TopBar`, and
+        // chips). Both spellings are in `DeviceMenu`, and
         // the choice between them is written down where it is made.
         sm: "gap-1 rounded-full px-3 py-1.5 text-[11px] has-data-[icon=inline-end]:pr-2 has-data-[icon=inline-start]:pl-2",
         lg: "gap-1.5 rounded-[14px] px-4 py-3 text-sm has-data-[icon=inline-end]:pr-3 has-data-[icon=inline-start]:pl-3",

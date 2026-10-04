@@ -224,6 +224,25 @@ describe('summarise — an earbud in the case', () => {
     expect(summarise(asymmetric).battery).toBe(100);
   });
 
+  it('keeps the earbud in the case as its own row, so the worn one is never the whole pair', () => {
+    expect(summarise(asymmetric).cells).toEqual([
+      { label: 'L', level: 0, charging: false, inCase: true },
+      { label: 'R', level: 100, charging: false },
+    ]);
+  });
+
+  it('adds the case when the earbuds report it', () => {
+    const withCase = sony({
+      battery: { left: cell(80), right: cell(70) },
+      caseBattery: { level: 55, status: 0, charging: true, onPower: true, present: true },
+    });
+    expect(summarise(withCase).cells.map((entry) => [entry.label, entry.level, entry.charging])).toEqual([
+      ['L', 80, false],
+      ['R', 70, false],
+      ['Case', 55, true],
+    ]);
+  });
+
   it('says which side is in the case', () => {
     expect(summarise(asymmetric).detail).toBe('L in case · R 100%');
   });
@@ -302,13 +321,16 @@ describe('summarise — cells and firmware', () => {
     expect(summarise(sennheiser({})).battery).toBeNull();
   });
 
-  it('names a Sony earbud pair, and leaves out the bud that is in its case', () => {
-    // A bud in the case reports level 0 with UNKNOWN status: as a row that would
+  it('names a Sony earbud pair, and shows the bud in its case as in case rather than flat', () => {
+    // A bud in the case reports level 0 with UNKNOWN status: as a 0% row that would
     // read as "this earbud is flat", which is the one thing the driver is not saying.
     const summary = summarise(
       sony({ battery: { left: cell(80), right: cell(0, 0x02) } }),
     );
-    expect(summary.cells).toEqual([{ label: 'L', level: 80, charging: false }]);
+    expect(summary.cells).toEqual([
+      { label: 'L', level: 80, charging: false },
+      { label: 'R', level: 0, charging: false, inCase: true },
+    ]);
     expect(summary.battery).toBe(80);
   });
 
@@ -319,7 +341,10 @@ describe('summarise — cells and firmware', () => {
     const summary = summarise(
       sony({ battery: { left: cell(0, 0x02), right: cell(80) } }),
     );
-    expect(summary.cells).toEqual([{ label: 'R', level: 80, charging: false }]);
+    expect(summary.cells).toEqual([
+      { label: 'L', level: 0, charging: false, inCase: true },
+      { label: 'R', level: 80, charging: false },
+    ]);
     expect(summary.battery).toBe(80);
   });
 
@@ -327,7 +352,10 @@ describe('summarise — cells and firmware', () => {
     const summary = summarise(
       sony({ battery: { left: cell(0, 0x02), right: cell(45, 0x01) } }),
     );
-    expect(summary.cells).toEqual([{ label: 'R', level: 45, charging: true }]);
+    expect(summary.cells).toEqual([
+      { label: 'L', level: 0, charging: false, inCase: true },
+      { label: 'R', level: 45, charging: true },
+    ]);
     expect(summary.battery).toBe(45);
     expect(summary.charging).toBe(true);
   });

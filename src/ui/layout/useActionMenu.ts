@@ -11,7 +11,10 @@ import type { MouseEvent } from 'react'
 export function useActionMenu() {
   const [open, setOpen] = useState(false)
   const closeOnAction = (event: MouseEvent<HTMLElement>) => {
-    if ((event.target as HTMLElement).closest('button')) setOpen(false)
+    const target = event.target as HTMLElement
+    // A disclosure inside the menu (`data-keep-open`) reveals more of it rather than acting.
+    if (target.closest('[data-keep-open]')) return
+    if (target.closest('button')) setOpen(false)
   }
   return { open, onOpenChange: setOpen, closeOnAction }
 }
