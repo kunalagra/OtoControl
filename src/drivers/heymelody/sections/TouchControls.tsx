@@ -32,7 +32,11 @@ export function TouchControls({ device, state }: Props) {
                 const items = choices.map(({ fn, label }) => ({ value: String(fn), label }))
                 const name = ACTION_LABEL[record.action] ?? `Action ${record.action}`
                 return (
-                  <SettingRow key={`${record.button}-${record.action}`} label={record.button === 6 ? `${name} (calls)` : name}>
+                  <SettingRow
+                    key={`${record.button}-${record.action}`}
+                    label={record.button === 6 ? `${name} (calls)` : name}
+                    name={`${SIDE_LABEL[side] ?? `Side ${side}`} ${record.button === 6 ? `${name} (calls)` : name}`}
+                  >
                     <Select
                       items={items}
                       value={String(record.fn)}

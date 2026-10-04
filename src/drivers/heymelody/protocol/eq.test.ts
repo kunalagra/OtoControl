@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { decodeEqAll, decodeEqCurrent, decodeEqList, decodeEqCurrentPush, decodeSetEqCurveAck, encodeEqWrite, encodeSetEqPreset, EQ_ACTION, newCustomPreset } from './eq';
 
 describe('decodeEqCurrent', () => {
@@ -123,6 +123,15 @@ describe('decodeEqList', () => {
   it('returns no presets for an empty list', () => {
     expect(decodeEqList(Uint8Array.from([]))).toEqual([]);
   });
+
+  it('keeps the first of two presets that share an eqId and logs the duplicate', () => {
+    const debug = vi.spyOn(console, 'debug').mockImplementation(() => {});
+    const entry = (selected: number, name: number) => [selected, 0xfa, 0x06, 9, 1, name, 1, 0x64, 0x00, 0x03];
+    const presets = decodeEqList(Uint8Array.from([3, ...entry(1, 0x41), ...entry(0, 0x42), ...[0, 0xfa, 0x06, 10, 1, 0x43, 0]]));
+    expect(presets.map((preset) => [preset.eqId, preset.name])).toEqual([[9, 'A'], [10, 'C']]);
+    expect(debug).toHaveBeenCalled();
+    debug.mockRestore();
+  });
 });
 
 describe('encodeEqWrite modify (realme SetCommandManager.p():440-497)', () => {
@@ -178,6 +187,12 @@ describe('encodeEqWrite', () => {
     expect(encodeEqWrite(EQ_ACTION.Delete, preset).slice(-1)).toEqual([0xfe]);
   });
 
+  it('writes a delete as the exact full-byte frame, selection flag excluded', () => {
+    expect(encodeEqWrite(EQ_ACTION.Delete, { ...preset, isSelected: true })).toEqual([
+      0x03, 0xfa, 0x06, 0x05, 0x02, 0x41, 0x62, 0x02, 0x3e, 0x00, 0x01, 0xe8, 0x03, 0xfe,
+    ]);
+  });
+
   it('echoes a non-default range and band count', () => {
     const wide = { ...preset, minValue: -10, maxValue: 10, bands: [{ frequency: 31, dbValue: 0 }] };
     expect(encodeEqWrite(EQ_ACTION.Modify, wide).slice(1, 3)).toEqual([0xf6, 0x0a]);
@@ -214,6 +229,23 @@ describe('newCustomPreset', () => {
     expect(created.bands.map((band) => band.frequency)).toEqual([62, 250, 1000, 4000, 8000, 16000]);
     expect([created.minValue, created.maxValue, created.eqId]).toEqual([-6, 6, 0]);
     expect(encodeEqWrite(EQ_ACTION.Add, created).slice(0, 5)).toEqual([0x01, 0xfa, 0x06, 0x00, 8]);
+  });
+
+  const TEN = [31, 62, 125, 250, 500, 1000, 2000, 4000, 8000, 16000];
+
+  it('uses the model band frequencies when there is no template', () => {
+    const created = newCustomPreset('Custom 1', null, TEN);
+    expect(created.bands).toEqual(TEN.map((frequency) => ({ frequency, dbValue: 0 })));
+    expect([created.minValue, created.maxValue]).toEqual([-6, 6]);
+  });
+
+  it('prefers a template the device itself listed over the model frequencies', () => {
+    const template = { isSelected: false, minValue: -6, maxValue: 6, eqId: 9, name: 'Mine', bands: [{ frequency: 100, dbValue: 3 }] };
+    expect(newCustomPreset('Custom 2', template, TEN).bands).toEqual([{ frequency: 100, dbValue: 0 }]);
+  });
+
+  it('falls back to the six-band default for an empty frequency list', () => {
+    expect(newCustomPreset('Custom 1', null, []).bands).toHaveLength(6);
   });
 });
 

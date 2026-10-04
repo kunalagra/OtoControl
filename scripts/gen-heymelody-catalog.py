@@ -92,6 +92,10 @@ export interface HeyMelodyCatalogEntry {
   equalizerMode?: { protocolIndex: number; modeType: number }[]
   /** Custom EQ slot cap; absent means the vendor default (3). */
   customEqMax?: number
+  /** Custom-EQ band centres in Hz, for the models whose whitelist entry sets
+   * `customEqFrequency` (ten bands, 31 Hz to 16 kHz); absent means the
+   * vendor's six-band default. */
+  customEqFrequency?: number[]
   /** Per wire tap action, the HeyTap function flags it accepts (see
    * `protocol/gesture.ts`). Absent when the source whitelist does not cover the model. */
   touchSupport?: { action: number; support: number }[]
@@ -177,6 +181,8 @@ def main() -> None:
                 entry["equalizerMode"] = eq["equalizerMode"]
             if eq.get("customEqMax") is not None:
                 entry["customEqMax"] = eq["customEqMax"]
+            if eq.get("customEqFrequency"):
+                entry["customEqFrequency"] = eq["customEqFrequency"]
         touch = touch_by_product_id.get(entry["productId"])
         if touch is not None:
             matched_touch += 1

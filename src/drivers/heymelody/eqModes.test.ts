@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { catalogEntryFor } from './catalog';
+import { HEYMELODY_CATALOG } from './catalog.generated';
 import { DEFAULT_CUSTOM_EQ_CAP, builtinPresets, customEqCap } from './eqModes';
 
 describe('builtinPresets', () => {
@@ -23,6 +24,20 @@ describe('builtinPresets', () => {
   it('names an unknown mode type by its position rather than dropping it', () => {
     const entry = { productId: 'X', name: 'X', brand: 'oppo' as const, type: 'T1', equalizerMode: [{ protocolIndex: 3, modeType: 99 }] };
     expect(builtinPresets(entry)).toEqual([{ id: 3, name: 'Preset 4' }]);
+  });
+});
+
+describe('builtinPresets naming', () => {
+  it('names the mode types the Enco X / Nord Buds / Buds 3 families use', () => {
+    expect(builtinPresets(catalogEntryFor('062014')).map((preset) => preset.name)).toContain('Hans Zimmer Soundscape');
+    expect(builtinPresets(catalogEntryFor('063C10')).map((preset) => preset.name)).toContain('Enco X Classic');
+  });
+
+  it('leaves no built-in of any catalog model with a placeholder name', () => {
+    const placeholders = HEYMELODY_CATALOG.flatMap((entry) =>
+      builtinPresets(entry).filter((preset) => /^Preset \d+$/.test(preset.name) && entry.equalizerMode).map((preset) => `${entry.productId}:${preset.id}`),
+    );
+    expect(placeholders).toEqual([]);
   });
 });
 

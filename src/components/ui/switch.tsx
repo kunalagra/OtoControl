@@ -1,6 +1,7 @@
 import { Switch as SwitchPrimitive } from "@base-ui/react/switch"
 
 import { cn } from "@/lib/utils"
+import { useFieldName } from "@/components/ui/field-name"
 
 /**
  * The Mono switch, DESIGN-GUIDE §5.4: a 40×24 track in the unlit segment
@@ -27,8 +28,10 @@ function Switch({
 }: SwitchPrimitive.Root.Props & {
   size?: "sm" | "default"
 }) {
+  const fieldName = useFieldName()
   return (
     <SwitchPrimitive.Root
+      aria-label={fieldName}
       data-slot="switch"
       data-size={size}
       className={cn(

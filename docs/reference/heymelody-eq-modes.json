@@ -1,5 +1,5 @@
 {
-  "source": "HeyMelody 116.9.0 bundled whitelist (res/raw/heymelody_app_whitelist, compatWhiteList): per-model built-in EQ presets (function.equalizerMode + equalizerModeCompat, protocolIndex = wire id) and customEqMax. Ids and mode types only; no vendor strings.",
+  "source": "HeyMelody 116.9.0 bundled whitelist (res/raw/heymelody_app_whitelist, compatWhiteList): per-model built-in EQ presets (function.equalizerMode + equalizerModeCompat, protocolIndex = wire id) customEqMax and, for the eight models that set it, customEqFrequency (the custom-EQ band centres in Hz; HeyTap p085g9/j.java:1165-1172 reads it as the band layout). Ids and mode types only; no vendor strings.",
   "devices": [
     {
       "productId": "050C10",
@@ -737,6 +737,18 @@
           "protocolIndex": 2,
           "modeType": 14
         }
+      ],
+      "customEqFrequency": [
+        31,
+        62,
+        125,
+        250,
+        500,
+        1000,
+        2000,
+        4000,
+        8000,
+        16000
       ]
     },
     {
@@ -775,6 +787,18 @@
           "protocolIndex": 2,
           "modeType": 14
         }
+      ],
+      "customEqFrequency": [
+        31,
+        62,
+        125,
+        250,
+        500,
+        1000,
+        2000,
+        4000,
+        8000,
+        16000
       ]
     },
     {
@@ -826,6 +850,18 @@
           "protocolIndex": 2,
           "modeType": 12
         }
+      ],
+      "customEqFrequency": [
+        31,
+        62,
+        125,
+        250,
+        500,
+        1000,
+        2000,
+        4000,
+        8000,
+        16000
       ]
     },
     {
@@ -868,6 +904,18 @@
           "protocolIndex": 2,
           "modeType": 14
         }
+      ],
+      "customEqFrequency": [
+        31,
+        62,
+        125,
+        250,
+        500,
+        1000,
+        2000,
+        4000,
+        8000,
+        16000
       ]
     },
     {
@@ -1207,6 +1255,18 @@
           "protocolIndex": 2,
           "modeType": 28
         }
+      ],
+      "customEqFrequency": [
+        31,
+        62,
+        125,
+        250,
+        500,
+        1000,
+        2000,
+        4000,
+        8000,
+        16000
       ]
     },
     {
@@ -1224,6 +1284,18 @@
           "protocolIndex": 2,
           "modeType": 28
         }
+      ],
+      "customEqFrequency": [
+        31,
+        62,
+        125,
+        250,
+        500,
+        1000,
+        2000,
+        4000,
+        8000,
+        16000
       ]
     },
     {
@@ -1241,6 +1313,18 @@
           "protocolIndex": 2,
           "modeType": 29
         }
+      ],
+      "customEqFrequency": [
+        31,
+        62,
+        125,
+        250,
+        500,
+        1000,
+        2000,
+        4000,
+        8000,
+        16000
       ]
     },
     {
@@ -1279,6 +1363,18 @@
           "protocolIndex": 2,
           "modeType": 28
         }
+      ],
+      "customEqFrequency": [
+        31,
+        62,
+        125,
+        250,
+        500,
+        1000,
+        2000,
+        4000,
+        8000,
+        16000
       ]
     },
     {

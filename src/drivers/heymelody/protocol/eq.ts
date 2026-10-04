@@ -107,7 +107,12 @@ export function decodeEqList(list: Uint8Array): EqPreset[] {
       bandOffset += 3;
     }
 
-    presets.push({ isSelected, minValue, maxValue, eqId, name, bands });
+    // Some firmware repeats an id; the first entry wins so the UI never sees two rows for one preset.
+    if (presets.some((existing) => existing.eqId === eqId)) {
+      console.debug(`[heymelody] EQ list repeats eqId ${eqId} ("${name}"); keeping the first`);
+    } else {
+      presets.push({ isSelected, minValue, maxValue, eqId, name, bands });
+    }
     offset = bandOffset;
   }
 
@@ -162,15 +167,20 @@ export function encodeEqWrite(
   ];
 }
 
-/** What a create sends: id 0 (the buds assign one), zero gains, a template's range and bands. */
-export function newCustomPreset(name: string, template: EqPreset | null): EqPreset {
+/**
+ * What a create sends: id 0 (the buds assign one), zero gains, a template's range and bands.
+ * With no template to copy, the model's own band centres (catalog `customEqFrequency`) apply
+ * when it has them, else the vendor's six-band default.
+ */
+export function newCustomPreset(name: string, template: EqPreset | null, modelFrequencies?: readonly number[]): EqPreset {
+  const fallback = modelFrequencies && modelFrequencies.length > 0 ? modelFrequencies : DEFAULT_CUSTOM_BANDS;
   return {
     isSelected: false,
     minValue: template?.minValue ?? -6,
     maxValue: template?.maxValue ?? 6,
     eqId: 0,
     name,
-    bands: (template?.bands.map((band) => band.frequency) ?? DEFAULT_CUSTOM_BANDS).map((frequency) => ({ frequency, dbValue: 0 })),
+    bands: (template?.bands.map((band) => band.frequency) ?? fallback).map((frequency) => ({ frequency, dbValue: 0 })),
   };
 }
 

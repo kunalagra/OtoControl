@@ -33,7 +33,7 @@ export function XiaomiTouchControls({ device, state }: Props) {
             {SIDES.map((side) => {
               const items = actionChoices(record.tap, record[side], gates).map(({ action, label }) => ({ value: String(action), label }))
               return (
-                <SettingRow key={side} label={SIDE_LABEL[side]}>
+                <SettingRow key={side} label={SIDE_LABEL[side]} name={`${SIDE_LABEL[side]} ${TAP_LABEL[record.tap] ?? `tap ${record.tap}`}`}>
                   <Select
                     items={items}
                     value={String(record[side])}

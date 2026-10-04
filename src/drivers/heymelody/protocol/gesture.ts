@@ -68,12 +68,17 @@ export function encodeGestures(records: readonly GestureRecord[]): number[] {
 
 export function prevNextScheme(records: readonly GestureRecord[], brand: Brand): PrevNextScheme {
   if (records.some((r) => r.fn === 6)) return 'current';
-  if (brand !== 'realme' && records.some((r) => r.fn === 4)) return 'legacy';
+  // A catalog miss (null brand) leaves a lone 4 ambiguous: realme's assistant or legacy's previous.
+  if (brand !== null && brand !== 'realme' && records.some((r) => r.fn === 4)) return 'legacy';
   return null;
 }
 
 export function functionLabel(fn: number, scheme: PrevNextScheme, brand: Brand): string {
-  if (fn === 4) return brand === 'realme' || scheme !== 'legacy' ? 'Voice assistant' : 'Previous';
+  if (fn === 4) {
+    if (brand === 'realme') return 'Voice assistant';
+    if (scheme === 'legacy') return 'Previous';
+    return scheme === null && brand === null ? 'Voice assistant / Previous' : 'Voice assistant';
+  }
   if (fn === 5) return scheme === 'current' ? 'Previous' : scheme === 'legacy' ? 'Next' : 'Track control';
   if (fn === 6) return 'Next';
   return FIXED_LABEL[fn] ?? `Function ${fn}`;
@@ -109,9 +114,8 @@ export function functionChoices(
   if (support !== undefined && record.button !== CALL_BUTTON) {
     const legacy = LEGACY_TRACK_MODELS.has(catalog!.name);
     const codes = maskedCodes(support, brand, legacy);
-    if (!codes.includes(record.fn)) codes.push(record.fn);
     const scheme = legacy ? 'legacy' : 'current';
-    return [...new Set(codes)].map((fn) => ({ fn, label: functionLabel(fn, scheme, brand) }));
+    return finishChoices(codes, record, scheme, brand);
   }
   const scheme = prevNextScheme(records, brand);
   let codes: number[];
@@ -127,6 +131,25 @@ export function functionChoices(
     if (scheme === 'current') codes.push(5, 6);
     else if (scheme === 'legacy') codes.push(4, 5);
   }
-  if (!codes.includes(record.fn)) codes.push(record.fn);
-  return [...new Set(codes)].map((fn) => ({ fn, label: functionLabel(fn, scheme, brand) }));
+  return finishChoices(codes, record, scheme, brand);
+}
+
+/**
+ * Keeps the record's own code present and offers a single "Voice assistant": 3 and 4 can both
+ * read as the assistant, so when the record already holds one, that one replaces the other.
+ */
+function finishChoices(
+  codes: number[],
+  record: GestureRecord,
+  scheme: PrevNextScheme,
+  brand: Brand,
+): { fn: number; label: string }[] {
+  const isAssistant = (fn: number) => functionLabel(fn, scheme, brand) === 'Voice assistant';
+  const list = [...new Set(codes)];
+  if (!list.includes(record.fn)) {
+    const slot = isAssistant(record.fn) ? list.findIndex(isAssistant) : -1;
+    if (slot >= 0) list[slot] = record.fn;
+    else list.push(record.fn);
+  }
+  return list.map((fn) => ({ fn, label: functionLabel(fn, scheme, brand) }));
 }

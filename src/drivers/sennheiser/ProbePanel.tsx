@@ -101,7 +101,7 @@ export function ProbePanel({ device, connected }: Props) {
           disabled={running}
           onValueChange={(value) => setSweep(Number(value))}
         >
-          <SelectTrigger className="w-64">
+          <SelectTrigger className="w-64" aria-label="Sweep range">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
@@ -122,7 +122,7 @@ export function ProbePanel({ device, connected }: Props) {
           disabled={running}
           onValueChange={(value) => setTimeoutMs(Number(value))}
         >
-          <SelectTrigger className="w-32">
+          <SelectTrigger className="w-32" aria-label="Response wait">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
@@ -145,7 +145,7 @@ export function ProbePanel({ device, connected }: Props) {
         )}
 
         <Label className="text-muted-foreground ml-auto flex items-center gap-2 text-xs">
-          <Switch checked={showAll} onCheckedChange={setShowAll} />
+          <Switch aria-label="Show all" checked={showAll} onCheckedChange={setShowAll} />
           Show all
         </Label>
       </div>

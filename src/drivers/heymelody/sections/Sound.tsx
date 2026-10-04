@@ -25,8 +25,10 @@ export function HeyMelodySound({ device, state }: Props) {
     )
   }
 
-  const builtins = builtinPresets(state.info.catalog)
   const customs = state.eqPresets
+  // A custom preset's id wins over a built-in with the same id (the Home tile filters the same way).
+  const customIds = new Set(customs.map((preset) => preset.eqId))
+  const builtins = builtinPresets(state.info.catalog).filter((preset) => !customIds.has(preset.id))
   const cap = customEqCap(state.info.catalog)
   const selectedId = state.eqCurrentPreset ?? customs.find((preset) => preset.isSelected)?.eqId ?? null
   const selectedCustom = customs.find((preset) => preset.eqId === selectedId) ?? null
@@ -87,6 +89,7 @@ export function HeyMelodySound({ device, state }: Props) {
                 variant="outline"
                 size="sm"
                 disabled={disabled || customs.length >= cap}
+                aria-describedby={customs.length >= cap ? 'heymelody-eq-cap' : undefined}
                 onClick={() => void device.createCustomPreset()}
               >
                 New preset
@@ -96,6 +99,7 @@ export function HeyMelodySound({ device, state }: Props) {
                   variant="ghost"
                   size="sm"
                   disabled={disabled}
+                  aria-label={`Delete ${selectedCustom.name}`}
                   onClick={() => {
                     if (window.confirm(`Delete ${selectedCustom.name}?`)) void device.deleteCustomPreset(selectedCustom.eqId)
                   }}
@@ -104,7 +108,7 @@ export function HeyMelodySound({ device, state }: Props) {
                 </Button>
               )}
               {customs.length >= cap && (
-                <span className="text-muted-foreground text-xs">Up to {cap} custom presets</span>
+                <span id="heymelody-eq-cap" className="text-muted-foreground text-xs">Up to {cap} custom presets</span>
               )}
             </div>
           </CardContent>

@@ -32,8 +32,13 @@ const MODE_NAMES: Record<number, string> = {
   13: 'Bold',
   14: 'Clear vocals',
   15: 'Gentle',
+  // 16 and 19 come from HeyTap's modeType -> string switch, heytap/jadx_out/sources/p085g9/o.java:122-129
+  // (R.string.melody_ui_enco_x_classic "Enco X Classic"; melody_ui_equalizer_hans "Hans Zimmer Soundscape
+  // Tuning", strings.xml:1296 and :1327). Absent from the realme app, which has neither string.
+  16: 'Enco X Classic',
   17: 'Balanced',
   18: 'Reno Dawn',
+  19: 'Hans Zimmer Soundscape',
   20: 'Natural',
   21: 'Reno Sunrise',
   22: 'Natural balance',

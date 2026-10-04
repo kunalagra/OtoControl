@@ -43,6 +43,34 @@ describe('decodePeerList', () => {
     expect(peers.map((p) => p.name)).toEqual(['Phone']);
   });
 
+  it('falls back to the end of the name when entryLen points backwards', () => {
+    const peers = decodePeerList(Uint8Array.from([2, ...DESK(0x01), ...PHONE()]));
+    expect(peers.map((p) => p.name)).toEqual(['Desk', 'Phone']);
+  });
+
+  it('stops at the data when the count claims more entries than exist', () => {
+    const peers = decodePeerList(Uint8Array.from([5, ...DESK(), ...PHONE()]));
+    expect(peers.map((p) => p.name)).toEqual(['Desk', 'Phone']);
+  });
+
+  it('drops an entry whose name is cut short, keeping the ones before it', () => {
+    const cut = PHONE().slice(0, -2);
+    const peers = decodePeerList(Uint8Array.from([2, ...DESK(), ...cut]));
+    expect(peers.map((p) => p.name)).toEqual(['Desk']);
+  });
+
+  it('reads a zero-length name as an empty string', () => {
+    const [peer] = decodePeerList(Uint8Array.from([1, ...entry([1, 2, 3, 4, 5, 6], 0x03, 0x02, 0x00, '')]));
+    expect(peer.name).toBe('');
+    expect(peer.connected).toBe(true);
+  });
+
+  it('replaces invalid UTF-8 in a name instead of throwing', () => {
+    const bytes = [1, 1, 2, 3, 4, 5, 6, 0x05, 0x02, 0x00, 2, 0xff, 0xfe];
+    const [peer] = decodePeerList(Uint8Array.from(bytes));
+    expect(peer.name).toBe('\uFFFD\uFFFD');
+  });
+
   it('returns an empty list for a zero count', () => {
     expect(decodePeerList(Uint8Array.from([0]))).toEqual([]);
   });

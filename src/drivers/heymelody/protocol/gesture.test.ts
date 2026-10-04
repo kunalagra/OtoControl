@@ -34,6 +34,76 @@ describe('previous/next scheme', () => {
   });
 });
 
+describe('unknown brand (catalog miss)', () => {
+  it('does not guess a scheme from a lone 4', () => {
+    expect(prevNextScheme([rec(1, 1, 2, 4)], null)).toBeNull();
+  });
+
+  it('still reads 6 as current without a brand', () => {
+    expect(prevNextScheme([rec(1, 1, 2, 6)], null)).toBe('current');
+  });
+
+  it('labels 4 as ambiguous when neither scheme nor brand is known', () => {
+    expect(functionLabel(4, null, null)).toBe('Voice assistant / Previous');
+  });
+
+  it('keeps the unmasked legacy and realme labels for 4', () => {
+    expect(functionLabel(4, 'legacy', 'oneplus')).toBe('Previous');
+    expect(functionLabel(4, 'legacy', null)).toBe('Previous');
+    expect(functionLabel(4, 'current', null)).toBe('Voice assistant');
+    expect(functionLabel(4, null, 'oppo')).toBe('Voice assistant');
+  });
+});
+
+describe('truncated and empty tables', () => {
+  it('throws on a record cut short', () => {
+    expect(() => decodeGestures(Uint8Array.from([0, 3, 1, 1]))).toThrow(/truncated/);
+  });
+
+  it('reads status 0 with count 0 as an empty table', () => {
+    expect(decodeGestures(Uint8Array.from([0x00, 0]))).toEqual([]);
+  });
+});
+
+describe('assistant code in the choices', () => {
+  const labels = (choices: { label: string }[]) => choices.filter((c) => c.label === 'Voice assistant').length;
+
+  it('offers one assistant when the table uses 3 on another record and this one holds 4', () => {
+    const table = [rec(1, 1, 1, 4), rec(1, 1, 2, 3), rec(1, 1, 3, 6)];
+    const choices = functionChoices(table[0], table, 'oppo');
+    expect(labels(choices)).toBe(1);
+    expect(choices.map((c) => c.fn)).toContain(4);
+    expect(choices.map((c) => c.fn)).not.toContain(3);
+  });
+
+  it('offers only 3 for a record on 3 even when a realme table also holds 4', () => {
+    const table = [rec(1, 1, 1, 3), rec(1, 1, 2, 4), rec(1, 1, 3, 6)];
+    const choices = functionChoices(table[0], table, 'realme');
+    expect(labels(choices)).toBe(1);
+    expect(choices.map((c) => c.fn)).toContain(3);
+    expect(choices.map((c) => c.fn)).not.toContain(4);
+  });
+
+  it('offers one assistant on the masked path too', () => {
+    const catalog = { ...catalogEntryFor('06A850')!, touchSupport: [{ action: 1, support: 1 | 4 }] };
+    const choices = functionChoices(rec(1, 1, 1, 4), [rec(1, 1, 1, 4)], 'oppo', catalog);
+    expect(labels(choices)).toBe(1);
+    expect(choices.map((c) => c.fn)).toContain(4);
+  });
+
+  it('uses 4 for realme and 3 otherwise when the table says nothing', () => {
+    const table = [rec(1, 1, 1, 1)];
+    expect(functionChoices(table[0], table, 'realme').map((c) => c.fn)).toContain(4);
+    expect(functionChoices(table[0], table, 'oppo').map((c) => c.fn)).toContain(3);
+  });
+
+  it('offers a lone 4 on an unknown brand as the ambiguous label, plus the standard assistant', () => {
+    const table = [rec(1, 1, 2, 4)];
+    const choices = functionChoices(table[0], table, null);
+    expect(choices).toContainEqual({ fn: 4, label: 'Voice assistant / Previous' });
+  });
+});
+
 describe('function labels and choices', () => {
   it('reads 4 as assistant on realme', () => {
     expect(functionLabel(4, null, 'realme')).toBe('Voice assistant');

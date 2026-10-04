@@ -216,6 +216,7 @@ const CAPABILITY_NAMES: ReadonlyArray<[HeyMelodyCapability, string]> = [
   ['bassLevel', 'BassWave level'],
   ['alertVolume', 'Alert volume'],
   ['gestures', 'Touch controls'],
+  ['multiDevice', 'Connected devices'],
 ]
 
 /** The features the device's command table (0x0100) says it supports. */

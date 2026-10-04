@@ -15,6 +15,12 @@ describe('feature switches', () => {
     expect(() => decodeFeatures(Uint8Array.from([0x01, 0]))).toThrow();
   });
 
+  it('drops a trailing pair cut short and a count that overruns the data', () => {
+    expect(decodeFeatures(Uint8Array.from([0x00, 2, 0x04, 0x01, 0x06]))).toEqual(new Map([[4, true]]));
+    expect(decodeFeatures(Uint8Array.from([0x00, 5, 0x04, 0x01]))).toEqual(new Map([[4, true]]));
+    expect(decodeFeatures(Uint8Array.from([0x00]))).toEqual(new Map());
+  });
+
   it('writes one id and its state', () => {
     expect(encodeSetFeature(FeatureId.GameMain, true)).toEqual([40, 1]);
   });

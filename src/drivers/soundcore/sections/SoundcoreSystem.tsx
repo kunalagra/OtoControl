@@ -187,7 +187,11 @@ export function SoundcoreSystem({ device, state }: Props) {
                             )
                           }
                         >
-                          <SelectTrigger className="w-40" size="sm">
+                          <SelectTrigger
+                            className="w-40"
+                            size="sm"
+                            aria-label={`${button.side === 0 ? 'Left' : 'Right'} ${GESTURE_LABELS[gesture]}`}
+                          >
                             <SelectValue />
                           </SelectTrigger>
                           <SelectContent>

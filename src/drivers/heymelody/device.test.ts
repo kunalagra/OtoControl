@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { HeyMelodyDevice } from './device';
 import { Cmd, replyFor } from './protocol/cmd';
@@ -1101,5 +1101,218 @@ describe('HeyMelodyDevice switching to another pair without a disconnect', () =>
     expect(device.state.alertVolume).toBeNull();
     expect(device.state.bassLevel).toBeNull();
     expect(device.state.peers).toEqual([]);
+  });
+});
+
+// --- behaviour fixes and pinned device behaviour -----------------------------
+
+const decodeSent = (transport: FakeTransport, cmd: number) => {
+  const decoder = new SppFrameCodec().createDecoder();
+  return transport.written.flatMap((bytes) => decoder.push(bytes)).filter((frame) => frame.cmd === cmd).map((frame) => Array.from(frame.payload));
+};
+
+describe('HeyMelodyDevice concurrent feature and gesture writes', () => {
+  const replies = new Map(FULL_REPLIES);
+  replies.set(Cmd.QueryCapability, [0x00, 0x22 | 0x08, 0x05, 0x00, 0x00, 0x44]);
+  replies.set(Cmd.QueryFeatures, [0x00, 2, 0x04, 0x01, 0x28, 0x00]);
+  replies.set(Cmd.QueryAlertVolume, [0x00, 0x08]);
+  replies.set(Cmd.QueryBassLevel, [0x00, 0xfb, 0x05, 0x02]);
+  const TABLE = [0x00, 2, 1, 1, 2, 1, 2, 1, 2, 6];
+  replies.set(Cmd.QueryGestures, TABLE);
+
+  const connect = async (script: Map<number, (number[] | undefined)[]> = new Map()) => {
+    let transport!: FakeTransport;
+    const device = new HeyMelodyDevice(scriptedOpener(replies, script, (t) => (transport = t)), { timeoutMs: 20, probeTimeoutMs: 20 });
+    await device.adoptPort(port);
+    return { device, transport };
+  };
+
+  it('rolls back only the refused feature while another concurrent write was acknowledged', async () => {
+    const { device } = await connect(new Map([[Cmd.SetFeature, [[0x01], [0x00]]]]));
+    await Promise.all([device.setFeature(4, false), device.setFeature(0x28, true)]);
+    expect(device.state.features.get(4)).toBe(true);
+    expect(device.state.features.get(0x28)).toBe(true);
+    expect(device.state.error).not.toBeNull();
+  });
+
+  it('removes a refused feature that was absent before the write', async () => {
+    const { device } = await connect(new Map([[Cmd.SetFeature, [[0x01]]]]));
+    await device.setFeature(7, true);
+    expect(device.state.features.has(7)).toBe(false);
+  });
+
+  it('rolls back only the refused gesture record', async () => {
+    // Both re-read attempts fail, so the optimistic table stays on screen.
+    const { device } = await connect(new Map([[Cmd.SetGestures, [[0x01], [0x00]]], [Cmd.QueryGestures, [TABLE]]]));
+    const [first, second] = device.state.gestures;
+    await Promise.all([device.setGesture(first, 5), device.setGesture(second, 5)]);
+    expect(device.state.gestures.map((record) => record.fn)).toEqual([1, 5]);
+  });
+
+  it('retries a failed gesture re-read once and shows the fresh table', async () => {
+    const fresh = [0x00, 2, 1, 1, 2, 1, 2, 1, 2, 5];
+    // connect read, then the re-read fails twice (empty form + 02 03 01 form), then the retry succeeds.
+    const { device, transport } = await connect(
+      new Map([[Cmd.SetGestures, [[0x00]]], [Cmd.QueryGestures, [TABLE, undefined, undefined, fresh]]]),
+    );
+    await device.setGesture(device.state.gestures[1], 5);
+    expect(device.state.gestures[1].fn).toBe(5);
+    expect(device.state.error).toBeNull();
+    expect(decodeSent(transport, Cmd.QueryGestures)).toHaveLength(4);
+  });
+
+  it('reports a soft error when the gesture re-read fails after the retry too', async () => {
+    const { device } = await connect(new Map([[Cmd.SetGestures, [[0x00]]], [Cmd.QueryGestures, [TABLE]]]));
+    await device.setGesture(device.state.gestures[1], 5);
+    expect(device.state.gestures[1].fn).toBe(5);
+    expect(device.state.error).toMatch(/touch controls/i);
+  });
+
+  it('setBassLevel clamps to the reported range', async () => {
+    const { device, transport } = await connect(new Map([[Cmd.SetBassLevel, [[0x00]]]]));
+    await device.setBassLevel(99);
+    expect(decodeSent(transport, Cmd.SetBassLevel)).toEqual([[0xfb, 0x05, 0x05]]);
+    expect(device.state.bassLevel?.level).toBe(5);
+  });
+
+  it('setBassLevel rolls back when the device does not answer', async () => {
+    const { device } = await connect();
+    await device.setBassLevel(-3);
+    expect(device.state.bassLevel?.level).toBe(2);
+    expect(device.state.error).not.toBeNull();
+  });
+
+  it('setAlertVolume rolls back when the device does not answer', async () => {
+    const { device } = await connect();
+    await device.setAlertVolume(3);
+    expect(device.state.alertVolume).toBe(8);
+    expect(device.state.error).not.toBeNull();
+  });
+
+  it('keeps only the complete pairs of a truncated 0x810D reply', async () => {
+    const truncated = new Map(replies);
+    truncated.set(Cmd.QueryFeatures, [0x00, 2, 0x04, 0x01, 0x28]);
+    const device = new HeyMelodyDevice(scriptedOpener(truncated, new Map()), { timeoutMs: 20, probeTimeoutMs: 20 });
+    await device.adoptPort(port);
+    expect(device.state.status).toBe('connected');
+    expect(device.state.features).toEqual(new Map([[4, true]]));
+  });
+});
+
+describe('HeyMelodyDevice incremental capabilities', () => {
+  it('patches each capability as its read succeeds, not after all reads finish', async () => {
+    const replies = new Map(FULL_REPLIES);
+    replies.set(Cmd.QueryCapability, BITMAP_REPLY);
+    const device = new HeyMelodyDevice(scriptedOpener(replies, new Map()), { timeoutMs: 50, probeTimeoutMs: 50 });
+    const sizes: number[] = [];
+    device.subscribe((state) => sizes.push(state.capabilities.size));
+    await device.adoptPort(port);
+    const final = device.state.capabilities.size;
+    expect(final).toBeGreaterThan(1);
+    expect(sizes.some((size) => size > 0 && size < final)).toBe(true);
+  });
+});
+
+describe('HeyMelodyDevice EQ re-read', () => {
+  const replies = new Map(FULL_REPLIES);
+  replies.set(Cmd.QueryCapability, [0x00, 0x00, 0x04, 0x00, 0x00, 0x04]);
+  replies.set(Cmd.QueryEqAll, CUSTOM_EQ);
+  const unselected = CUSTOM_EQ.map((b, i) => (i === 2 ? 0 : b));
+  const ack = [[0x00, 9], [0x00, 9], [0x00, 9], [0x00, 9]];
+
+  const connect = async (script: Map<number, (number[] | undefined)[]> = new Map(), base = replies) => {
+    let transport!: FakeTransport;
+    const device = new HeyMelodyDevice(scriptedOpener(base, script, (t) => (transport = t)), { timeoutMs: 20, probeTimeoutMs: 20 });
+    await device.adoptPort(port);
+    return { device, transport, reads: () => [decodeSent(transport, Cmd.QueryEqCurrent).length, decodeSent(transport, Cmd.QueryEqAll).length] };
+  };
+
+  it('sends the first 0x0122 once when the empty request is accepted', async () => {
+    const { transport } = await connect();
+    expect(decodeSent(transport, Cmd.QueryEqAll)).toEqual([[]]);
+  });
+
+  it('rolls a failed select back from a state where the target was not selected', async () => {
+    const start = new Map(replies);
+    start.set(Cmd.QueryEqAll, unselected);
+    const { device } = await connect(new Map([[Cmd.SetEqCurve, [undefined]]]), start);
+    expect(device.state.eqPresets[0].isSelected).toBe(false);
+    await device.setEqPreset(9);
+    expect(device.state.eqCurrentPreset).toBe(1);
+    expect(device.state.eqPresets[0].isSelected).toBe(false);
+    expect(device.state.error).not.toBeNull();
+  });
+
+  it('takes the id the buds report on the re-read when it differs from the optimistic one', async () => {
+    const { device } = await connect(new Map([[Cmd.SetEqCurve, [[0x00, 9]]], [Cmd.QueryEqCurrent, [[0x00, 1], [0x00, 3]]]]));
+    await device.setEqPreset(9);
+    expect(device.state.eqCurrentPreset).toBe(3);
+  });
+
+  it('keeps the list and re-reads when a create is refused', async () => {
+    const { device, transport } = await connect(new Map([[Cmd.SetEqCurve, [[0x01]]]]));
+    await device.createCustomPreset();
+    expect(device.state.error).not.toBeNull();
+    expect(device.state.eqPresets.map((preset) => preset.eqId)).toEqual([9]);
+    expect(decodeSent(transport, Cmd.QueryEqAll)).toHaveLength(2);
+  });
+
+  it('keeps the preset and re-reads when a delete is refused; ignores an unknown id', async () => {
+    const { device, transport } = await connect(new Map([[Cmd.SetEqCurve, [[0x01]]]]));
+    await device.deleteCustomPreset(9);
+    expect(device.state.error).not.toBeNull();
+    expect(device.state.eqPresets.map((preset) => preset.eqId)).toEqual([9]);
+    expect(decodeSent(transport, Cmd.QueryEqAll)).toHaveLength(2);
+    await device.deleteCustomPreset(77);
+    expect(decodeSent(transport, Cmd.SetEqCurve)).toHaveLength(1);
+  });
+
+  describe('debounced settle read', () => {
+    afterEach(() => vi.useRealTimers());
+
+    it('re-reads 0x010F and 0x0122 once, 2.5 s after the last write of any kind', async () => {
+      const { device, reads } = await connect(new Map([[Cmd.SetEqCurve, ack], [Cmd.SetEqPreset, [[0x00]]]]));
+      vi.useFakeTimers();
+      const [baseCurrent, baseList] = reads();
+      await device.setEqCurve(9, [3, -2]);
+      await vi.advanceTimersByTimeAsync(2400);
+      expect(reads()).toEqual([baseCurrent, baseList]);
+      await device.setEqPreset(1); // a built-in select restarts the timer
+      await vi.advanceTimersByTimeAsync(2400);
+      expect(reads()).toEqual([baseCurrent, baseList]);
+      await vi.advanceTimersByTimeAsync(200);
+      expect(reads()).toEqual([baseCurrent + 1, baseList + 1]);
+      await vi.advanceTimersByTimeAsync(10_000);
+      expect(reads()).toEqual([baseCurrent + 1, baseList + 1]);
+    });
+
+    it('also fires after a refused write, since the device state is then uncertain', async () => {
+      const { device, reads } = await connect(new Map([[Cmd.SetEqCurve, [[0x01]]]]));
+      vi.useFakeTimers();
+      const [baseCurrent] = reads();
+      await device.setEqCurve(9, [1, 1]);
+      await vi.advanceTimersByTimeAsync(2600);
+      expect(reads()[0]).toBe(baseCurrent + 1);
+    });
+
+    it('is cancelled by a disconnect', async () => {
+      const { device, reads } = await connect(new Map([[Cmd.SetEqPreset, [[0x00]]]]));
+      vi.useFakeTimers();
+      const before = reads();
+      await device.setEqPreset(1);
+      await device.disconnect();
+      await vi.advanceTimersByTimeAsync(10_000);
+      expect(reads()).toEqual(before);
+    });
+
+    it('adds the settle read after the immediate one a create needs', async () => {
+      const { device, reads } = await connect(new Map([[Cmd.SetEqCurve, [[0x00, 10]]]]));
+      vi.useFakeTimers();
+      const [baseCurrent, baseList] = reads();
+      await device.createCustomPreset();
+      expect(reads()).toEqual([baseCurrent + 1, baseList + 1]);
+      await vi.advanceTimersByTimeAsync(2600);
+      expect(reads()).toEqual([baseCurrent + 2, baseList + 2]);
+    });
   });
 });

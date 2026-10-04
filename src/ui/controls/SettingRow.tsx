@@ -1,21 +1,24 @@
+import { FieldNameProvider } from '@/components/ui/field-name'
 import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
 
 interface SettingRowProps {
   label: string
   hint?: string
+  /** The control's accessible name when the visible label alone is ambiguous (e.g. "Left" under a gesture heading). */
+  name?: string
   children: React.ReactNode
 }
 
 /** One labelled setting per row, with its control on the right. */
-export function SettingRow({ label, hint, children }: SettingRowProps) {
+export function SettingRow({ label, hint, name, children }: SettingRowProps) {
   return (
     <div className="border-border flex items-center justify-between gap-4 border-b py-2 last:border-b-0">
       <div className="flex min-w-0 flex-col">
         <Label className="text-sm font-medium">{label}</Label>
         {hint && <span className="text-muted-foreground text-xs">{hint}</span>}
       </div>
-      {children}
+      <FieldNameProvider value={name ?? label}>{children}</FieldNameProvider>
     </div>
   )
 }

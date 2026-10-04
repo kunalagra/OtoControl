@@ -72,7 +72,7 @@ export function DeviceSelect({ manager, active, variant = 'field' }: Props) {
           className="min-h-11 min-w-11 justify-center bg-transparent px-1.5 text-muted-foreground hover:text-foreground md:min-h-8 md:min-w-8"
         />
       ) : (
-        <SelectTrigger size="sm" className="w-full">
+        <SelectTrigger size="sm" aria-label="Device" className="w-full">
           <SelectValue />
         </SelectTrigger>
       )}

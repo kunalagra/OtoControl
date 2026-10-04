@@ -84,6 +84,9 @@ type Listener = (state: HeyMelodyState) => void;
  */
 const PROBE_TIMEOUT_MS = 400;
 
+/** Quiet time after the last EQ write before the EQ state is read back; each new write restarts it. */
+const EQ_SETTLE_MS = 2500;
+
 /**
  * How long the second productId query waits. HeyTap gives every packet 5s before retrying
  * (`HeadsetCoreService` packet timeout), and OppoPodsManager notes some models answer
@@ -129,6 +132,11 @@ export class HeyMelodyDevice implements Persistable {
   readonly #probeTimeoutMs: number;
   readonly #productIdRetryTimeoutMs: number;
   #refreshing = false;
+  /** Pending settle re-read after the last EQ write, and the chain that keeps every EQ re-read serial. */
+  #eqSettleTimer: ReturnType<typeof setTimeout> | null = null;
+  #eqRereadChain: Promise<void> = Promise.resolve();
+  /** EQ writes started but not yet settled; a settle read waits for them rather than racing them. */
+  #eqWritesInFlight = 0;
   /** Last curve the device confirmed per eqId — what a failed curve write rolls back to. */
   readonly #confirmedEq = new Map<number, EqPreset>();
   #protocolLog: ProtocolLogEntry[] = [];
@@ -152,13 +160,15 @@ export class HeyMelodyDevice implements Persistable {
         client.onRaw((bytes, direction) => this.#appendLog(direction, bytes));
       },
       onStatus: (status, error) => this.#patch({ status, error }),
-      onDrop: (reason) =>
+      onDrop: (reason) => {
+        this.#cancelEqSettle();
         this.#patch({
           ...initialHeyMelodyState,
           ...this.#lastKnownDurable(),
           status: 'disconnected',
           error: reason ? describeError(reason) : null,
-        }),
+        });
+      },
       abort: (client, reason) => client.abort(reason),
     };
     this.#session = new DeviceSession(openTransport, hooks);
@@ -268,7 +278,8 @@ export class HeyMelodyDevice implements Persistable {
     // A connect that supersedes a live session skips onDrop, and these fields are only
     // overwritten when the new pair answers — clear them so another pair's controls can't linger.
     this.#confirmedEq.clear();
-    this.#patch({ features: new Map(), bassLevel: null, alertVolume: null, gestures: [], peers: [] });
+    this.#cancelEqSettle();
+    this.#patch({ capabilities: new Set(), features: new Map(), bassLevel: null, alertVolume: null, gestures: [], peers: [] });
     await this.#subscribe();
     await this.refresh();
   }
@@ -434,11 +445,12 @@ export class HeyMelodyDevice implements Persistable {
   async #pollReported(client: HeyMelodyClient, commands: Set<number>): Promise<Set<HeyMelodyCapability>> {
     const reported = featuresFromCommands(commands);
     const found = new Set<HeyMelodyCapability>();
+    const add = (feature: HeyMelodyCapability) => this.#addCapability(client, found, feature);
     const read = async (feature: HeyMelodyCapability, run: () => Promise<void>) => {
       if (!reported.has(feature)) return;
       try {
         await run();
-        found.add(feature);
+        add(feature);
       } catch (error) {
         console.debug(`[heymelody] reported ${feature} did not read`, error);
       }
@@ -460,12 +472,18 @@ export class HeyMelodyDevice implements Persistable {
     // No bitmap row carries 0x0130, so the alert volume is found by probing.
     try {
       await this.#readAlertVolume(client);
-      found.add('alertVolume');
+      add('alertVolume');
     } catch (error) {
       console.debug('[heymelody] alertVolume unavailable', error);
     }
-    for (const passthrough of ['find', 'eqCustom'] as const) if (reported.has(passthrough)) found.add(passthrough);
+    for (const passthrough of ['find', 'eqCustom'] as const) if (reported.has(passthrough)) add(passthrough);
     return found;
+  }
+
+  /** Records a capability the moment its read succeeds, so the UI fills in as connect proceeds. */
+  #addCapability(client: HeyMelodyClient, found: Set<HeyMelodyCapability>, feature: HeyMelodyCapability): void {
+    found.add(feature);
+    if (this.#session.client === client) this.#patch({ capabilities: new Set(found) });
   }
 
   /** Firmware without a bitmap: try the features that are safe to probe. */
@@ -474,7 +492,7 @@ export class HeyMelodyDevice implements Persistable {
     const probe = async (feature: HeyMelodyCapability, run: () => Promise<void>) => {
       try {
         await run();
-        found.add(feature);
+        this.#addCapability(client, found, feature);
       } catch (error) {
         console.debug(`[heymelody] ${feature} unavailable`, error);
       }
@@ -597,8 +615,18 @@ export class HeyMelodyDevice implements Persistable {
     }
   }
 
-  /** After a preset write ids can renumber and the buds choose the selection: re-read both. Failures are logged, not thrown. */
-  async #rereadEq(client: HeyMelodyClient): Promise<void> {
+  /**
+   * After a preset write ids can renumber and the buds choose the selection: re-read both.
+   * Every EQ re-read, immediate or settled, goes through one chain so two never overlap.
+   * Failures are logged, not thrown.
+   */
+  #rereadEq(client: HeyMelodyClient): Promise<void> {
+    const run = this.#eqRereadChain.then(() => (this.#session.client === client ? this.#readEqBoth(client) : undefined));
+    this.#eqRereadChain = run;
+    return run;
+  }
+
+  async #readEqBoth(client: HeyMelodyClient): Promise<void> {
     try {
       const { status, presetId } = decodeEqCurrent(
         await client.request(Cmd.QueryEqCurrent, [], { timeoutMs: this.#probeTimeoutMs }),
@@ -613,6 +641,33 @@ export class HeyMelodyDevice implements Persistable {
     } catch (error) {
       console.debug('[heymelody] EQ list re-read failed', error);
     }
+  }
+
+  /** Runs an EQ write; once it settles, (re)starts the timer that re-reads the EQ state. */
+  async #eqWrite(run: () => Promise<void>): Promise<void> {
+    this.#eqWritesInFlight += 1;
+    try {
+      await run();
+    } finally {
+      this.#eqWritesInFlight -= 1;
+      this.#scheduleEqSettle();
+    }
+  }
+
+  #scheduleEqSettle(): void {
+    const client = this.#session.client;
+    if (!client) return;
+    if (this.#eqSettleTimer !== null) clearTimeout(this.#eqSettleTimer);
+    this.#eqSettleTimer = setTimeout(() => {
+      this.#eqSettleTimer = null;
+      // A write still in flight reschedules the read itself when it settles.
+      if (this.#eqWritesInFlight === 0 && this.#session.client === client) void this.#rereadEq(client);
+    }, EQ_SETTLE_MS);
+  }
+
+  #cancelEqSettle(): void {
+    if (this.#eqSettleTimer !== null) clearTimeout(this.#eqSettleTimer);
+    this.#eqSettleTimer = null;
   }
 
   // --- writes ----------------------------------------------------------------
@@ -655,12 +710,17 @@ export class HeyMelodyDevice implements Persistable {
   async setFeature(id: number, on: boolean): Promise<void> {
     const client = this.#session.client;
     if (!client) return;
-    const previous = this.#store.state.features;
-    this.#patch({ features: new Map(previous).set(id, on) });
+    const had = this.#store.state.features.has(id);
+    const previous = this.#store.state.features.get(id);
+    this.#patch({ features: new Map(this.#store.state.features).set(id, on) });
     try {
       statusBody(await client.request(Cmd.SetFeature, encodeSetFeature(id, on)), `feature ${id}`);
     } catch (error) {
-      this.#patch({ features: previous, error: describeError(error) });
+      // Only this id goes back: another switch may have been acknowledged meanwhile.
+      const features = new Map(this.#store.state.features);
+      if (had) features.set(id, previous as boolean);
+      else features.delete(id);
+      this.#patch({ features, error: describeError(error) });
     }
   }
 
@@ -696,25 +756,38 @@ export class HeyMelodyDevice implements Persistable {
   async setGesture(record: GestureRecord, fn: number): Promise<void> {
     const client = this.#session.client;
     if (!client) return;
-    const previous = this.#store.state.gestures;
     const same = (other: GestureRecord) =>
       other.deviceType === record.deviceType && other.button === record.button && other.action === record.action;
-    this.#patch({ gestures: previous.map((other) => (same(other) ? { ...other, fn } : other)) });
+    const previousFn = this.#store.state.gestures.find(same)?.fn;
+    const setFn = (value: number) =>
+      this.#store.state.gestures.map((other) => (same(other) ? { ...other, fn: value } : other));
+    this.#patch({ gestures: setFn(fn) });
     try {
       statusBody(await client.request(Cmd.SetGestures, encodeGestures([{ ...record, fn }])), 'touch control');
     } catch (error) {
-      this.#patch({ gestures: previous, error: describeError(error) });
+      this.#patch({ gestures: previousFn === undefined ? this.#store.state.gestures : setFn(previousFn), error: describeError(error) });
       return;
     }
-    try {
-      await this.#readGestures(client);
-    } catch (error) {
-      console.debug('[heymelody] touch controls re-read failed', error);
+    // The write is acknowledged; if the table can't be read back, say the shown value is unconfirmed.
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      try {
+        await this.#readGestures(client);
+        return;
+      } catch (error) {
+        console.debug('[heymelody] touch controls re-read failed', error);
+      }
+    }
+    if (this.#session.client === client) {
+      this.#patch({ error: 'Touch controls saved, but the earbuds did not confirm it. The value shown may be out of date.' });
     }
   }
 
   /** Writes a custom EQ's band gains (`0x0418` modify), clamped to its range; rolls back to the last confirmed curve on failure. */
-  async setEqCurve(eqId: number, gains: number[]): Promise<void> {
+  setEqCurve(eqId: number, gains: number[]): Promise<void> {
+    return this.#eqWrite(() => this.#setEqCurve(eqId, gains));
+  }
+
+  async #setEqCurve(eqId: number, gains: number[]): Promise<void> {
     const client = this.#session.client;
     if (!client) return;
     const preset = this.#store.state.eqPresets.find((candidate) => candidate.eqId === eqId);
@@ -733,7 +806,11 @@ export class HeyMelodyDevice implements Persistable {
   }
 
   /** Built-ins select with `0x0406`; a custom preset is selected by writing it with `0x0418` action 2, as the vendor app does. */
-  async setEqPreset(eqId: number): Promise<void> {
+  setEqPreset(eqId: number): Promise<void> {
+    return this.#eqWrite(() => this.#setEqPreset(eqId));
+  }
+
+  async #setEqPreset(eqId: number): Promise<void> {
     const client = this.#session.client;
     if (!client) return;
     const custom = this.#store.state.eqPresets.find((preset) => preset.eqId === eqId);
@@ -755,7 +832,11 @@ export class HeyMelodyDevice implements Persistable {
   }
 
   /** `0x0418` action 1 with id 0 — the buds assign the id — then re-read, since ids can renumber. */
-  async createCustomPreset(name?: string): Promise<void> {
+  createCustomPreset(name?: string): Promise<void> {
+    return this.#eqWrite(() => this.#createCustomPreset(name));
+  }
+
+  async #createCustomPreset(name?: string): Promise<void> {
     const client = this.#session.client;
     if (!client) return;
     const customs = this.#store.state.eqPresets;
@@ -764,7 +845,7 @@ export class HeyMelodyDevice implements Persistable {
     let n = 1;
     while (taken.has(`Custom ${n}`)) n += 1;
     try {
-      decodeSetEqCurveAck(await client.request(Cmd.SetEqCurve, encodeEqWrite(EQ_ACTION.Add, newCustomPreset(name ?? `Custom ${n}`, customs[0] ?? null))));
+      decodeSetEqCurveAck(await client.request(Cmd.SetEqCurve, encodeEqWrite(EQ_ACTION.Add, newCustomPreset(name ?? `Custom ${n}`, customs[0] ?? null, this.#store.state.info.catalog?.customEqFrequency))));
     } catch (error) {
       this.#patch({ error: describeError(error) });
     }
@@ -772,7 +853,11 @@ export class HeyMelodyDevice implements Persistable {
   }
 
   /** `0x0418` action 3 with the whole preset, then re-read; the buds pick what becomes selected. */
-  async deleteCustomPreset(eqId: number): Promise<void> {
+  deleteCustomPreset(eqId: number): Promise<void> {
+    return this.#eqWrite(() => this.#deleteCustomPreset(eqId));
+  }
+
+  async #deleteCustomPreset(eqId: number): Promise<void> {
     const client = this.#session.client;
     if (!client) return;
     const preset = this.#store.state.eqPresets.find((candidate) => candidate.eqId === eqId);
@@ -788,6 +873,7 @@ export class HeyMelodyDevice implements Persistable {
   // --- teardown ----------------------------------------------------------
 
   async disconnect(): Promise<void> {
+    this.#cancelEqSettle();
     const durable = this.#lastKnownDurable();
     const closed = this.#session.disconnect();
     this.#patch({ ...initialHeyMelodyState, ...durable, status: 'disconnected' });

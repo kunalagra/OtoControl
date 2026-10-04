@@ -31,6 +31,11 @@ describe('HeyMelody System section', () => {
     expect(html).toContain('Left 1.2.3');
   });
 
+  it('lists multi-device support among the reported capabilities', () => {
+    expect(renderSection(HeyMelodySystem, { capabilities: new Set(['multiDevice']) })).toContain('Connected devices');
+    expect(renderSection(HeyMelodySystem, { capabilities: new Set(['battery']) })).not.toContain('Connected devices');
+  });
+
   it('labels each battery row with its in-ear status', () => {
     const html = renderSection(HeyMelodySystem, {
       battery: [{ device: 'left', level: 80, charging: false }],
@@ -158,7 +163,7 @@ describe('HeyMelody Connections section', () => {
     ...patch,
   });
 
-  it('lists connected peers with their badges and hides the rest', () => {
+  it('lists every paired peer with its connection state and badges', () => {
     const html = renderSection(HeyMelodyDevices, {
       peers: [
         peer('Phone', { isThisDevice: true }),
@@ -170,11 +175,13 @@ describe('HeyMelody Connections section', () => {
     expect(html).toContain('This device');
     expect(html).toContain('Laptop');
     expect(html).toContain('Playing audio');
-    expect(html).not.toContain('Old tablet');
+    expect(html).toContain('Old tablet');
+    expect(html.match(/Not connected/g)).toHaveLength(1);
+    expect(html.match(/>Connected</g)).toHaveLength(2);
     expect(html).toContain("Switching devices from here isn&#x27;t supported yet.");
   });
 
-  it('says so when nothing is connected', () => {
-    expect(renderSection(HeyMelodyDevices, { peers: [] })).toContain('No other devices connected.');
+  it('says so when no device is paired', () => {
+    expect(renderSection(HeyMelodyDevices, { peers: [] })).toContain('No paired devices.');
   });
 });

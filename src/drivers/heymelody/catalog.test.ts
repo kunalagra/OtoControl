@@ -66,3 +66,17 @@ describe('catalog EQ modes', () => {
     ]);
   });
 });
+
+describe('catalog custom EQ bands', () => {
+  const TEN = [31, 62, 125, 250, 500, 1000, 2000, 4000, 8000, 16000];
+
+  it('carries the ten-band layout for the eight models the whitelist gives it', () => {
+    const ids = ['06C410', '06C810', '06E810', '06D810', '067414', '066414', '066814', '067014'];
+    for (const id of ids) expect(catalogEntryFor(id)?.customEqFrequency, id).toEqual(TEN);
+  });
+
+  it('leaves the field off every other model', () => {
+    expect(catalogEntryFor('062414')?.customEqFrequency).toBeUndefined();
+    expect(catalogEntryFor('065414')?.customEqFrequency).toBeUndefined();
+  });
+});

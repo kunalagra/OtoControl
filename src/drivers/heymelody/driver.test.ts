@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
+import { catalogEntryFor } from './catalog';
 import { HEYMELODY_DRIVER } from './driver';
 import { initialHeyMelodyState } from './state';
 
@@ -59,5 +60,36 @@ describe('HEYMELODY_DRIVER.connections', () => {
       { name: 'Phone', connected: true, isThisDevice: true },
       { name: 'Old laptop', connected: false, isThisDevice: false },
     ]);
+  });
+});
+
+describe('HEYMELODY_DRIVER.eqPresets / eqPreview edge cases', () => {
+  const catalog = catalogEntryFor('062414');
+  const customAt = (eqId: number, isSelected = false) => ({
+    isSelected,
+    minValue: -6,
+    maxValue: 6,
+    eqId,
+    name: `C${eqId}`,
+    bands: [{ frequency: 100, dbValue: 0 }],
+  });
+  const base = {
+    ...initialHeyMelodyState,
+    info: { ...initialHeyMelodyState.info, catalog },
+    capabilities: new Set(['eq', 'eqCustom'] as const),
+  };
+
+  it('drops a built-in whose id is also a custom id, as the Sound tab does', () => {
+    const device = { setEqPreset: () => undefined } as never;
+    const result = HEYMELODY_DRIVER.eqPresets(device, { ...base, eqPresets: [customAt(1)] });
+    const ids = result!.presets.map((preset) => preset.id);
+    expect(ids).toEqual(['0', '2', '3', '1']);
+    expect(new Set(ids).size).toBe(ids.length);
+  });
+
+  it('has no preview for an eqCustom-only device that listed no presets', () => {
+    const state = { ...initialHeyMelodyState, capabilities: new Set(['eqCustom'] as const), eqCurrentPreset: 9 };
+    expect(HEYMELODY_DRIVER.eqPreview(state)).toBeNull();
+    expect(HEYMELODY_DRIVER.eqPreview({ ...state, eqCurrentPreset: null })).toBeNull();
   });
 });

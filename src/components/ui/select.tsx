@@ -4,6 +4,7 @@ import * as React from "react"
 import { Select as SelectPrimitive } from "@base-ui/react/select"
 
 import { cn } from "@/lib/utils"
+import { useFieldName } from "@/components/ui/field-name"
 import { RiArrowDownSLine, RiCheckLine, RiArrowUpSLine } from "@remixicon/react"
 
 const Select = SelectPrimitive.Root
@@ -45,8 +46,10 @@ function SelectTrigger({
 }: SelectPrimitive.Trigger.Props & {
   size?: "sm" | "default"
 }) {
+  const fieldName = useFieldName()
   return (
     <SelectPrimitive.Trigger
+      aria-label={fieldName}
       data-slot="select-trigger"
       data-size={size}
       className={cn(
