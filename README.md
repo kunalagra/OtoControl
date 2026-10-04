@@ -17,7 +17,7 @@
   <a href="#license">License</a>
 </p>
 
-![screenshot](https://raw.githubusercontent.com/kunalagra/OtoControl/main/docs/assets/screenshot.png)
+![screenshot](https://raw.githubusercontent.com/kunalagra/OtoControl/main/public/screenshot.png)
 
 ## Supported Devices
 
